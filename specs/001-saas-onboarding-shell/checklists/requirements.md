@@ -33,3 +33,9 @@
 
 - Items marked incomplete require spec updates before `/speckit-clarify` or `/speckit-plan`
 - Validated 2026-09-13: all 16 items pass on first iteration. No [NEEDS CLARIFICATION] markers were needed — ambiguous points (tenant/database provisioning timing relative to billing activation, MFA mandatoriness, "first invoice readiness" meaning, accounting-setup depth) were resolved with documented defaults in the spec's Assumptions section instead, per the "use reasonable defaults, limit clarifications to critical scope/security ambiguities" rule.
+- Re-validated 2026-09-13 after Clarifications session (trial/setup-access window duration and unpaid-workspace restriction policy): all 16 items still pass.
+  - No implementation details introduced — FR-030a and the new Assumptions/Clarifications text describe the trial-window/restriction policy as admin-configurable plan/entitlement data, without naming any technology, storage mechanism, or framework.
+  - No [NEEDS CLARIFICATION] markers remain — the ambiguity is fully resolved (config-driven, per-plan, 14-day default, disable option) and recorded under Clarifications.
+  - New requirement (FR-030a) is testable and unambiguous: default value, override mechanism, and disable option are each independently verifiable.
+  - Scope boundary re-checked: FR-030a requires the *values* to be config-driven, not that this slice deliver the admin-dashboard authoring screens; the Out of Scope section was updated in the same edit to state this explicitly, so no contradiction was introduced between FR-030a and the existing "Super Admin console features" exclusion.
+  - Success Criteria, Key Entities, and other Functional Requirements were reviewed and required no changes as a result of this clarification.
