@@ -1,0 +1,490 @@
+openapi: 3.0.3
+info:
+  title: KEMFAI SaaS Onboarding Shell API
+  version: "0.1.0-slice1"
+  description: >
+    Contract outline for Slice 1 (specs/001-saas-onboarding-shell). This is the NestJS API/BFF —
+    the only customer- and staff-facing boundary (Constitution Principle III). Every path below
+    is enforced through the same tenant-scope and role guards (common/guards); none of this is
+    implementation code — it defines the shape teams build to, per /speckit-plan's Phase 1 output.
+servers:
+  - url: https://api.kemfai.example/v1
+    description: Illustrative — actual host/env is deployment config, not a spec decision.
+
+security:
+  - bearerAuth: []
+
+tags:
+  - name: plans
+  - name: accounts
+  - name: tenants
+  - name: company-setup
+  - name: modules
+  - name: entitlements
+  - name: billing-customer
+  - name: billing-admin
+  - name: checklist
+  - name: support-access
+  - name: audit
+
+paths:
+  /public/plans:
+    get:
+      tags: [plans]
+      summary: List published plans with pricing and feature/limit summary (FR-016)
+      security: []
+      responses:
+        "200":
+          description: Published plans, or an empty list (FR-011 empty state)
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/PlanSummary" }
+
+  /accounts/signup:
+    post:
+      tags: [accounts]
+      summary: Create an unverified account with a selected plan/cycle carried over (FR-017, FR-018)
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/SignupRequest" }
+      responses:
+        "201": { description: Unverified account created, verification email sent (FR-019) }
+        "409": { description: Email already registered and verified — generic message only (Acceptance Scenario 1.6) }
+        "422": { description: Malformed email or weak password (FR-018) }
+
+  /accounts/verify-email:
+    post:
+      tags: [accounts]
+      summary: Consume a verification token; only the most recently issued link is honored (FR-021, Edge Cases)
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [token]
+              properties: { token: { type: string } }
+      responses:
+        "200": { description: Account verified; tenant provisioning enqueued (FR-022) }
+        "410": { description: Expired, invalid, or superseded token (Edge Cases) }
+
+  /accounts/resend-verification:
+    post:
+      tags: [accounts]
+      summary: Invalidate prior verification link and send a new one (FR-021)
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email]
+              properties: { email: { type: string, format: email } }
+      responses:
+        "202": { description: New link sent if the account exists and is unverified (no account-existence leak) }
+
+  /accounts/mfa/enroll:
+    post:
+      tags: [accounts]
+      summary: Begin MFA (TOTP) enrollment for the authenticated, verified account (FR-020)
+      responses:
+        "200": { description: Enrollment challenge (delegated to Keycloak required action) }
+
+  /accounts/mfa/confirm:
+    post:
+      tags: [accounts]
+      summary: Confirm MFA enrollment is active (FR-020, Acceptance Scenario 1.4)
+      responses:
+        "200": { description: MFA active }
+
+  /tenants/me:
+    get:
+      tags: [tenants]
+      summary: Poll current tenant provisioning status for the authenticated account (Acceptance Scenario 2.3)
+      responses:
+        "200":
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TenantStatus" }
+
+  /tenants/me/provisioning-retry:
+    post:
+      tags: [tenants]
+      summary: Retry a failed provisioning attempt; idempotent, never duplicates tenant/db/company (FR-023)
+      responses:
+        "202": { description: Retry enqueued }
+        "409": { description: Tenant already Ready or Creating — no-op with current status returned }
+
+  /companies/current/setup:
+    get:
+      tags: [company-setup]
+      summary: Get current wizard state, resuming at first incomplete step (FR-027)
+      responses:
+        "200":
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CompanySetupState" }
+    put:
+      tags: [company-setup]
+      summary: Save one wizard step (country/company identity/currency/fiscal year/VAT/industry/accounting) (FR-025)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CompanySetupStepInput" }
+      responses:
+        "200": { description: Step saved, values preserved (Acceptance Scenario 3.3) }
+        "422": { description: Field-level validation failure, incl. country-specific VAT format (FR-026) }
+        "409": { description: Country validation rule missing for this country — configuration gap, not silently accepted (Edge Cases) }
+
+  /companies/current/setup/complete:
+    post:
+      tags: [company-setup]
+      summary: Finalize setup once all required steps are submitted (FR-028)
+      responses:
+        "200": { description: Company marked setup complete; audit event recorded (Acceptance Scenario 3.7) }
+        "422": { description: One or more required steps incomplete }
+
+  /entitlements/me:
+    get:
+      tags: [entitlements]
+      summary: Current tenant's plan → feature → limit entitlements, incl. trial window (FR-030, FR-030a)
+      responses:
+        "200":
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/EntitlementSet" }
+
+  /modules:
+    get:
+      tags: [modules]
+      summary: Available modules with plan-inclusion/upgrade indicators (FR-029, Acceptance Scenario 4.1)
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/ModuleOption" }
+
+  /modules/selection:
+    put:
+      tags: [modules]
+      summary: Save enabled module set; rejects anything outside plan entitlements server-side (FR-006, FR-029)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [featureKeys]
+              properties:
+                featureKeys: { type: array, items: { type: string } }
+      responses:
+        "200": { description: Selection saved and reflected immediately (Acceptance Scenario 4.2) }
+        "403": { description: One or more feature keys not entitled by current plan (Acceptance Scenario 4.3) }
+
+  /billing/subscription:
+    get:
+      tags: [billing-customer]
+      summary: Current subscription, incl. bank-transfer instructions/reference/amount/period when awaiting payment (FR-031)
+      responses:
+        "200":
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SubscriptionView" }
+
+  /billing/payment-submissions:
+    get:
+      tags: [billing-customer]
+      summary: This tenant's payment submissions and their status/history (Acceptance Scenario 5.3)
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/PaymentSubmissionView" }
+    post:
+      tags: [billing-customer]
+      summary: Upload proof + reference for the current billing period (FR-032)
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema: { $ref: "#/components/schemas/PaymentSubmissionInput" }
+      responses:
+        "201": { description: Submission created, status PendingReview }
+        "409": { description: An unresolved submission already exists for this tenant/period (FR-033) }
+        "422": { description: Unsupported file type or over size limit — no row created (FR-032 edge case) }
+
+  /internal/billing/review-queue:
+    get:
+      tags: [billing-admin]
+      summary: All PendingReview (and MoreInfoRequested) submissions across tenants (FR-034, Billing Admin role only)
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/PaymentSubmissionAdminView" }
+
+  /internal/billing/payment-submissions/{submissionId}/approve:
+    post:
+      tags: [billing-admin]
+      summary: Approve — activates/renews subscription atomically; audited (FR-036, FR-009)
+      parameters:
+        - { name: submissionId, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200": { description: Activated/renewed }
+        "409": { description: Tenant/period already Active — duplicate activation blocked (Acceptance Scenario 6.6) }
+
+  /internal/billing/payment-submissions/{submissionId}/reject:
+    post:
+      tags: [billing-admin]
+      summary: Reject with a reason; customer notified (FR-035)
+      parameters:
+        - { name: submissionId, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [reason]
+              properties: { reason: { type: string } }
+      responses:
+        "200": { description: Rejected, audited }
+
+  /internal/billing/payment-submissions/{submissionId}/request-more-info:
+    post:
+      tags: [billing-admin]
+      summary: Request more information; returns submission to customer-actionable state (FR-035, Edge Cases — repeated cycles)
+      parameters:
+        - { name: submissionId, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [details]
+              properties: { details: { type: string } }
+      responses:
+        "200": { description: Request recorded as a new status_history cycle }
+
+  /onboarding/checklist:
+    get:
+      tags: [checklist]
+      summary: Live-computed checklist state for the current tenant (FR-037, FR-038)
+      responses:
+        "200":
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ChecklistState" }
+
+  /support-access/grants:
+    get:
+      tags: [support-access]
+      summary: This tenant's support-access history (Acceptance Scenario 8.5)
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/SupportAccessGrantView" }
+    post:
+      tags: [support-access]
+      summary: Create a grant with mandatory expiry (FR-039)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/SupportAccessGrantInput" }
+      responses:
+        "201": { description: Grant created }
+
+  /support-access/grants/{grantId}/revoke:
+    post:
+      tags: [support-access]
+      summary: Immediate revocation before expiry (FR-040)
+      parameters:
+        - { name: grantId, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200": { description: Revoked, audited }
+
+  /internal/audit-events:
+    get:
+      tags: [audit]
+      summary: Read-only platform audit log, filterable by tenant/action/date (FR-007..FR-009, internal auditor role)
+      parameters:
+        - { name: tenantId, in: query, schema: { type: string, format: uuid } }
+        - { name: action, in: query, schema: { type: string } }
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/AuditEventView" }
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: Keycloak-issued access token (kemfai-customers or kemfai-internal realm, per path)
+
+  schemas:
+    PlanSummary:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        monthlyPrice: { type: number }
+        annualPrice: { type: number }
+        currency: { type: string }
+        features: { type: array, items: { type: string } }
+
+    SignupRequest:
+      type: object
+      required: [email, password, planId, billingCycle, acceptedTerms]
+      properties:
+        email: { type: string, format: email }
+        password: { type: string, format: password }
+        planId: { type: string, format: uuid }
+        billingCycle: { type: string, enum: [monthly, annual] }
+        acceptedTerms: { type: boolean }
+
+    TenantStatus:
+      type: object
+      properties:
+        tenantId: { type: string, format: uuid }
+        status: { type: string, enum: [Pending, Creating, Ready, Failed] }
+        failureReason: { type: string, nullable: true }
+
+    CompanySetupState:
+      type: object
+      properties:
+        currentStep: { type: string }
+        setupComplete: { type: boolean }
+        values: { type: object, additionalProperties: true }
+
+    CompanySetupStepInput:
+      type: object
+      required: [step, values]
+      properties:
+        step: { type: string }
+        values: { type: object, additionalProperties: true }
+
+    EntitlementSet:
+      type: object
+      properties:
+        planId: { type: string, format: uuid }
+        features:
+          type: array
+          items:
+            type: object
+            properties:
+              key: { type: string }
+              enabled: { type: boolean }
+              limitValue: { type: number, nullable: true }
+        trialWindowDays: { type: integer }
+        autoRestrictUnpaid: { type: boolean }
+
+    ModuleOption:
+      type: object
+      properties:
+        key: { type: string }
+        name: { type: string }
+        includedInCurrentPlan: { type: boolean }
+        requiredPlanTier: { type: string, nullable: true }
+
+    SubscriptionView:
+      type: object
+      properties:
+        status: { type: string, enum: [PendingActivation, Active, Suspended, Cancelled] }
+        billingPeriodStart: { type: string, format: date }
+        billingPeriodEnd: { type: string, format: date }
+        amountDue: { type: number }
+        currency: { type: string }
+        bankInstructions: { type: string }
+        paymentReference: { type: string }
+
+    PaymentSubmissionInput:
+      type: object
+      required: [bankReference, proofFile]
+      properties:
+        bankReference: { type: string }
+        proofFile: { type: string, format: binary }
+
+    PaymentSubmissionView:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        status: { type: string, enum: [PendingReview, Approved, Rejected, MoreInfoRequested] }
+        submittedAt: { type: string, format: date-time }
+        statusHistory:
+          type: array
+          items: { type: object, additionalProperties: true }
+
+    PaymentSubmissionAdminView:
+      allOf:
+        - $ref: "#/components/schemas/PaymentSubmissionView"
+        - type: object
+          properties:
+            tenantId: { type: string, format: uuid }
+            customerEmail: { type: string }
+            planName: { type: string }
+            amount: { type: number }
+            currency: { type: string }
+            bankReference: { type: string }
+            proofDownloadUrl: { type: string }
+
+    ChecklistState:
+      type: object
+      properties:
+        customerAdded: { type: boolean }
+        bankAdded: { type: boolean }
+        productAdded: { type: boolean }
+        firstInvoiceReady: { type: boolean }
+        gatedOnSubscriptionActivation: { type: boolean }
+
+    SupportAccessGrantInput:
+      type: object
+      required: [granteeRole, expiresAt]
+      properties:
+        granteeRole: { type: string }
+        expiresAt: { type: string, format: date-time }
+
+    SupportAccessGrantView:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        granteeRole: { type: string }
+        grantedAt: { type: string, format: date-time }
+        expiresAt: { type: string, format: date-time }
+        revokedAt: { type: string, format: date-time, nullable: true }
+        usageCount: { type: integer }
+
+    AuditEventView:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        occurredAt: { type: string, format: date-time }
+        actorType: { type: string, enum: [account, internal_user, system] }
+        actorId: { type: string, format: uuid, nullable: true }
+        tenantId: { type: string, format: uuid, nullable: true }
+        action: { type: string }
+        subjectType: { type: string }
+        subjectId: { type: string, format: uuid }
