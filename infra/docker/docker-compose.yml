@@ -1,0 +1,41 @@
+# KEMFAI dev environment - Odoo Community 18 + PostgreSQL 16
+# Dev only. Production runs on a separate VPS with per-tenant DBs.
+
+services:
+  kemfai-db:
+    image: postgres:16
+    container_name: kemfai-db
+    environment:
+      POSTGRES_USER: odoo
+      POSTGRES_PASSWORD: kemfai_dev_pg
+      POSTGRES_DB: postgres
+    volumes:
+      - kemfai-db-data:/var/lib/postgresql/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U odoo"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  kemfai-odoo:
+    image: odoo:18
+    container_name: kemfai-odoo
+    depends_on:
+      kemfai-db:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:8090:8069"
+    environment:
+      HOST: kemfai-db
+      USER: odoo
+      PASSWORD: kemfai_dev_pg
+    volumes:
+      - kemfai-odoo-data:/var/lib/odoo
+      - ./odoo.conf:/etc/odoo/odoo.conf:ro
+      - ../../backend/addons:/mnt/extra-addons
+    restart: unless-stopped
+
+volumes:
+  kemfai-db-data:
+  kemfai-odoo-data:

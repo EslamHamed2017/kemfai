@@ -1,0 +1,42 @@
+# Node / Next.js
+node_modules/
+.next/
+out/
+build/
+dist/
+*.log
+
+# Python / Odoo
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# Env and secrets
+.env
+.env.local
+.env.*.local
+*.pem
+*.key
+secrets/
+
+# Docker volumes
+infra/docker/volumes/
+infra/docker/data/
+
+# OS / IDE
+.DS_Store
+.vscode/
+.idea/
+*.swp
+
+# Test
+coverage/
+.pytest_cache/
+.coverage
+
+# KEMFAI runtime
+tenants/
+uploads/
+tmp/

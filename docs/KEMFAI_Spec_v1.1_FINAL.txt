@@ -1,0 +1,401 @@
+KEMFAI
+Finance. Connected.
+Product, UX, Functional & Technical Implementation Specification
+Version 1.0 - Locked Functional UI/UX Baseline
+Purpose
+Single source of truth for any implementation agent
+Product
+Cloud accounting / finance SaaS for Gulf + Egypt
+Architecture
+Next.js + KEMFAI API/BFF + Odoo Community + PostgreSQL
+Design
+QuickBooks simplicity + Odoo 360° connectivity + KEMFAI financial intelligence
+1. Product Definition
+KEMFAI is a multi-tenant cloud financial platform designed to combine the ease of modern small-business accounting with ERP-grade relational depth, financial control, localization and AI-assisted analysis.
+Core formula: QuickBooks simplicity + Odoo business architecture and 360° connectivity + KEMFAI financial control and intelligence.
+Primary launch markets: UAE, Saudi Arabia and Egypt; Bahrain and Qatar follow.
+Odoo Community is the business/accounting engine. The customer must never be exposed to the native Odoo UI.
+KEMFAI must be usable by a small-business owner while scaling to CFO, accounting and multi-entity workflows.
+The product is SaaS: public website, pricing, signup, subscription, tenant provisioning, onboarding, accounting application and KEMFAI super-admin control center.
+1.1 Non-negotiable product principles
+ID
+Principle
+Implementation rule
+P-01
+Simple by default
+Advanced accounting fields use progressive disclosure; do not crowd default transaction screens.
+P-02
+Connected everywhere
+No dead-end records. Every business/financial object exposes related records and source relationships.
+P-03
+No dead numbers
+Every material KPI/report/dashboard number must drill to calculation, transactions and source documents.
+P-04
+Account = What; Dimension = Where/Who/Why
+Do not multiply GL accounts to represent branch, department, project, cost center or salesperson.
+P-05
+AI is assistive
+AI detects, suggests and explains; final posting/approval remains controlled by authorized users.
+P-06
+Auditability
+No silent deletion of posted accounting. Reverse/correct/repost with full history.
+P-07
+Configuration over hard-coding
+Plans, entitlements, tax rules, approval rules and dimensions must be data-driven.
+2. Target Users, Roles & Permissions
+Customer role templates: Business Owner/CEO, CFO/Finance Manager, Accounting Manager, Accountant, AR Accountant, AP Accountant, Treasury, Sales User, Purchase User, Inventory User, Project Manager, Approver and Auditor. Small businesses may combine roles.
+Permission verbs: View, Create, Edit, Post, Approve, Pay, Reverse, Export.
+Permission scopes: Company, Branch, Department, Project and Amount Threshold.
+Support access by KEMFAI staff must be customer-granted, time-limited, automatically expire and be fully logged.
+Internal KEMFAI roles: Super Admin, Commercial Admin, Customer Success, Support, Billing Admin, Technical Admin, Localization Admin and Read-only Management.
+3. SaaS Customer Journey
+Step
+Screen / State
+Required outcome
+1
+Public Website
+Home, Features, Pricing, Compare Plans, Login, Signup, Contact.
+2
+Choose Plan
+Monthly/annual choice; plan features and limits come from entitlement data.
+3
+Account
+Email signup, verification and security.
+4
+Trial / Checkout
+Trial or paid subscription; success/failure states.
+5
+Provisioning
+Create tenant/workspace and initial company automatically.
+6
+Setup Wizard
+Country, company, currency, fiscal year, VAT/tax, industry and accounting setup.
+7
+Migration Choice
+Start Fresh / Excel / QuickBooks / Odoo.
+8
+Feature Selection
+Accounting, Sales, Purchases, Inventory, Projects, Budgeting.
+9
+Onboarding Checklist
+Customer, bank, product/service, first invoice, bank import/connect.
+10
+First Invoice
+Create -> Review -> Post -> Send -> show financial impact and 360° links.
+Definition of Done: a new user can register, subscribe, set up a company, create a customer and invoice, post/send it, see AR/Revenue/VAT/JE impact and navigate back to its business context without seeing Odoo.
+4. Navigation & Master UX Patterns
+Primary navigation: Home, Money, Sales, Purchases, Projects, Inventory, Accounting, Reports; Apps/More and Settings are secondary.
+Global controls: Company selector, Period, Global Search, + New, Notifications, Approval Inbox, Ask KEMFAI, Recent Items and Favorites.
+Master Pattern
+Used for
+Core anatomy
+Dashboard
+Home / role command centers
+KPIs, widgets, trends, direct actions, drill-down.
+Financial List
+Customers, invoices, bills, projects, accounts
+Search, filters, grouping, financial grid, saved views.
+360° Workspace
+Customer, Vendor, Project, Product, Account
+Header, KPIs, smart connections, related records, activity, documents.
+Transaction Composer
+Invoice, Bill, Quote, PO, Expense, JE
+Simple fields first, line grid, totals, more details, workflow actions.
+Financial Report
+P&L, BS, Cash Flow, budgets
+Period/company/dimensions, compare, expandable hierarchy, drill-down.
+Reconciliation Workspace
+Banking
+Bank line vs system records, match/create/split/transfer, confidence and audit trail.
+5. Home Dashboard Engine - P0
+QuickBooks-inspired financial dashboard with KEMFAI visual identity and Odoo-style drill-down.
+Default snapshot: Cash & Bank, Revenue, Expenses, Net Profit, Receivables and Payables.
+Configurable widgets: Income vs Expenses, Cash Flow, AR Aging, AP Aging, Sales, Budget vs Actual, Projects, Approvals, Close Status and Bank Reconciliation.
+Widgets are add/remove/reorder/resize and support role-based default layouts.
+Action Center includes overdue invoices, approvals, unreconciled bank transactions, budget alerts and close tasks.
+Every widget is actionable and drillable. Example: Overdue AR -> Customer -> Invoice -> Project -> Payment -> Bank -> Journal.
+Dashboard configuration must be extensible; new widgets cannot require redesign of Home.
+6. 360° Financial Graph
+KEMFAI must preserve Odoo's relational strength while presenting it in a simpler workspace model.
+Object
+Required connected objects
+Customer
+Quotes, SOs, Projects, Invoices, Collections, Payments, Statements, Documents, AR Aging, Profitability.
+Vendor
+RFQs, POs, Receipts, Bills, Payments, Documents, AP Aging.
+Project
+Customer, Sales, Costs, POs, Bills, Inventory, Collections, Budget, Forecast, Profit, Documents.
+Invoice
+Customer, SO, Project, Delivery, Payment, Bank Transaction, Journal, Tax, Attachments.
+Bill
+Vendor, PO, Receipt, Project, Payment Schedule, Payment, Bank, Journal, Documents.
+Bank Transaction
+Payment, Invoice/Bill, Customer/Vendor, Project, Journal.
+Journal Entry
+Source document, Customer/Vendor, Project, Payment, Bank and report impact.
+Record relationships must be traversable both forward and backward.
+Financial story/timeline should show business progression where applicable: Quote -> SO -> Delivery -> Invoice -> Payment -> Bank Reconciliation.
+7. Accounting Core & Chart of Accounts
+7.1 Lean COA + Parent Accounts + Dimensions
+The Chart of Accounts must remain compact. Parent accounts are reporting/aggregation nodes; posting occurs only to posting accounts.
+Example hierarchy: Operating Expenses [Parent] -> Occupancy [Parent] -> Rent Expense [Posting].
+Do not create separate rent accounts for Dubai, Riyadh, warehouse, sales, etc. Those attributes belong to dimensions.
+GL line data model concept: Account + Debit/Credit + Entity + Branch + Department + Cost Center + Project + Salesperson + Custom Dimensions.
+Dimension engine: Entity, Branch/Location, Department, Cost Center, Project, Salesperson and configurable custom dimensions/tags.
+Dimension validation rules may be account- or transaction-type-specific. Example: Project Cost requires Project and Cost Center.
+Reports and budgets use the same dimensions. 'Analyze by' must support dimension pivots without creating new accounts.
+7.2 Core GL
+Journals, automatic double-entry, manual JE, recurring JE, opening balances, accruals, prepayments, fixed assets, depreciation, multi-currency GL, realized/unrealized FX, reversing entries and audit trail.
+Month-end states: Open -> Soft Close -> Finance Review -> Hard Close. Reopening requires authorization and logging.
+Business transactions generate accounting entries automatically; authorized accountants can drill into the accounting impact.
+8. Sales & Accounts Receivable
+Customer, Estimate/Quotation, optional Sales Order, Quote -> SO -> Invoice, direct invoice, progress/partial invoices, deposits/advances, recurring invoices, credit notes/refunds, discounts and payment terms.
+Partial collections and one payment allocated to multiple invoices.
+Customer Statement, AR Aging, reminders, credit limits, pricelists and multi-currency.
+Collection Schedule supports milestone percentages/dates and feeds Expected Cash Flow.
+Invoice composer defaults to Customer, Invoice Date, Due Date, Currency, optional Project, line items, tax and totals. Dimensions/accounting details sit under More Details.
+Post screen shows AR, Revenue and VAT financial impact plus smart links to SO/Project/Delivery/Payment/Journal/Documents.
+9. Purchases & Accounts Payable
+Vendor, Direct Expense, Vendor Bill, RFQ, PO, PO -> Receipt -> Bill, direct bill, vendor advances, partial payments, credits/refunds and recurring bills.
+3-way match: PO <-> Receipt <-> Bill; exception handling requires explicit warning/approval.
+Vendor Payment Schedule supports advance/pre-shipment/receipt milestones and feeds treasury forecast.
+PO confirmation creates committed cost against project/budget where applicable.
+Vendor 360° mirrors Customer 360° with AP context.
+10. Banking, Treasury & Reconciliation
+Multiple bank accounts/currencies; CSV/Excel/OFX import at launch; bank APIs later.
+Reconciliation: bank transaction vs KEMFAI records with suggested match, confidence, Match/Create/Split/Transfer/Ignore and undo/history.
+Bank rules for recurring charges and transaction categorization.
+Split transaction across accounts/projects/cost centers/dimensions.
+PDC/cheque lifecycle: customer received/in hand/deposited/cleared/bounced; vendor issued/future dated/presented/cleared/cancelled.
+Treasury formula: Current Cash + Expected Collections + Customer Cheques - Bills Due - Vendor Cheques - Scheduled PO Payments.
+P1: 13-week cash forecast.
+11. Projects & Budgeting
+11.1 Project Financial Control
+Project is a first-class object, never only a tag.
+Project flow: Sales -> Cost -> PO -> Bill -> Expenses -> Collections -> Profit -> Budget -> Commitments.
+Overview KPIs: Contract Value, Invoiced, Collected, Outstanding, Revenue, Actual Cost, Committed Cost, Forecast Final Cost, Current GP and Forecast Final GP.
+Tabs: Overview, Revenue, Costs, Budget, Collections, Activity, Documents.
+Every project number drills to transactions and sources.
+11.2 Budget Engine
+Core columns: Budget | Actual | Committed | Forecast | Variance.
+Annual/monthly; P&L/BS; by Account, Project and Dimensions.
+Versions: Original, Revised, Forecast 1, Forecast 2; approvals and locking.
+Excel import/export and copy previous year.
+Committed cost derives from open/confirmed procurement commitments, not only posted actuals.
+12. Inventory & Costing
+Products/services, SKU/barcode, On Hand/Available/Reserved, multi-warehouse/location, receipts, deliveries, internal transfers, adjustments and reorder.
+Automatic COGS, inventory valuation, Average/FIFO/Standard cost, optional lot/serial.
+Landed Cost allocation by value, quantity, weight or volume.
+Inventory aging/movement and project/dimension allocation.
+Manufacturing/MRP is not P0.
+13. Reporting & CFO Intelligence
+Financial Statements: P&L, Balance Sheet, Cash Flow, Trial Balance, General Ledger.
+Management: Budget vs Actual, Actual + Committed vs Budget, Forecast vs Budget, Project Profitability, Sales/Margin and 13-week cash.
+AR/AP: Aging, Customer/Vendor Statements and collection/payment forecasts.
+Compliance/operations: VAT, Bank Reconciliation, Inventory Valuation/Aging.
+One Financial Report Engine: Period, Company, Compare, Dimensions, Accounting Basis and Currency.
+Comparisons: Budget, Last Year, Previous Period and Forecast.
+Balance Sheet and P&L numbers drill to accounts -> dimensions/entities -> transactions -> source records.
+Monthly Management Pack: selected reports to PDF/Excel/share; AI executive commentary later.
+14. Expenses, Assets, Payroll Financial Layer & Close
+Expenses: direct expense, employee claims, petty cash wallet, employee advance, corporate cards, receipts, split allocation, VAT, approvals and reimbursements.
+Assets P1: asset register/categories, purchase-to-asset, depreciation, transfers, disposal and gain/loss. IFRS 16 later.
+Payroll financial layer P1: employee master, salary/allowance/deduction, bonus/commission, advances/loans, reimbursement, EOS/leave accounting, payroll journal, allocation and payment file. Do not build full HR in V1.
+Close Workspace: Bank, AR, AP, Inventory, Accruals, Prepayments, Depreciation, FX, VAT, Intercompany and Period Lock with owners/status.
+15. Approvals, Controls, Documents & Audit
+Central Approval Engine shared by modules; role/amount/company/department/project rules, multi-level approval, maker-checker, segregation of duties, delegation and rejection reasons.
+Controls include duplicate invoice, over budget, credit limit, bill > PO, missing documents and post-close edits.
+Document Engine links PDF/Excel/image evidence to Invoice, Bill, PO, Payment, JE, Project and Asset; preview, category, search, version history and missing-document alerts.
+Audit path example: Payment -> Bill -> PO -> Receipt/GRN -> Quote -> Approval -> Bank Transaction.
+Audit Center highlights manual journals, post-close entries, reopened periods, vendor bank changes, overrides and missing evidence.
+16. Multi-company, Intercompany & Consolidation
+Multiple legal entities, base currencies, COAs, fiscal years and tax setups with user access by company.
+Group reporting currency and FX translation.
+Intercompany auto-counterpart and matching differences.
+Consolidation flow: Local TB -> Mapping -> Currency Translation -> Adjustments -> Eliminations -> Consolidated FS.
+Basic multi-company/intercompany/consolidation is P1; advanced consolidation and minority interest are later.
+17. Localization Architecture
+Architecture: Accounting Core -> Tax Engine -> Country Pack -> Government Connector.
+Country pack contains tax codes, tax rules, invoice requirements, VAT return, credit/debit notes, tax reports and e-invoice mapping.
+Tax rates and regulatory rules must not be hard-coded into accounting core.
+Priority: UAE, KSA, Egypt at launch foundation; Bahrain and Qatar follow.
+Government connector layer supports UAE structured e-invoicing, KSA ZATCA and Egypt ETA as required by rollout.
+18. AI Layer
+Ask KEMFAI natural-language financial questions in Arabic and English.
+V1: report commentary, variance explanation, cash-flow explanation, bank matching suggestions, categorization suggestions and duplicate-bill detection.
+AI response contract: Answer -> Calculation -> Source Transactions. The user must be able to inspect evidence.
+Posting contract: Detect -> Suggest -> Explain -> Authorized User Approves -> Post.
+AI must not autonomously create/post final accounting entries without controlled authorization.
+19. SaaS Subscription & KEMFAI Super Admin
+Subscription lifecycle: Trial -> Subscribe -> Active -> Renew -> Upgrade/Downgrade -> Payment Failed -> Grace -> Suspended -> Reactivate -> Cancel.
+Expired/cancelled subscription must not delete customer data.
+Feature Entitlements Engine: Plan -> Features -> Limits. Never hard-code logic such as if plan == Starter.
+Admin can create/edit plans, monthly/annual prices, feature limits, trials, coupons, complimentary/custom pricing and publish/unpublish plans.
+Super Admin: Customers, Tenants, Plans, Pricing, Features, Subscriptions, Payments, Coupons, Usage, Revenue/MRR, Support, Audit Log and System Health.
+Downgrade validates active usage against target limits before completion.
+20. Visual Design System - Locked Direction
+Surface
+Direction
+Public Website
+Dark cinematic SaaS style: black/midnight purple, violet/lavender glow, premium product render, 360° connection visualization.
+In-App Default
+Light mode: white/off-white, lavender/purple accents, soft gray borders, minimal shadows, high readability for long finance sessions.
+In-App Dark
+Premium optional dark mode with restrained glow; data readability takes priority.
+Brand Accent
+Violet / lavender. Green, red and amber are semantic finance/status colors only.
+Design System
+IBM Carbon as engineering/component/accessibility base, customized into KEMFAI Financial Design Layer.
+Reference palette: Background #08080D; deep surface #11101B; primary violet #8B7CF6; glow lavender #B9A7FF; soft purple #6D63B8; primary text #F5F3FA; secondary text #A7A3B3.
+Do not ship stock Carbon visual identity. KEMFAI components include MoneyCell, VarianceCell, AgingGrid, KPIBlock, ReconciliationRow, JournalViewer, BudgetBar, CashTimeline and ApprovalCard.
+UX philosophy: See -> Understand -> Act -> Verify.
+21. Technical Architecture
+Launch architecture is a modular SaaS monolith, not microservices.
+Layer
+Decision
+Frontend
+Next.js / React, KEMFAI UI, Carbon-based component layer.
+API/BFF
+KEMFAI-controlled API boundary between frontend and Odoo; native Odoo UI is not customer-facing.
+Business Engine
+Odoo Community with isolated kemfai_* modules; never modify Odoo core directly.
+Database
+PostgreSQL.
+Background Work
+Job/queue mechanism for imports, reports, notifications, connectors and AI tasks.
+External Services
+Identity/Auth, Subscription/Billing, File Storage, Email/Notifications, AI, Government connectors.
+Tenancy
+Database-per-tenant. Every customer/tenant receives a separate PostgreSQL/Odoo database from launch; tenant routing/provisioning is controlled by KEMFAI.
+Reuse Odoo foundations for users/companies/contacts/products, ORM/security, accounting objects/currencies/journals, sales/purchase and inventory.
+Extend/customize accounting UX and controls, bank/treasury, reporting, projects, budgets, dimensions, approvals, intercompany/consolidation, localization and AI.
+Use Odoo Community/LGPL-compatible code only; do not copy proprietary Enterprise modules.
+22. Data & Domain Guardrails
+Use immutable IDs and explicit tenant/company ownership on domain records.
+Posted accounting entries are append/correct/reverse oriented; never rely on destructive edits.
+All financial source relationships must be explicit, queryable and auditable.
+Dimensions are normalized business attributes, not encoded into account names.
+Money values require currency, precision and base-currency handling.
+Dates/times require company/user timezone semantics and audit timestamps.
+Files/evidence must use secure object storage references, not database blobs where avoidable.
+Critical workflows should be idempotent: payment callbacks, posting, provisioning, connector ingestion and background jobs.
+23. P0 / P1 / P2 Delivery Scope
+Priority
+Scope
+P0 - Launch
+SaaS onboarding/subscription foundation; Accounting Core; Lean COA/Parents/Dimensions; Sales/AR; Purchases/AP; Banking/Reconciliation; Inventory; Projects; Budgeting; Reporting; Dashboard; 360° Workspaces; Approvals/Controls; Documents; Migration; localization foundation; AI V1.
+P1
+Treasury/13-week cash; cheques; multi-company/intercompany/basic consolidation; assets; expenses/cards/petty cash; payroll financial layer; subscriptions/deferred revenue; close management; government localization connectors; OCR.
+P2
+Advanced consolidation; IFRS 16; predictive/anomaly AI; SaaS metrics; advanced reporting; mobile; broader integrations and autonomous workflows subject to controls.
+24. Migration & Opening Balances
+Migration Wizard: Upload -> Map -> Validate -> Preview -> Reconcile -> Approve -> Post.
+P0 imports: COA, customers, vendors, products, opening TB, open AR/AP, bank balances, inventory quantity/value, fixed assets/accumulated depreciation, employee balances, projects, open SO/PO and dimensions.
+Prefer cutoff-based migration; full historical transaction migration is optional.
+Control report: TB, AR=GL, AP=GL, Bank, Inventory=GL, Assets=GL and Retained Earnings.
+25. Agent Implementation Contract
+Any implementation agent must treat this document as the baseline product contract.
+Do not replace agreed UX with native Odoo screens.
+Do not change navigation, accounting model, parent/dimension philosophy or 360° relationship rules without an explicit product decision.
+Implement vertical slices end-to-end: UI -> API/BFF -> domain/service -> Odoo/posting -> audit -> tests.
+Every story must define permissions, tenant/company scope, audit events, empty/error/loading states and accessibility.
+Every financial feature must define posting behavior, reversals, multi-currency behavior and dimension propagation where applicable.
+Every KPI/report must document calculation logic and drill-down target.
+No plan, tax, approval or localization rule may be hard-coded when configuration is appropriate.
+Automated tests must cover accounting invariants: debits=credits, tenant isolation, authorization, idempotency and source linkage.
+Use feature flags for incomplete modules. Do not expose partially implemented financial workflows to production users.
+If the specification is ambiguous on a material accounting/product decision, stop and raise a decision request rather than inventing behavior.
+26. Definition of Done - P0
+A new customer can self-register, subscribe/trial, provision a workspace and configure a company.
+User can complete customer-to-cash and vendor-to-payment workflows with correct accounting entries.
+Bank transactions can be imported, matched and reconciled with undo/history.
+Projects expose revenue, cost, committed cost, collections, budget, forecast and profitability.
+COA supports parent/reporting accounts and posting accounts; dimensions prevent account explosion.
+P&L, BS, Cash Flow, TB, GL, AR/AP Aging, Project P&L and Budget vs Actual are available and drillable.
+Dashboard is role-based, configurable and actionable.
+Every key object supports 360° navigation and evidence/audit history.
+Tenant isolation, roles/permissions, audit logs, posting controls and period close rules pass automated tests.
+Customer-facing UI contains no native Odoo UI dependency.
+27. Final Pre-Build Decisions Still Required
+The functional UI/UX is sufficiently defined to begin specification and prototyping. The following decisions should be locked before production architecture and payment/compliance implementation are considered final:
+Decision
+Why it matters
+Recommended default
+Tenancy model
+Security, backup, upgrades, scaling and data isolation.
+Start with strong logical isolation; preserve path to dedicated DB/instance for enterprise.
+Authentication provider
+Signup, MFA, SSO, sessions and security.
+Use a mature managed identity solution; require MFA capability.
+Billing/payment provider
+Subscriptions, tax invoices, retries, webhooks and regional payments.
+V1: manual bank transfer to KEMFAI account + proof/reference + Billing Admin approval/activation. Phase 2: Stripe through an abstract Billing Service.
+Exact launch country compliance
+Invoice schema, VAT, e-invoice and retention requirements.
+Produce a signed localization matrix for UAE/KSA/Egypt before go-live.
+Accounting policy matrix
+Revenue recognition, inventory valuation defaults, FX, rounding, period controls.
+Finance owner approves policy matrix before posting engine is frozen.
+Data retention / backup / DR
+Financial SaaS requires explicit RPO/RTO and restore testing.
+Define RPO/RTO, encrypted backups and tested restore runbook.
+Security baseline
+Financial data, support access, secrets and admin actions.
+Threat model + OWASP controls + encryption + audit + least privilege.
+API contract/versioning
+Allows frontend and agents to work independently.
+OpenAPI-first KEMFAI API/BFF with versioned contracts.
+Localization/language
+Arabic/English affects RTL, documents and reporting.
+English + Arabic from Day 1, with complete LTR/RTL support across UI, invoices, reports and documents.
+Brand assets
+Final logo/font usage affects website/app production polish.
+Finalize logo variants and brand tokens before visual production lock.
+28. Recommended Immediate Build Sequence
+Sprint/Gate
+Outcome
+Gate 0
+Freeze decisions in Section 27; repo standards, environments, CI/CD, test strategy and domain glossary.
+Slice 1
+SaaS shell: auth, tenant/company, roles, subscription entitlement skeleton, setup wizard.
+Slice 2
+Accounting foundation: COA parents/posting accounts, dimensions, journals, currencies, audit/posting engine.
+Slice 3
+Customer 360° + Invoice + AR + financial impact + drill-down.
+Slice 4
+Vendor 360° + PO/Receipt/Bill/AP + committed cost.
+Slice 5
+Bank import/reconciliation + payments + source linkage.
+Slice 6
+Projects + Budget/Actual/Committed/Forecast.
+Slice 7
+Financial reports + Dashboard engine + role views.
+Slice 8
+Inventory/costing + landed cost; controls/documents/migration hardening.
+Release Gate
+Security, tenant isolation, accounting reconciliation, localization, backup/restore, performance and UAT sign-off.
+END OF BASELINE SPECIFICATION
+29. Locked Pre-Build Decisions - September 2026
+Decision
+Status
+Rule
+Tenant Database
+LOCKED
+Every customer/tenant uses a separate database from launch. No shared accounting database between customers.
+Billing V1
+LOCKED
+Manual bank transfer. KEMFAI displays payment instructions/reference; customer submits proof/reference; Billing Admin verifies and manually activates/renews the subscription. All actions are audited.
+Billing Phase 2
+LOCKED
+Integrate Stripe later for automated checkout, payment confirmation, renewals and webhooks. Stripe remains behind KEMFAI Billing Service and does not own plan/feature entitlement logic.
+Languages
+LOCKED
+English and Arabic from Day 1, including full LTR/RTL component behavior and bilingual customer-facing documents/reports.
+Country Compliance
+LOCKED PRINCIPLE
+Country packs follow applicable official laws/regulations for each jurisdiction and are versioned/configurable. Regulatory logic stays outside the accounting core.
+Accounting Policies
+LOCKED APPROACH
+Use an explicit Accounting Policy Matrix for posting, FX, rounding, costing, reversals, period controls and recognition rules; company/localization settings determine applicable defaults.
+Manual billing lifecycle: Choose Plan -> Sign Up -> Company Setup -> Bank Transfer Instructions -> Submit Payment Proof/Reference -> Pending Activation -> Billing Admin Review -> Activate Subscription -> Provision/Enable Tenant Database. Rejected or unclear payments can move to Request More Information. Renewal follows the same controlled process until Stripe automation is enabled.
+Audit fields for manual activation: customer, tenant, plan, billing period, amount, currency, bank reference, proof document, reviewed by, reviewed at, activation decision, activated by, activated at, notes and status history.

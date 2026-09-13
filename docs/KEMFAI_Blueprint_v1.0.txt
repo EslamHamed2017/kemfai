@@ -1,0 +1,155 @@
+KEMFAIProduct Blueprint v1.0
+Kemet + Finance + AIQuickBooks simplicity × Odoo business power × Gulf & Egypt localization
+Product objective. Launch a sellable accounting and financial-management SaaS on Odoo Community, with a clean KEMFAI module layer, strong CFO controls, and an architecture that can scale from SMEs to multi-entity groups.
+1. Product Principles
+Use Odoo Community as the technical foundation; keep KEMFAI functionality in kemfai_* modules and avoid direct core modification.
+Best-of-both design: preserve QuickBooks-style simplicity while using Odoo-strength workflows where they add material control.
+One posted ledger is the source of truth for financial statements, subledgers, projects, budgets and analytics.
+Projects are first-class financial objects; Tracking Dimensions handle branch, department, cost center, salesperson and custom tags.
+AI may detect, suggest and explain; posting remains deterministic and permission-controlled.
+Country localization is modular: Accounting Core → Tax Engine → Country Pack → Government Connector.
+Design for fast onboarding: Excel/CSV, QuickBooks and Odoo migration paths with reconciliation controls.
+2. Priority Model
+Priority
+Meaning
+Release Intent
+P0 – Launch
+Required for a real company to operate and close its books
+First sellable release
+P1 – Competitive
+Differentiators for trading, projects and finance teams
+Rapid post-launch
+P2 – Intelligence & Scale
+Advanced automation, AI and enterprise finance
+Scale-up
+3. P0 — First Sellable Release
+Accounting Core: COA; journals; double-entry posting; manual/reversing JEs; opening balances; accruals; prepayments; recurring entries; period locks; audit trail.
+Sales & AR: Customers; quotations/estimates; optional sales orders; invoices; credit notes/refunds; deposits; payment terms; partial/multi-invoice collections; statements; AR aging.
+Purchases & AP: Vendors; direct expenses; bills; RFQ/PO; receipts; vendor credits; advances; partial/multi-bill payments; AP aging; payment schedules.
+Banking: Multi-bank/multi-currency; CSV/Excel/OFX import; matching; bank rules; split transactions; transfers; reconciliation; undo/history.
+Inventory & Costing: Products/services; stock on hand/available; warehouses/locations; receipts/deliveries/transfers; adjustments; COGS; FIFO/average/standard cost; valuation; landed cost.
+Projects: Project revenue/cost; invoices/bills/POs; profitability/P&L; budget; committed cost; expected revenue/collections; project cash view.
+Budgeting: Annual/monthly budgets; account/project/dimension budgets; Budget vs Actual; Committed; Forecast; Variance; versions; import/export.
+Reporting: P&L; BS; Cash Flow; TB; GL; account transactions; AR/AP; customer/vendor; VAT; inventory; project P&L; budget variance; bank reconciliation; drill-down; Excel/PDF.
+Tracking Dimensions: Entity, branch/location, department, cost center, salesperson and custom tags; projects remain separate.
+Controls: Role permissions; configurable approval engine; maker-checker; approval history; exceptions; audit trail.
+Documents: Attachments and evidence linking across invoice/bill/PO/payment/JE/project/asset; search; permissions; missing-evidence flags.
+Migration: COA, masters, opening TB, open AR/AP, banks, inventory, assets, projects, open SO/PO; validation and reconciliation report.
+Localization Foundation: Tax engine and country-pack framework. Initial commercial focus: UAE, KSA and Egypt packs; Bahrain/Qatar follow without changing core.
+AI V1: Ask KEMFAI over structured finance data; report/variance/cash commentary; smart bank matching; categorization suggestions; duplicate-bill detection; source-linked answers.
+4. P1 — Competitive Layer
+13-week treasury forecast, customer/vendor cheque lifecycle, projected cash position and finance calendar.
+Multi-company operational controls, automated intercompany documents, matching and basic consolidation/eliminations.
+Fixed-asset register, depreciation, transfers and disposals.
+Employee expenses, advances, petty cash and corporate-card workflows.
+Financial payroll import/posting, employee ledger and sales-commission engine.
+Subscription/contract billing, deferred revenue and revenue-recognition schedules.
+Close Management checklist and CFO Control Center.
+Enhanced localization packs and government connectors.
+OCR invoice/receipt capture and AI-assisted three-way matching.
+5. P2 — Intelligence & Scale
+Advanced consolidation, ownership/minority-interest scenarios and group adjustments.
+IFRS 16 leases, revaluation and impairment workflows.
+Predictive collection risk, cash forecasting and anomaly/fraud detection.
+Advanced subscription metrics (MRR, ARR, churn) and online auto-charge.
+Advanced custom reporting and management-pack automation.
+Mobile-first workflows and broader external integrations.
+Controlled autonomous workflows only where accounting and approval guardrails remain deterministic.
+6. Odoo Community Build Matrix
+Capability
+Reuse
+Extend
+Custom KEMFAI
+Users / Companies / Contacts / Products
+✓
+ORM / PostgreSQL / Security Foundation
+✓
+Core accounting objects / currencies / journals
+✓
+✓
+Sales / Purchase document foundations
+✓
+✓
+Inventory / warehouses / stock moves
+✓
+✓
+Accounting UX & posting controls
+✓
+✓
+Bank reconciliation & treasury
+✓
+✓
+Financial report engine
+✓
+Projects financial control
+✓
+✓
+Budget / committed / forecast engine
+✓
+Tracking Dimensions
+✓
+✓
+Approval / exception engine
+✓
+Intercompany / consolidation
+✓
+✓
+Country packs / e-invoice connectors
+✓
+AI / CFO Copilot
+✓
+7. Core Architecture
+odoo_core → shared platform services
+kemfai_accounting → posting, close, accruals, prepayments, assets hooks
+kemfai_sales / kemfai_purchase → commercial flows and schedules
+kemfai_bank → reconciliation and treasury
+kemfai_project → project financial control
+kemfai_budget → budget, commitments and forecast
+kemfai_dimensions → tracking engine
+kemfai_reporting → financial and management reporting
+kemfai_controls → approvals, SoD and exceptions
+kemfai_documents → evidence and audit center
+kemfai_intercompany / kemfai_consolidation → group finance
+kemfai_localization_* → country packs and connectors
+kemfai_ai → grounded finance copilot
+8. P0 Definition of Done
+A real trading/service/project company can be configured without code changes.
+Opening balances and open subledgers reconcile to the GL.
+Purchase → inventory/service cost → sale → VAT/tax → collection/payment → bank reconciliation works end-to-end.
+P&L, Balance Sheet, Cash Flow and Trial Balance reconcile to the same posted ledger.
+AR/AP statements and aging reconcile to control accounts.
+Project profitability and Budget/Actual/Committed/Forecast are traceable to source transactions.
+Period close, permissions, approvals and audit trail prevent silent accounting changes.
+Data can be exported to Excel/PDF and migrated through controlled templates.
+AI answers expose source calculations/transactions and never invent or directly post accounting entries.
+9. Proposed Delivery Sequence
+Sprint
+Scope
+Sprint 0
+Foundation: repository, Odoo Community baseline, module conventions, CI/CD, environments, security and data model.
+Sprint 1
+Accounting Core + masters + opening balances.
+Sprint 2
+Sales/AR + Purchases/AP.
+Sprint 3
+Banking + reconciliation.
+Sprint 4
+Inventory + costing + landed cost.
+Sprint 5
+Projects + Tracking Dimensions.
+Sprint 6
+Budget + forecast + commitments.
+Sprint 7
+Financial/management reporting + exports.
+Sprint 8
+Controls + documents + migration hardening.
+Sprint 9
+Initial localization packs + AI V1 + release hardening.
+10. Product Guardrails
+No direct Odoo core edits; extension through KEMFAI modules.
+No proprietary QuickBooks/Odoo Enterprise code copying; reproduce desired capabilities through original implementation.
+No manufacturing/CRM/website/helpdesk scope in the initial accounting product.
+No AI-generated ledger balances: financial numbers come from deterministic queries/calculations.
+No feature enters P0 unless it supports a sellable accounting close, localization requirement, migration, or a core KEMFAI differentiator.
+11. Immediate Next Step
+Freeze this blueprint as the product baseline, then convert P0 into SpecKit artifacts: Constitution → Product Requirements → Architecture → Epics → User Stories → Acceptance Criteria → Sprint implementation plan. Each sprint must include accounting reconciliation tests and end-to-end evidence.
