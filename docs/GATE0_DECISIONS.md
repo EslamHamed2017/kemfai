@@ -15,10 +15,10 @@ Decisions that must be frozen before production architecture is final (Spec sect
 ## Still OPEN (owner to decide)
 | # | Decision | Options | Recommended default | Owner decision |
 |---|----------|---------|---------------------|----------------|
-| A | Auth provider | Keycloak (self-host) / Auth0 / Supabase Auth / Clerk | Keycloak self-hosted (no per-user cost, full control, MFA) | PENDING |
-| B | File storage | Local disk / MinIO (self-host S3) / AWS S3 / Bunny | MinIO self-hosted for dev, S3-compatible for prod | PENDING |
-| C | API/BFF stack | Node/TS (NestJS) / Python (FastAPI) | NestJS (matches Next.js TS, OpenAPI-first) | PENDING |
-| D | Ask KEMFAI AI provider | OmniRoute (Claude/GLM) / direct API | OmniRoute (already wired, multi-model failover) | PENDING (lean: OmniRoute) |
+| A | Auth provider | Keycloak (self-host) / Auth0 / Supabase Auth / Clerk | Keycloak self-hosted | LOCKED 2026-09-13 |
+| B | File storage | Local disk / MinIO (self-host S3) / AWS S3 / Bunny | MinIO self-hosted (S3-compatible) | LOCKED 2026-09-13 |
+| C | API/BFF stack | Node/TS (NestJS) / Python (FastAPI) | NestJS (matches Next.js TS, OpenAPI-first) | LOCKED 2026-09-13 |
+| D | Ask KEMFAI AI provider | OmniRoute (Claude/GLM) / direct API | OmniRoute (multi-model failover) | LOCKED 2026-09-13 |
 | E | Odoo version | 17 / 18 / 19 Community | 18 Community (stable, LTS-ish) | Using 18 for dev |
 
 ## Notes
