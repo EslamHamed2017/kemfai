@@ -253,9 +253,10 @@ that every user story depends on.
   - **Roles**: Primary: Claude · Backup: Gemini · Reviewer: Codex
 
 - [ ] T024 [P] Generate typed API client from `contracts/openapi.yaml` into `frontend/src/lib/api-client/`
-  - **Dependencies**: T002, T022
+  - **Dependencies**: T002, T022, T113
   - **Acceptance Criteria**: Generated client's request/response types match every schema in
-    contracts/openapi.yaml with no manual `any` overrides.
+    contracts/openapi.yaml with no manual `any` overrides, including the `PATCH /accounts/me/locale` path added
+    by T113 (Round 2 remediation — see analysis.md).
   - **Roles**: Primary: Claude · Backup: GLM · Reviewer: Codex
 
 - [ ] T025 [P] Implement MinIO integration module (bucket-per-tenant client + presigned URL helper) in
@@ -319,9 +320,21 @@ that every user story depends on.
     `TrialWindowGuard` (T101), not by this job.
   - **Roles**: Primary: GLM · Backup: Claude · Reviewer: Codex
 
+- [ ] T113 [P] Contract-first addition: add `PATCH /accounts/me/locale` (path, `LocaleUpdateRequest` schema,
+  200/422 responses) to `contracts/openapi.yaml`, so the T024 generated frontend client and the T104
+  implementation both consume a committed contract rather than an endpoint introduced only in tasks.md prose, in
+  `contracts/openapi.yaml` (Round 2 remediation — see analysis.md; closes the contract gap left by U2's original
+  T103/T104 addition)
+  - **Dependencies**: None (contract authoring only; no code)
+  - **Acceptance Criteria**: `contracts/openapi.yaml` documents `PATCH /accounts/me/locale` with a
+    `LocaleUpdateRequest` schema (`locale` enum `[en, ar]`) and 200/422 responses; this task is an explicit
+    dependency of T024 (client generation, which must regenerate typed client code against this path) and of
+    T104 (implementation, which must match this schema exactly) — both are ordered strictly after this task.
+  - **Roles**: Primary: Claude · Backup: GLM · Reviewer: Codex
+
 **Checkpoint**: Foundation ready — control-plane schema, guards (including feature-flag/module-gating and
-trial-window enforcement), audit, queues, i18n, and integration clients exist. User story implementation can now
-begin.
+trial-window enforcement), audit, queues, i18n, integration clients, and the locale-endpoint contract exist.
+User story implementation can now begin.
 
 ---
 
@@ -450,11 +463,12 @@ tenant/workspace exists until the verification link is used, and the account can
   wire `next-intl`'s initial locale resolution to read it on login/session-refresh, extending T023's dir-aware
   layout to prefer the persisted Account value over browser-detected locale once authenticated, in
   `backend/api/src/modules/accounts/accounts.controller.ts` and `frontend/src/lib/i18n/` (U2 remediation — see
-  analysis.md)
-  - **Dependencies**: T007, T023, T032
+  analysis.md; contract added via T113 in Round 2 remediation — see analysis.md)
+  - **Dependencies**: T007, T023, T032, T113
   - **Acceptance Criteria**: Matches FR-024; a locale switch made in one session is still in effect after
     logging out and back in in a fresh session/browser context (T103); pre-authentication (public plan list,
-    signup) still uses browser/URL-driven locale detection, unaffected by this task.
+    signup) still uses browser/URL-driven locale detection, unaffected by this task; request/response shape
+    matches the `PATCH /accounts/me/locale` contract added by T113 exactly.
   - **Roles**: Primary: GLM · Backup: Claude · Reviewer: Codex
 
 **Checkpoint**: User Story 1 fully functional and independently testable — a verified, plan-associated identity
@@ -596,10 +610,14 @@ confirm every field persists, RTL fully mirrors, and no native Odoo UI/URL/termi
 
 - [ ] T105 [P] [US3] Contract test: `GET`/`PUT /companies/current/settings` — a distinct post-completion surface
   from the setup wizard — against `contracts/openapi.yaml` in
-  `backend/api/test/contract/company-settings.contract-spec.ts` (F3 remediation — see analysis.md)
+  `backend/api/test/contract/company-settings.contract-spec.ts` (F3 remediation — see analysis.md; status-code
+  contradiction with T106 reconciled in Round 2 remediation — see analysis.md)
   - **Dependencies**: T022
-  - **Acceptance Criteria**: 200/403 response codes exercised and schema-conformant; asserts the endpoint is
-    reachable only when `Company.setup_complete=true` (pre-completion edits remain wizard-only, T054).
+  - **Acceptance Criteria**: 200/403/409 response codes exercised and schema-conformant, exactly as documented
+    in `contracts/openapi.yaml`'s `/companies/current/settings` path (the sole canonical source for these
+    codes); specifically asserts the pre-completion (`Company.setup_complete=false`) case returns **409**, not
+    any other code — this test must not restate or diverge from the code documented in the contract, and T106
+    is the implementation that must match it exactly.
   - **Roles**: Primary: Codex · Backup: GLM · Reviewer: Gemini
 
 ### Implementation for User Story 3
@@ -614,10 +632,15 @@ confirm every field persists, RTL fully mirrors, and no native Odoo UI/URL/termi
   - **Roles**: Primary: GLM · Backup: Claude · Reviewer: Codex
 
 - [ ] T054 [US3] Implement `GET`/`PUT /companies/current/setup` (step save, resume at first incomplete step,
-  country-specific validation, configuration-gap 409) via Odoo JSON-RPC in
+  country-specific validation, configuration-gap 409) via Odoo JSON-RPC, guarded by `TrialWindowGuard` (T101) so
+  a past-window unpaid tenant is denied identically to the other two FR-030a onboarding surfaces, in
   `backend/api/src/modules/company-setup/company-setup.controller.ts` and `.service.ts`
-  - **Dependencies**: T026, T053
-  - **Acceptance Criteria**: Matches Acceptance Scenarios 3.1/3.3/3.4/3.5/3.6.
+  - **Dependencies**: T026, T053, T101
+  - **Acceptance Criteria**: Matches Acceptance Scenarios 3.1/3.3/3.4/3.5/3.6; `TrialWindowGuard` (T101) is
+    applied to this endpoint and denies both the documented UI-shaped call and a raw HTTP replay identically once
+    the trial window has elapsed with `autoRestrictUnpaid` resolved true and no `Active` Subscription — this is
+    one of the three FR-030a onboarding paths (company setup, module selection T076, checklist T082) that must
+    each carry this guard explicitly (Round 2 remediation — see analysis.md).
   - **Roles**: Primary: GLM · Backup: Claude · Reviewer: Codex
 
 - [ ] T055 [US3] Implement `POST /companies/current/setup/complete` (marks `setup_complete` only when all
@@ -641,14 +664,16 @@ confirm every field persists, RTL fully mirrors, and no native Odoo UI/URL/termi
   afterward without re-running the wizard, emitting `company.settings.updated` (distinct from
   `company.setup.completed`) — via Odoo JSON-RPC, in
   `backend/api/src/modules/company-setup/company-settings.controller.ts` and `.service.ts` (F3 remediation —
-  see analysis.md; FR-028)
+  see analysis.md; FR-028; status-code contradiction with T105 reconciled in Round 2 remediation — see
+  analysis.md)
   - **Dependencies**: T055
   - **Acceptance Criteria**: Matches FR-028's "editable afterward through company settings, not only by
-    re-running the wizard"; a call before `setup_complete=true` is rejected (409), directing the caller to the
-    wizard (T054) instead; only Workspace Owner may call it, enforced by `RoleGuard`/`TenantScopeGuard`; this
-    task adds the `GET`/`PUT /companies/current/settings` path and schemas to `contracts/openapi.yaml` (not
-    added during this remediation pass, since that file was out of scope for the remediation edit) so T105's
-    contract test has a schema to validate against.
+    re-running the wizard"; a call before `setup_complete=true` is rejected with the single canonical **409**
+    documented on the `GET`/`PUT /companies/current/settings` path in `contracts/openapi.yaml` (added by this
+    remediation pass — no longer deferred), directing the caller to the wizard (T054) instead; only Workspace
+    Owner may call it, enforced by `RoleGuard`/`TenantScopeGuard`; the response code and schema this
+    implementation returns MUST match `contracts/openapi.yaml` exactly, which is now the single source of truth
+    T105's contract test validates against.
   - **Roles**: Primary: GLM · Backup: Claude · Reviewer: Codex
 
 - [ ] T107 [P] [US3] Build the company settings screen (post-completion editing of country/identity/currency/
@@ -848,18 +873,25 @@ module outside plan entitlements, confirm the system blocks/upsells rather than 
   `EntitlementsService`) and `PUT /modules/selection` (server-side entitlement enforcement, immediate
   reflection, emits `modules.selection.changed`) in
   `backend/api/src/modules/module-selection/module-selection.controller.ts` and `.service.ts`
-  - **Dependencies**: T010, T026, T075, T100
+  - **Dependencies**: T010, T026, T075, T100, T101
   - **Acceptance Criteria**: Matches Acceptance Scenarios 4.1/4.2/4.3/4.4; reads only `EntitlementsService`
     (T010), never a raw plan-name check; the module-selection surface is gated by `FeatureFlagGuard` (T100) so
     it can be hidden platform-wide until intentionally turned on, per Constitution Principle VI (C1 remediation
-    — see analysis.md).
+    — see analysis.md); `TrialWindowGuard` (T101) is also applied to this endpoint and denies both the
+    documented UI-shaped call and a raw HTTP replay identically once the trial window has elapsed with
+    `autoRestrictUnpaid` resolved true and no `Active` Subscription — one of the three FR-030a onboarding paths
+    (company setup T054, module selection, checklist T082) that must each carry this guard explicitly (Round 2
+    remediation — see analysis.md).
   - **Roles**: Primary: GLM · Backup: Claude · Reviewer: Codex
 
 - [ ] T077 [P] [US4] Build the module/feature selection UI (included vs. upgrade-required indicators, blocked-
   selection upsell messaging) in `frontend/src/app/(onboarding)/modules/page.tsx`
   - **Dependencies**: T024, T076
   - **Acceptance Criteria**: Matches Acceptance Scenarios 4.1–4.4; reflects immediately in navigation/checklist
-    per Acceptance Scenario 4.2.
+    per Acceptance Scenario 4.2; when `FeatureFlag.enabled=false` for the modules feature, this route and any
+    navigation entry pointing to it are absent from the rendered UI entirely (no disabled/greyed-out link, no
+    reachable-but-blocked page) — matching data-model.md's "hidden entirely" requirement for `FeatureFlagGuard`
+    (T100), not merely a server-side 403 (Round 2 remediation — see analysis.md).
   - **Roles**: Primary: Claude · Backup: Gemini · Reviewer: Codex
 
 **Checkpoint**: Module selection is live, entitlement-gated, and audited.
@@ -910,17 +942,25 @@ change without requiring later invoicing slices.
 - [ ] T082 [US7] Implement `GET /onboarding/checklist` (live-computed via Odoo JSON-RPC,
   `gatedOnSubscriptionActivation` sourced from `Subscription.status`) in
   `backend/api/src/modules/checklist/checklist.controller.ts` and `.service.ts`
-  - **Dependencies**: T026, T081, T011, T100
+  - **Dependencies**: T026, T081, T011, T100, T101
   - **Acceptance Criteria**: Matches Acceptance Scenarios 7.1–7.4 and FR-038's distinct activation-gate
     indication; the checklist surface is gated by `FeatureFlagGuard` (T100) so it can be hidden platform-wide
-    until intentionally turned on, per Constitution Principle VI (C1 remediation — see analysis.md).
+    until intentionally turned on, per Constitution Principle VI (C1 remediation — see analysis.md);
+    `TrialWindowGuard` (T101) is also applied to this endpoint and denies both the documented UI-shaped call and
+    a raw HTTP replay identically once the trial window has elapsed with `autoRestrictUnpaid` resolved true and
+    no `Active` Subscription — one of the three FR-030a onboarding paths (company setup T054, module selection
+    T076, checklist) that must each carry this guard explicitly (Round 2 remediation — see analysis.md).
   - **Roles**: Primary: GLM · Backup: Claude · Reviewer: Codex
 
 - [ ] T083 [P] [US7] Build the onboarding checklist UI (four items with direct links, empty state, activation-
   gate indicator distinct from setup-readiness) in `frontend/src/app/(onboarding)/checklist/page.tsx`
   - **Dependencies**: T024, T082
   - **Acceptance Criteria**: Matches Acceptance Scenarios 7.1–7.4; updates without a page reload initiated
-    solely for that purpose (Acceptance Scenario 7.2).
+    solely for that purpose (Acceptance Scenario 7.2); when `FeatureFlag.enabled=false` for the checklist
+    feature, this route and any navigation entry pointing to it are absent from the rendered UI entirely (no
+    disabled/greyed-out link, no reachable-but-blocked page) — matching data-model.md's "hidden entirely"
+    requirement for `FeatureFlagGuard` (T100), not merely a server-side 403 (Round 2 remediation — see
+    analysis.md).
   - **Roles**: Primary: Claude · Backup: Gemini · Reviewer: Codex
 
 **Checkpoint**: All setup/billing flows now have a live guidance layer on top of them.
@@ -996,7 +1036,11 @@ refusal after expiry, and confirm every action is audit-logged — independent o
 - [ ] T091 [P] [US8] Build the support-access grant creation form, active-grant status, and history view
   (every past grant/usage/revocation visible) in `frontend/src/app/(onboarding)/support-access/page.tsx`
   - **Dependencies**: T024, T088
-  - **Acceptance Criteria**: Matches Acceptance Scenarios 8.1/8.4/8.5.
+  - **Acceptance Criteria**: Matches Acceptance Scenarios 8.1/8.4/8.5; when `FeatureFlag.enabled=false` for the
+    support-access feature, this route and any navigation entry pointing to it are absent from the rendered UI
+    entirely (no disabled/greyed-out link, no reachable-but-blocked page) — matching data-model.md's "hidden
+    entirely" requirement for `FeatureFlagGuard` (T100), not merely a server-side 403 (Round 2 remediation — see
+    analysis.md).
   - **Roles**: Primary: Claude · Backup: Gemini · Reviewer: Codex
 
 **Checkpoint**: All 8 user stories are independently functional — full Slice 1 scope delivered.
@@ -1048,17 +1092,27 @@ refusal after expiry, and confirm every action is audit-logged — independent o
 - [ ] T097 [P] Documentation: reconcile any implementation-time deviations discovered during build back into
   `specs/001-saas-onboarding-shell/quickstart.md` and, if a locked baseline item is affected, flag it for Owner
   approval per `docs/GATE0_DECISIONS.md`
-  - **Dependencies**: T001–T096 (post-implementation)
-  - **Acceptance Criteria**: quickstart.md accurately describes the as-built system with zero stale steps; any
-    locked-baseline deviation is explicitly flagged, not silently merged (Constitution Governance).
+  - **Dependencies**: T001–T096, T099–T107 (post-implementation — the full set of Setup/Foundational/User-Story
+    tasks including the T099–T107 remediation additions; previously this omitted T099–T107 entirely, letting
+    documentation reconciliation complete before those tasks existed — fixed in Round 2 remediation; see
+    analysis.md)
+  - **Acceptance Criteria**: quickstart.md accurately describes the as-built system with zero stale steps,
+    including the feature-flag (T099/T100), trial-window (T101/T102), locale-persistence (T103/T104), and
+    company-settings (T105–T107) mechanics; any locked-baseline deviation is explicitly flagged, not silently
+    merged (Constitution Governance).
   - **Roles**: Primary: Claude · Backup: Gemini · Reviewer: Codex
 
 - [ ] T098 Run the full `quickstart.md` validation end-to-end (all 8 story walkthroughs, once EN/LTR and once
   AR/RTL) and record pass/fail results
-  - **Dependencies**: T097
+  - **Dependencies**: T097, T108, T109, T110, T111, T112 (previously only T097, which let this task claim a
+    fully green automated suite before the CI wiring and full-surface sweeps it depends on even existed — fixed
+    in Round 2 remediation; see analysis.md)
   - **Acceptance Criteria**: All 8 walkthroughs pass in both locales; all four automated verification entry
-    points (`test:contract`, `test:integration`, `playwright test`, Odoo addon tests) are green — the slice is
-    considered validated per quickstart.md's closing statement.
+    points (`test:contract`, `test:integration`, `playwright test`, Odoo addon tests), as wired into CI by T108,
+    are green; the T109 Odoo-exposure sweep, T110 colour-independence sweep, T111 trial-window enforcement test,
+    and T112 feature-flag gating test (HTTP and rendered-UI) all pass — the slice is considered validated per
+    quickstart.md's closing statement only once every one of these is green, not merely the pre-remediation
+    T001–T096 suite.
   - **Roles**: Primary: Gemini · Backup: Claude · Reviewer: Codex
 
 - [ ] T108 [P] Wire the NestJS Jest contract/integration suites (`npm run test:contract`,
@@ -1074,48 +1128,70 @@ refusal after expiry, and confirm every action is audit-logged — independent o
   - **Roles**: Primary: GLM · Backup: Codex · Reviewer: Gemini
 
 - [ ] T109 [P] Full-surface Odoo-exposure sweep: assert no native Odoo terminology, URLs, or raw Odoo payloads
-  appear in any HTTP response body or rendered DOM across billing (T063), checklist (T083), module selection
-  (T077), support access (T091), and the Billing Admin review queue (T071) — not only the US3 setup wizard
-  already covered by T052 — in `frontend/tests/e2e/full-surface-odoo-exposure-sweep.spec.ts` and
+  appear in any HTTP response body or rendered DOM across **every** customer-facing screen/endpoint delivered by
+  this feature — public plan list (T036), signup (T037), verify-email (T038), MFA enrollment (T039),
+  provisioning status (T048), the company setup wizard (T052/T056), company settings (T107), billing (T063),
+  module selection (T077), the onboarding checklist (T083), support access (T091), and the Billing Admin review
+  queue (T071) — not a subset, in `frontend/tests/e2e/full-surface-odoo-exposure-sweep.spec.ts` and
   `backend/api/test/integration/no-odoo-exposure.integration-spec.ts` (G1/F6 remediation — see analysis.md;
-  FR-042, SC-011)
-  - **Dependencies**: T052, T063, T071, T077, T083, T091
+  FR-013, FR-042, SC-011; scope widened to public/auth, provisioning status, and company settings in Round 2
+  remediation — see analysis.md)
+  - **Dependencies**: T036, T037, T038, T039, T048, T052, T063, T071, T077, T083, T091, T107
   - **Acceptance Criteria**: Scans rendered DOM and HTTP response bodies for Odoo-specific terms (e.g.
     `res.company`, `res.partner`, `/web/`, `xmlrpc`, `jsonrpc`, `kemfai_tenant_` database names) across every
-    customer-facing screen/endpoint in this feature; zero instances found, directly closing SC-011's "across
-    acceptance testing" claim rather than leaving it scoped to one story.
+    screen enumerated in FR-013 plus the provisioning-status screen (T048) and the company-settings screen
+    (T107, added after FR-013 was written but customer-facing) — zero instances found, directly closing
+    SC-011's "across acceptance testing" claim across the feature's full surface, not a subset of it.
   - **Roles**: Primary: Codex · Backup: Gemini · Reviewer: Claude
 
-- [ ] T110 [P] Explicit colour-independent status-label test: for every status/warning/error indicator in scope
-  (Pending Review, Approved, Rejected, Request More Information, expired/active support-access grant,
-  provisioning Pending/Creating/Ready/Failed), assert a text/label is present and independently legible without
-  relying on any colour cue, in `frontend/tests/e2e/status-text-label-not-colour-only.spec.ts` (U1/F7
-  remediation — see analysis.md; FR-015)
-  - **Dependencies**: T048, T063, T071, T083, T087
+- [ ] T110 [P] Explicit colour-independent status-label test: for **every** status/warning/error indicator in
+  scope — the billing lifecycle (Pending Review, Approved, Rejected, Request More Information), support-access
+  grants (expired/active/revoked), tenant provisioning (Pending/Creating/Ready/Failed), signup/verification
+  errors (malformed email, weak password, duplicate email, expired/invalid/reused verification link, T038),
+  setup-wizard validation and configuration-gap errors (T056), payment-proof upload errors — unsupported
+  type/size/unreadable (T063), module-selection blocked/upgrade-required indicators (T077), and the checklist's
+  activation-gated indicator distinct from setup-readiness (T083) — assert a text/label is present and
+  independently legible without relying on any colour cue, in
+  `frontend/tests/e2e/status-text-label-not-colour-only.spec.ts` (U1/F7 remediation — see analysis.md; FR-012,
+  FR-015; scope widened from the lifecycle-state subset to the full FR-012/FR-015 surface in Round 2 remediation
+  — see analysis.md)
+  - **Dependencies**: T037, T038, T048, T056, T063, T071, T077, T083, T087
   - **Acceptance Criteria**: Explicitly distinct from the axe accessibility checks (T030/T043/T052/T060/T071/
-    T074/T080/T087/T095), since axe does not detect colour-only encoding of state; every status state listed
-    has a passing assertion of an independent text label.
+    T074/T080/T087/T095), since axe does not detect colour-only encoding of state; every status/warning/error
+    indicator enumerated in FR-012 and FR-015 across the full feature surface (not only the billing/support-
+    access/provisioning lifecycle states) has a passing assertion of an independent text label.
   - **Roles**: Primary: Codex · Backup: Claude · Reviewer: Gemini
 
 - [ ] T111 [P] Cross-cutting integration test: trial-window enforcement — a tenant past `trialWindowDays` with
-  `autoRestrictUnpaid` resolved true and a non-`Active` Subscription is denied onboarding-scoped access; an
-  `Active` Subscription or a plan resolving `autoRestrictUnpaid=false` bypasses restriction; running
-  `trial.expiry_sweep` twice in the same tick window does not double-audit a tenant, in
-  `backend/api/test/integration/trial-window-enforcement.integration-spec.ts` (F2 remediation — see
-  analysis.md)
-  - **Dependencies**: T101, T102
+  `autoRestrictUnpaid` resolved true and a non-`Active` Subscription is denied onboarding-scoped access on ALL
+  THREE FR-030a paths (`PUT /companies/current/setup` T054, `PUT /modules/selection` T076,
+  `GET /onboarding/checklist` T082), each exercised through BOTH the documented UI-shaped call and a raw HTTP
+  replay (mirroring the FR-006 pattern used for T064/T073); an `Active` Subscription or a plan resolving
+  `autoRestrictUnpaid=false` bypasses restriction on all three; running `trial.expiry_sweep` twice in the same
+  tick window does not double-audit a tenant, in
+  `backend/api/test/integration/trial-window-enforcement.integration-spec.ts` (F2 remediation — see analysis.md;
+  three-path + dual-call-shape coverage added in Round 2 remediation — see analysis.md)
+  - **Dependencies**: T054, T076, T082, T101, T102
   - **Acceptance Criteria**: Matches FR-030a and plan.md's Idempotency "Trial-window sweep" test strategy;
-    mirrors T086's support-access sweep idempotency test exactly.
+    mirrors T086's support-access sweep idempotency test exactly; asserts six distinct denial cases (3 paths ×
+    2 call shapes) plus the two bypass cases and the sweep-idempotency case — no path is left implicitly
+    covered by inference from another.
   - **Roles**: Primary: Codex · Backup: GLM · Reviewer: Gemini
 
-- [ ] T112 [P] Cross-cutting integration test: `FeatureFlagGuard` denies access to a flagged-off module
-  identically via the documented UI-shaped call and a raw HTTP replay, and no gated route bypasses the guard, in
-  `backend/api/test/integration/feature-flag-gating.integration-spec.ts` (C1 remediation — see analysis.md;
-  Constitution Principle VI)
-  - **Dependencies**: T099, T100
-  - **Acceptance Criteria**: Matches plan.md's Test Strategy "Feature-flag/module-gating" coverage; run twice
-    per gated endpoint (UI-shaped and raw HTTP replay), both denied identically, mirroring the FR-006 pattern
-    used for authorization tests (T064).
+- [ ] T112 [P] Cross-cutting test: `FeatureFlagGuard` denies access to a flagged-off module identically via the
+  documented UI-shaped call and a raw HTTP replay, and no gated route bypasses the guard — AND, separately, a
+  rendered-UI check that a flagged-off surface is absent from the DOM/navigation (not merely guarded at the API),
+  in `backend/api/test/integration/feature-flag-gating.integration-spec.ts` (HTTP-level) and
+  `frontend/tests/e2e/feature-flag-ui-gating.spec.ts` (rendered-UI level) (C1 remediation — see analysis.md;
+  Constitution Principle VI; rendered-UI coverage added in Round 2 remediation — see analysis.md)
+  - **Dependencies**: T099, T100, T077, T083, T091
+  - **Acceptance Criteria**: Matches plan.md's Test Strategy "Feature-flag/module-gating" coverage; the HTTP
+    spec runs twice per gated endpoint (UI-shaped and raw HTTP replay), both denied identically, mirroring the
+    FR-006 pattern used for authorization tests (T064); the Playwright spec additionally asserts, for each of
+    T077 (modules), T083 (checklist), and T091 (support access), that with the corresponding `FeatureFlag`
+    disabled the route is unreachable via navigation and the rendered DOM contains no trace of the gated screen
+    — this is a distinct assertion from the HTTP-only guard-denial check and is the direct fix for the gap where
+    a flagged-off feature could still be discoverable/rendered in the UI even while its API calls were denied.
   - **Roles**: Primary: Codex · Backup: GLM · Reviewer: Gemini
 
 ---
@@ -1220,8 +1296,10 @@ With the AGENTS.md roster (Claude, GLM, Codex, Gemini):
   independently checkable.
 - Commit after each task or logical group; verify each story's tests fail before its implementation tasks land.
 - Stop at any checkpoint to validate a story independently before proceeding to the next.
-- **Remediation additions (T099–T112)**: Added during cross-artifact analysis remediation (see
-  `specs/001-saas-onboarding-shell/analysis.md` for the full finding-by-finding record). T099–T102 are
-  Foundational (Phase 2) and block the same way T006–T026 do. T103/T104 (US1), T105–T107 (US3) slot into their
-  story phases. T108–T112 are Polish-phase and depend on the story screens/endpoints they sweep or test.
-  Existing Task IDs T001–T098 are unchanged; nothing was renumbered.
+- **Remediation additions (T099–T113)**: Added during cross-artifact analysis remediation (see
+  `specs/001-saas-onboarding-shell/analysis.md` for the full finding-by-finding record, including the "Round 2
+  remediation" section covering 7 structural issues Codex found in the first remediation pass). T099–T102 and
+  T113 are Foundational (Phase 2) and block the same way T006–T026 do. T103/T104 (US1), T105–T107 (US3) slot
+  into their story phases. T108–T112 are Polish-phase and depend on the story screens/endpoints they sweep or
+  test, and T097/T098 now correctly depend on the full T099–T112 set (Round 2 remediation). Existing Task IDs
+  T001–T098 are unchanged; nothing was renumbered.

@@ -175,3 +175,134 @@ period-over-period changes update that same row, and history lives in `PaymentSu
 | T112 | Polish | C1 (test) |
 
 Existing tasks edited in place (no ID change): T009, T010, T021, T044, T076, T082, T088.
+
+---
+
+## Round 2 remediation
+
+Codex independently re-reviewed the remediation above, confirmed all 12 original findings (C1, F1, F2, F3, I1,
+G2, G1/F6, F5, U2, U1/F7, G3/F4, F8) RESOLVED, and found 7 new structural problems introduced by that
+remediation itself. All 7 are fixed below, editing only spec.md/plan.md/data-model.md/tasks.md/
+contracts/openapi.yaml/contracts/events.md — no application code. Task IDs T001–T112 are unchanged; one new
+task (T113) was appended where a genuine contract-authoring gap existed. No task was renumbered.
+
+### 1. Feature-flag UI gating missing from the frontend surface tasks
+
+**Finding**: data-model.md:84 requires a disabled `FeatureFlag` to hide the corresponding customer-facing
+surface entirely, but T077/T083/T091 (the US4/US7/US8 frontend screens) and T112 (the cross-cutting
+feature-flag test) only asserted HTTP-level guard denial — never that the rendered UI/navigation actually
+hides the surface.
+
+**Resolution**:
+- tasks.md T077 (`frontend/src/app/(onboarding)/modules/page.tsx`), T083
+  (`frontend/src/app/(onboarding)/checklist/page.tsx`), and T091
+  (`frontend/src/app/(onboarding)/support-access/page.tsx`) each gained an explicit acceptance-criteria clause:
+  when the relevant `FeatureFlag.enabled=false`, the route and any navigation entry to it are absent from the
+  rendered UI entirely — not a disabled link, not a reachable-but-blocked page.
+- tasks.md T112 was expanded from an HTTP-only integration test to also require a rendered-UI Playwright spec
+  (`frontend/tests/e2e/feature-flag-ui-gating.spec.ts`), with Dependencies extended to include T077, T099,
+  T083, T091, T100 so the UI surfaces it must inspect actually exist.
+
+### 2. TrialWindowGuard not attached to all three FR-030a onboarding paths
+
+**Finding**: T101 (`TrialWindowGuard`) was never listed as a dependency/acceptance-criterion of T054 (company
+setup), T076 (module selection), or T082 (checklist) — spec.md:231's three FR-030a onboarding paths were left
+structurally unenforced at the task level, even though T111's cross-cutting test implied enforcement existed.
+
+**Resolution**:
+- tasks.md T054 (`tasks.md:616`), T076 (`tasks.md:847`), and T082 (`tasks.md:910`) each now list T101 as an
+  explicit Dependency and require, in their Acceptance Criteria, that `TrialWindowGuard` denies both the
+  documented UI-shaped call and a raw HTTP replay identically once the trial window has elapsed.
+- tasks.md T111 was rewritten to name all three endpoints explicitly (`PUT /companies/current/setup`,
+  `PUT /modules/selection`, `GET /onboarding/checklist`) and require each be tested through both UI-shaped and
+  raw HTTP requests (6 denial cases total), with Dependencies extended to T054, T076, T082.
+
+### 3. T105/T106 status-code contradiction on the pre-completion response (403 vs. 409)
+
+**Finding**: T105 (`tasks.md:601`, prior text) stated 403 for calling `/companies/current/settings` before
+`Company.setup_complete=true`; T106 (`tasks.md:647`, prior text) stated 409 for the same condition.
+
+**Resolution**: Reconciled to a single canonical **409**, documented once in `contracts/openapi.yaml`'s new
+`/companies/current/settings` path (see fix 4 below — this path did not previously exist in the OpenAPI file at
+all, despite being referenced by T105/T106). tasks.md T105 and T106 were both rewritten to state the code is
+"the single canonical 409 documented in `contracts/openapi.yaml`" rather than restating a number independently,
+eliminating the possibility of future drift between the two tasks.
+
+### 4. Locale endpoint (`PATCH /accounts/me/locale`, T104) had no OpenAPI contract task
+
+**Finding**: T104 (`tasks.md:449`) implements `PATCH /accounts/me/locale`, and T024 (`tasks.md:255`) generates
+the frontend API client from `contracts/openapi.yaml`, but the locale path never existed in that file — the
+frontend client had no type to generate against.
+
+**Resolution**:
+- Added `PATCH /accounts/me/locale` (with a new `LocaleUpdateRequest` schema, 200/422 responses) to
+  `contracts/openapi.yaml`.
+- Added new task **T113** (Foundational phase, alongside T099–T102) whose sole job is this contract addition,
+  with no code dependencies of its own.
+- tasks.md T024's Dependencies gained `T113`; tasks.md T104's Dependencies gained `T113` — both now strictly
+  ordered after the contract exists, closing the contract-first gap.
+
+### 5. Odoo-exposure sweep (T109) scoped to a subset of customer-facing screens
+
+**Finding**: T109 is SC-011's full-surface sweep but only listed billing, checklist, module selection, support
+access, and the Billing Admin review queue — omitting public/auth screens, the provisioning-status screen, and
+the company-settings screen (all customer-facing per FR-013 or, for company settings, added in the prior
+remediation round).
+
+**Resolution**: tasks.md T109 rewritten to cover the public plan list (T036), signup (T037), verify-email
+(T038), MFA enrollment (T039), provisioning status (T048), the setup wizard (T052/T056), company settings
+(T107), billing (T063), module selection (T077), the checklist (T083), support access (T091), and the Billing
+Admin review queue (T071) — the complete customer-facing surface, not a subset. Dependencies extended
+accordingly.
+
+### 6. Colour-independence test (T110) scoped to lifecycle states only
+
+**Finding**: T110 covered only billing/support-access/provisioning lifecycle labels (Pending Review, Approved,
+Rejected, Request More Information, expired/active grant, provisioning states), omitting every other
+status/warning/error indicator FR-012/FR-015 require to be colour-independent.
+
+**Resolution**: tasks.md T110 rewritten to also cover signup/verification errors (T038), setup-wizard
+validation and configuration-gap errors (T056), payment-proof upload errors (T063), module-selection
+blocked/upgrade indicators (T077), and the checklist's activation-gated indicator (T083), in addition to the
+original lifecycle-state set. Dependencies extended to T037, T038, T056, T077 (T048/T063/T071/T083/T087
+retained).
+
+### 7. Polish-phase dependencies let T097/T098 complete before the remediation tasks they should gate on
+
+**Finding**: T097's Dependencies read `T001–T096`, excluding T099–T107 (`tasks.md:1048`); T098 depended only on
+T097 while claiming all four automated verification entry points were green, even though T108–T112 (CI wiring
+and the full-surface sweeps) could run — or not run — independently and later (`tasks.md:1056`, `tasks.md:1064`).
+
+**Resolution**:
+- tasks.md T097's Dependencies changed to `T001–T096, T099–T107`, so documentation reconciliation cannot
+  complete before the feature-flag, trial-window, locale-persistence, and company-settings remediation tasks
+  exist.
+- tasks.md T098's Dependencies changed to `T097, T108, T109, T110, T111, T112`, so the final full-validation
+  task cannot claim a green automated suite before CI is actually wired to run it (T108) and the Odoo-exposure,
+  colour-independence, trial-window, and feature-flag sweeps (T109–T112) have actually run.
+
+## Round 2 summary of task changes
+
+| Task | Change |
+|---|---|
+| T024 | Dependencies: added T113 |
+| T054 | Dependencies: added T101; Acceptance Criteria: TrialWindowGuard requirement added |
+| T076 | Dependencies: added T101; Acceptance Criteria: TrialWindowGuard requirement added |
+| T077 | Acceptance Criteria: feature-flag UI-hiding requirement added |
+| T082 | Dependencies: added T101; Acceptance Criteria: TrialWindowGuard requirement added |
+| T083 | Acceptance Criteria: feature-flag UI-hiding requirement added |
+| T091 | Acceptance Criteria: feature-flag UI-hiding requirement added |
+| T097 | Dependencies: T001–T096 → T001–T096, T099–T107 |
+| T098 | Dependencies: T097 → T097, T108–T112 |
+| T104 | Dependencies: added T113; Acceptance Criteria: contract-match requirement added |
+| T105 | Acceptance Criteria: 403 → single canonical 409, referencing contracts/openapi.yaml |
+| T106 | Acceptance Criteria: restates 409 as the OpenAPI-documented canonical code, contract now actually added |
+| T109 | Scope expanded to full customer-facing surface; Dependencies extended |
+| T110 | Scope expanded beyond lifecycle states; Dependencies extended |
+| T111 | Rewritten to name all 3 FR-030a paths × 2 call shapes explicitly; Dependencies extended |
+| T112 | Expanded to add rendered-UI Playwright coverage alongside the HTTP integration test; Dependencies extended |
+| **T113** | **New task** (Foundational): contract-first addition of `PATCH /accounts/me/locale` to contracts/openapi.yaml |
+
+Also edited: `contracts/openapi.yaml` gained `/companies/current/settings` (get/put, with `CompanySettingsView`/
+`CompanySettingsInput` schemas) and `/accounts/me/locale` (patch, with `LocaleUpdateRequest` schema) — both were
+referenced by tasks.md tasks but did not previously exist in the contract file.

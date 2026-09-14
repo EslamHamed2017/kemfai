@@ -152,6 +152,57 @@ paths:
         "200": { description: Company marked setup complete; audit event recorded (Acceptance Scenario 3.7) }
         "422": { description: One or more required steps incomplete }
 
+  /companies/current/settings:
+    get:
+      tags: [company-setup]
+      summary: >
+        Get current company settings — a distinct post-completion surface from the setup wizard, reachable only
+        once Company.setup_complete=true (FR-028, F3 remediation; see analysis.md)
+      responses:
+        "200":
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CompanySettingsView" }
+        "409":
+          description: >
+            THE single documented pre-completion response: `Company.setup_complete=false`. Settings are not yet
+            reachable — use /companies/current/setup (T054) instead. This is the one canonical status code for
+            this condition; no other task/spec text may restate a different code for it (Round 2 remediation —
+            see analysis.md).
+    put:
+      tags: [company-setup]
+      summary: >
+        Edit setup-wizard-captured fields after setup completion, without re-running the wizard (FR-028)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CompanySettingsInput" }
+      responses:
+        "200": { description: Settings updated; company.settings.updated audit event recorded }
+        "403": { description: Caller is not the Workspace Owner for this tenant }
+        "409":
+          description: >
+            THE single documented pre-completion response: `Company.setup_complete=false`. Settings are not yet
+            reachable — use /companies/current/setup (T054) instead. This is the one canonical status code for
+            this condition; no other task/spec text may restate a different code for it (Round 2 remediation —
+            see analysis.md).
+
+  /accounts/me/locale:
+    patch:
+      tags: [accounts]
+      summary: >
+        Persist the authenticated account's locale preference so it applies to subsequent sessions, not just an
+        immediate re-render (FR-024, U2 remediation; contract added in Round 2 remediation — see analysis.md)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/LocaleUpdateRequest" }
+      responses:
+        "200": { description: Locale preference persisted on Account; used as the initial locale on future sessions once authenticated }
+        "422": { description: Unsupported locale value }
+
   /entitlements/me:
     get:
       tags: [entitlements]
@@ -386,6 +437,24 @@ components:
       properties:
         step: { type: string }
         values: { type: object, additionalProperties: true }
+
+    CompanySettingsView:
+      type: object
+      properties:
+        values: { type: object, additionalProperties: true }
+        setupComplete: { type: boolean }
+
+    CompanySettingsInput:
+      type: object
+      required: [values]
+      properties:
+        values: { type: object, additionalProperties: true }
+
+    LocaleUpdateRequest:
+      type: object
+      required: [locale]
+      properties:
+        locale: { type: string, enum: [en, ar] }
 
     EntitlementSet:
       type: object
