@@ -41,7 +41,7 @@ Do not modify any file. Analysis only. Be concise and specific." \
   --output-format text > "$WORK/r1_claude.txt" 2>&1 || true
 
 # ---------- Round 2: Codex critiques ----------
-codex exec --sandbox read-only --skip-git-repo-check "$CONTEXT
+codex exec --dangerously-bypass-approvals-and-sandbox "$CONTEXT
 
 You are the CRITIC in a two-model technical debate. Claude proposed the following. Your job is to find what is wrong with it, not to be agreeable.
 
@@ -87,7 +87,7 @@ Do not modify any file yet. Analysis only." \
   --output-format text > "$WORK/r3_claude.txt" 2>&1 || true
 
 # ---------- Round 4: Codex final verdict ----------
-codex exec --sandbox read-only --skip-git-repo-check "$CONTEXT
+codex exec --dangerously-bypass-approvals-and-sandbox "$CONTEXT
 
 Final round. Claude has reconciled your critique into a final plan. Approve or reject it.
 
