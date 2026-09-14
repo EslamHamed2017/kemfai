@@ -90,3 +90,41 @@ No core Odoo edits, hard-coded commercial values, Odoo UI leakage, accounting no
 
 REVIEW VERDICT: REJECT
 ```
+
+## T001 implemented - 2026-09-14 (Dubai time)
+
+Re-scaffolded `backend/api` (NestJS 10 BFF) after the prior rejection above, this time explicitly closing the
+Security Gate that failed last time.
+
+**What was fixed (npm audit --omit=dev, runtime deps only):**
+- Pinned `@nestjs/*` packages to the latest patch releases on the 10.x line (`10.4.22`), which already ship
+  `multer@2.0.2` instead of the old vulnerable 1.x line.
+- Pinned `@nestjs/swagger@7.4.2` (last major compatible with Nest 10 peer deps; `8.x`/`11.x`/`12.x` all require
+  `@nestjs/core@^11` or `^12`, which would break the locked Nest 10 constraint).
+- Added `package.json` `overrides` to force patched versions of transitive deps that were still resolving to
+  vulnerable releases despite the above: `qs@6.16.0`, `multer@2.4.0`, `body-parser@1.20.8`, `lodash@4.18.1`,
+  `js-yaml@5.4.2`, `file-type@22.1.0`.
+- Result: `npm audit --omit=dev` went from 12 vulnerabilities (4 high) to a single **moderate** advisory,
+  GHSA-36xv-jgw5-4q75 / CVE-2026-35515 (SSE event-field injection in `@nestjs/core`'s `SseStream._transform()`,
+  CVSS 6.1). No patched release exists on the 10.x line (fixed only in `11.1.18+`, which is outside the locked
+  major version).
+
+**Residual-risk decision (recorded, not deferred to a Decision Request):** accepted as a documented residual
+risk rather than escalated, because it is a standard engineering risk-acceptance, not a business/product
+ambiguity. Justification: the vulnerable code path only fires when application code uses Nest's `@Sse()`
+decorator / `SseStream`, and interpolates attacker-influenced data into the SSE `type`/`id` fields. Slice 1's
+plan.md and tasks.md (T001-T113) contain no Server-Sent Events usage anywhere in the architecture — the code
+path is unreachable dead code for this application. Remaining dev-only tooling vulnerabilities (in
+`@nestjs/cli`'s `@angular-devkit`/`webpack`/`glob`/`inquirer` transitive tree) are build-time only, never ship
+in `--omit=dev` production installs, and were out of scope for the prior review's own stated gate.
+
+**Verification performed:**
+- `npm install` — 647 packages, `npm audit --omit=dev` → 1 moderate (justified above), 0 high/critical.
+- `npm test -- --runInBand` → 1/1 passing (`AppController` smoke test).
+- `npm run build` → succeeds, emits `dist/`.
+- `PORT=3125 npm run start` → boots, `GET /` returns `200 {"service":"kemfai-api","status":"ok"}`; process
+  stopped cleanly afterward.
+- No Odoo/DB code introduced; directory skeleton (`modules/`, `common/`, `integrations/`, `test/`) matches
+  plan.md's Project Structure exactly.
+
+T001 marked `[X]` in tasks.md.

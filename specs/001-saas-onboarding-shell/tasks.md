@@ -46,7 +46,7 @@ Per plan.md's Project Structure: `frontend/` (Next.js 14), `backend/api/` (NestJ
 
 **Purpose**: Project initialization across the three-tier monorepo structure locked in plan.md/GATE0_DECISIONS.md.
 
-- [ ] T001 Initialize `backend/api` NestJS 10 project scaffold (`package.json`, `tsconfig.json`, `nest-cli.json`,
+- [X] T001 Initialize `backend/api` NestJS 10 project scaffold (`package.json`, `tsconfig.json`, `nest-cli.json`,
   `src/main.ts`, `src/app.module.ts`) with `@nestjs/core`, `@nestjs/swagger`, `class-validator`,
   `class-transformer`, `@nestjs/bullmq` dependencies in `backend/api/`
   - **Dependencies**: None
