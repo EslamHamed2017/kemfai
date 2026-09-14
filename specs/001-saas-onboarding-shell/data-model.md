@@ -18,6 +18,7 @@ Identity record backing a Keycloak `kemfai-customers` user.
 | mfa_enrolled | boolean | Mirrors Keycloak `CONFIGURE_TOTP` completion (FR-020) |
 | selected_plan_id | UUID, nullable | FK → Plan; carried from plan-selection into signup (FR-017) |
 | selected_billing_cycle | enum(monthly, annual), nullable | Carried alongside plan |
+| preferred_locale | enum(en, ar), nullable | Persists the FR-024 locale choice across sessions; read on login/session-refresh so the correct `dir`/language is applied before any client-side detection (U2 remediation — see analysis.md) |
 | created_at, updated_at | timestamptz | |
 
 **Validation**: email format + uniqueness enforced pre-Keycloak-create; duplicate signup against an already
@@ -44,6 +45,11 @@ The tenant/workspace registry entry. One row per verified Account (1:1, unique o
 silently re-enters `Ready` without completing all steps — research.md §3). No cross-tenant fallback, no
 partially-usable state is ever surfaced to the user (edge case, Acceptance Scenario 2.4/2.5).
 
+**Provisioning order**: `minio_bucket` MUST be created and set before `odoo_db_name` is created — plan.md's
+Storage section fixes this ordering ("bucket is created at tenant-registry-record creation time, ahead of Odoo
+DB provisioning"), and T044 (F1 remediation — see analysis.md) now implements this explicit step, since payment-
+proof upload (US5) only ever happens after a tenant is registered but has no dependency on the Odoo DB existing.
+
 ### Plan / Feature / PlanFeatureEntitlement / PlanSetting / EntitlementDefault
 The entitlement engine (FR-030/FR-030a).
 
@@ -53,10 +59,33 @@ The entitlement engine (FR-030/FR-030a).
 - **PlanFeatureEntitlement**: plan_id (FK), feature_key (FK), enabled (bool), limit_value (numeric, nullable) —
   composite PK (plan_id, feature_key). This is the *only* table any module-selection or usage-limit check reads
   (FR-030) — no plan-name branching anywhere in code.
-- **PlanSetting**: plan_id (PK, FK), trial_window_days (int, nullable), auto_restrict_unpaid (bool, default
-  true, nullable meaning "use default"). Carries FR-030a values, editable per plan without a code change.
-- **EntitlementDefault**: singleton row (id fixed), default_trial_window_days (int, seeded 14). Read only when
-  `PlanSetting.trial_window_days IS NULL` for the tenant's plan.
+- **PlanSetting**: plan_id (PK, FK), trial_window_days (int, nullable — null means "use default"),
+  auto_restrict_unpaid (bool, nullable — null means "use default"). Both columns follow the identical
+  nullable-fallback pattern; neither carries an in-column default, so there is no contradiction between a
+  documented default and a "use default" sentinel. Carries FR-030a values, editable per plan without a code
+  change.
+- **EntitlementDefault**: singleton row (id fixed), default_trial_window_days (int, seeded 14),
+  default_auto_restrict_unpaid (bool, seeded true). `default_trial_window_days` is read only when
+  `PlanSetting.trial_window_days IS NULL`; `default_auto_restrict_unpaid` is read only when
+  `PlanSetting.auto_restrict_unpaid IS NULL`, for the tenant's plan — mirroring the trial-window fallback exactly
+  (I1 remediation — see analysis.md).
+
+### FeatureFlag
+Config-driven module-gating mechanism satisfying Constitution Principle VI ("Incomplete modules MUST sit behind
+feature flags"). Lives alongside the entitlement tables above and is read through the same `EntitlementsService`
+(T010/T099) — never a second, ad-hoc config path (C1 remediation — see analysis.md).
+
+| Field | Type | Notes |
+|---|---|---|
+| feature_key | text (PK, FK → Feature.key) | One row per gate-able feature/module |
+| enabled | boolean, default false | Safe default is hidden/off; a module is exposed to any tenant only once explicitly turned on |
+| notes | text, nullable | Free-text rationale (e.g. "US7 checklist — gate until Polish sweep passes") |
+
+**Validation**: `FeatureFlag.enabled=false` hides the corresponding customer-facing surface entirely (not merely
+disables an action) for every tenant regardless of plan/entitlement, applied via `FeatureFlagGuard` on both
+UI-driven and raw HTTP paths (same FR-006 pattern as `TenantScopeGuard`/`RoleGuard`). This is independent of
+`PlanFeatureEntitlement` (which governs what a *paying* tenant's plan allows) — a feature can be fully entitled
+by plan and still hidden platform-wide while incomplete.
 
 **Validation**: `published=false` plans are excluded from the public plan list (FR-016) and, if a visitor's
 in-flight selection references a plan that becomes unpublished before signup completes, the signup step
@@ -68,7 +97,7 @@ The billing relationship for a tenant.
 | Field | Type | Notes |
 |---|---|---|
 | id | UUID (PK) | |
-| tenant_id | UUID, unique-ish (see below) | FK → Tenant |
+| tenant_id | UUID, unique | FK → Tenant |
 | plan_id | UUID | FK → Plan |
 | billing_cycle | enum(monthly, annual) | |
 | status | enum(PendingActivation, Active, Suspended, Cancelled) | Lifecycle per Spec §19, scoped to this feature's slice (Trial/PendingActivation → Active only, via Billing Admin) |
@@ -76,9 +105,21 @@ The billing relationship for a tenant.
 | activated_at, activated_by | timestamptz, UUID (internal Account), nullable | Set only on approval (FR-036) |
 | created_at, updated_at | timestamptz | |
 
-**Validation**: A tenant has exactly one Subscription active at a time; renewal for a new period creates a new
-"in scope" period on the same Subscription row, tracked via PaymentSubmission history, not a new Subscription
-row per period.
+**Validation**: `tenant_id` carries a DB-level unique constraint (matching T011) — a tenant has exactly one
+Subscription row, full stop; renewal for a new period updates `current_period_start/end` on that same row, and
+period-over-period history is tracked via PaymentSubmission's `status_history`, not by inserting a new
+Subscription row per period (F8 remediation — see analysis.md; previous "unique-ish" wording is replaced with
+this concrete constraint).
+
+**Trial-window enforcement (FR-030a, F2 remediation)**: Enforcement is computed at read-time by `TrialWindowGuard`
+(T101) from `Tenant.ready_at` + `EntitlementsService`'s resolved `trialWindowDays`, compared against `now()`, and
+only applies while this Subscription's `status` is not `Active`. When elapsed time exceeds the window and the
+resolved `autoRestrictUnpaid` is true, `TrialWindowGuard` denies onboarding-scoped access (company setup, module
+selection, checklist) the same way `TenantScopeGuard` denies cross-tenant access — no new persisted "restricted"
+column is introduced, mirroring `SupportAccessGrant`'s equivalent computed-expiry pattern. A scheduled
+`trial.expiry_sweep` job (T102, contracts/events.md) mirrors `support_access.expiry_sweep` (T090) to proactively
+emit a `tenant.trial.restricted` audit event the first time a tenant crosses the threshold, for
+observability/notification — it does not itself gate access, since the guard already enforces it live.
 
 ### PaymentSubmission
 A customer's claim of payment for one billing period (FR-032–FR-036).
@@ -165,6 +206,11 @@ error rather than silently accepting the value (Edge Cases — "must not silentl
 
 **Concurrency**: Last-write-wins per field with an updated-at check surfaced to the second-tab user as a
 non-silent "this value was updated elsewhere" indicator (Edge Cases — two wizard sessions).
+
+**Post-completion editing (FR-028, F3 remediation — see analysis.md)**: Once `setup_complete=true`, these same
+fields MUST also be reachable and editable through a distinct company-settings surface (T106/T107) — not solely
+by re-entering the wizard flow (T054). Both surfaces write the same underlying fields; the wizard remains the
+only path before `setup_complete=true`.
 
 ### ModuleSelection (`kemfai_module_selection`)
 Per-tenant cache of which entitled modules/features are enabled.

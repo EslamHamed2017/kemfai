@@ -89,7 +89,7 @@ plane must not architecturally preclude thousands of tenants even though initial
 | III. Customer-Facing Boundary — API/BFF Only | Frontend never calls Odoo directly; NestJS is the sole caller of Odoo's JSON-RPC API and the sole issuer of customer/staff-facing responses; FR-042 enforced by never proxying raw Odoo payloads/URLs to the client. | PASS |
 | IV. Database-Per-Tenant Isolation | Every tenant gets a dedicated Odoo/Postgres database, created idempotently on verification (FR-022/FR-023). The control-plane database is explicitly *not* an accounting database — it holds no ledgers, invoices, or posted entries; it is scoped, addressed, and access-controlled per `tenant_id` at the API/BFF layer. See Complexity Tracking for the explicit justification of this split. | PASS (justified) |
 | V. Bilingual by Day 1 | `next-intl` + Carbon RTL from the first commit of every screen; FR-014/FR-024/SC-005 drive Phase 1 design and the test strategy (RTL snapshot + a11y tests are mandatory, not optional). | PASS |
-| VI. Vertical Slices & Implementation Contract | Each of the 8 user stories is planned end-to-end (UI → BFF → domain → Odoo/control-plane → audit → tests) in data-model.md/contracts; permissions, tenant scope, audit events, empty/error/loading, and accessibility are specified per story (already enumerated in spec.md FR-001–FR-042). | PASS |
+| VI. Vertical Slices & Implementation Contract | Each of the 8 user stories is planned end-to-end (UI → BFF → domain → Odoo/control-plane → audit → tests) in data-model.md/contracts; permissions, tenant scope, audit events, empty/error/loading, and accessibility are specified per story (spec.md FR-001–FR-042). The clause requiring incomplete modules to sit behind feature flags is met by a dedicated, config-driven `FeatureFlag` table + `FeatureFlagGuard` (data-model.md; tasks.md T099/T100), read through the same `EntitlementsService` as FR-030a rather than any hard-coded conditional; every story less mature than the P1 MVP core (US4 module selection, US7 checklist, US8 support access) carries this gate as an explicit acceptance criterion on its main implementation task (T076/T082/T088), not left to be inferred. | PASS (this row previously asserted PASS without addressing the feature-flag clause at all; corrected during remediation — see `specs/001-saas-onboarding-shell/analysis.md`, finding C1) |
 | VII. Deterministic Data & Financial Integrity | Provisioning, payment-decision, and support-access-enforcement flows are keyed and idempotent (data-model.md state machines); files are MinIO object references, never DB blobs; audit events are append-only. No posted accounting entries exist in this slice (out of scope), so debits=credits is N/A here. | PASS |
 | Quality Gates (tenant isolation, authorization, idempotency, source linkage) | Directly covered by the Test Strategy section below and carried into tasks.md. | PASS |
 
@@ -106,7 +106,10 @@ Re-evaluated against the completed data model and contracts:
   shape. Still PASS.
 - **Principle VI**: Each of the 8 user stories now has a concrete request/response contract and Test Strategy
   coverage (tenant isolation, authorization, idempotency, source linkage) — no story was designed without its
-  audit/permission/state surface. Still PASS.
+  audit/permission/state surface. The feature-flag/module-gating clause, previously unaddressed, is now
+  concretely satisfied by T099 (`FeatureFlag` entity + `EntitlementsService` extension) and T100
+  (`FeatureFlagGuard`), and referenced from US4/US7/US8's acceptance criteria (T076/T082/T088) and tested
+  cross-cutting in T112. Still PASS, now on a verified design basis rather than an unaddressed assumption.
 - **Principle VII**: `PaymentSubmission`'s DB-level unique partial index and the `Tenant`/`SupportAccessGrant`
   state machines make idempotency a data-layer guarantee, not just an application convention. Still PASS.
 
@@ -251,6 +254,10 @@ enumerated at task level in tasks.md; this section fixes what "covered" means so
   not just an application-layer check (defense in depth).
 - **Support-access sweep**: run the expiry sweep job twice in the same tick window; assert a grant is not
   double-flipped or double-audited.
+- **Trial-window sweep** (F2 remediation — see analysis.md): run the `trial.expiry_sweep` job twice in the same
+  tick window; assert a tenant is not double-restricted or double-audited (mirrors the support-access sweep test
+  exactly, T111). Separately assert `TrialWindowGuard` never restricts a tenant whose Subscription is `Active`,
+  and never restricts under a plan with `autoRestrictUnpaid` resolved false (T101).
 
 ### Source linkage
 - Every `AuditEvent` written during any test above is asserted to resolve `subject_type`/`subject_id` back to a
@@ -268,6 +275,18 @@ enumerated at task level in tasks.md; this section fixes what "covered" means so
   renders (not a blank/frozen screen) under the triggering condition.
 - Checklist liveness: create then delete each underlying record (customer/bank/product) and assert the
   checklist item flips back to incomplete without any direct checklist mutation (FR-037, SC-010).
+- Colour-independent status labels (FR-015; U1/F7 remediation — see analysis.md): for every status/warning/error
+  indicator in scope (Pending Review, Approved, Rejected, Request More Information, expired/active support-
+  access grant, provisioning Pending/Creating/Ready/Failed), a dedicated assertion (T110) confirms a text/label
+  is present and independently legible without relying on any colour cue. This is explicitly distinct from and
+  not implied by an axe pass — axe does not detect colour-only encoding of state.
+- Feature-flag/module-gating (Constitution Principle VI; C1 remediation — see analysis.md): a cross-cutting test
+  (T112) asserts `FeatureFlagGuard` denies access to a flagged-off module identically via the documented UI-call
+  shape and a raw HTTP replay, and that no module's route/UI surface bypasses the guard.
+- Odoo-exposure full-surface sweep (FR-042, SC-011; G1/F6 remediation — see analysis.md): T052 alone (US3 wizard)
+  is not sufficient coverage for SC-011's "zero instances... across acceptance testing" claim. T109 extends the
+  same assertion (no native Odoo terminology, URLs, or raw Odoo payloads in any response or DOM) across billing,
+  checklist, module selection, support access, and the Billing Admin review queue.
 
 ## Complexity Tracking
 

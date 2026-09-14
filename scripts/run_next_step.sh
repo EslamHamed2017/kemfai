@@ -37,7 +37,7 @@ case "$next" in
     MSG='docs: generate SpecKit tasks for Slice 1'
     ;;
   analyze)
-    PROMPT='/speckit-analyze Run the SpecKit analyze pass on specs/001-saas-onboarding-shell against the ratified constitution. Report only genuine inconsistencies between constitution, spec, plan, contracts, data model and tasks. Do not implement code.'
+    PROMPT='/speckit-analyze Run the SpecKit analyze pass on specs/001-saas-onboarding-shell against the ratified constitution. Report only genuine inconsistencies between constitution, spec, plan, contracts, data model and tasks. Do not implement code. IMPORTANT: after producing the report you MUST write it to specs/001-saas-onboarding-shell/analysis.md so the pipeline can advance; the file must contain the findings table and the date of the run.'
     MSG='docs: SpecKit analyze pass for Slice 1'
     ;;
   implement)
@@ -56,6 +56,21 @@ EC=$?
 set -e
 echo "$OUT" | tee -a "$LOG" >/dev/null
 echo "[$TS] claude exit: $EC" | tee -a "$LOG"
+
+# --- safety: never let a stage repeat forever silently ---
+if [ "$next" = "analyze" ] && [ ! -f "$FEATURE_DIR/analysis.md" ]; then
+  {
+    echo "# Slice 1 Analyze Report (captured by runner)"
+    echo
+    echo "Run: $TS"
+    echo "Note: Claude did not write analysis.md itself; runner captured its output below."
+    echo
+    echo '```'
+    echo "$OUT"
+    echo '```'
+  } > "$FEATURE_DIR/analysis.md"
+  echo "[$TS] runner captured analyze output into analysis.md" | tee -a "$LOG"
+fi
 
 # --- commit if anything changed ---
 CHANGED=""
