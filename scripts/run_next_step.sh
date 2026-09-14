@@ -41,8 +41,9 @@ case "$next" in
     MSG='docs: SpecKit analyze pass for Slice 1'
     ;;
   implement)
-    PROMPT='/speckit-implement Execute the NEXT single unblocked task from specs/001-saas-onboarding-shell/tasks.md. Rules: honor the ratified constitution (no Odoo core edits, DB-per-tenant, EN/AR from Day 1, deterministic accounting, config-driven entitlements/trial). Small vertical slice with tests. Update tasks.md to mark the task done. If the task has ambiguity, stop and add a short Decision Request note to docs/PROGRESS.md instead of guessing.'
+    PROMPT='/speckit-implement Execute the NEXT single unblocked task from specs/001-saas-onboarding-shell/tasks.md. Rules: honor the ratified constitution (no Odoo core edits, DB-per-tenant, EN/AR from Day 1, deterministic accounting, config-driven entitlements/trial, feature flags gate incomplete modules). Implement a small vertical slice WITH its tests, run those tests, and only mark the task done in tasks.md if they actually pass. State the Task ID you implemented on the first line of your final message. If the task is genuinely ambiguous on a business/product decision, do NOT guess: stop and append a short Decision Request to docs/PROGRESS.md and say so.'
     MSG='feat: SpecKit implement tick'
+    REVIEW=1
     ;;
 esac
 
@@ -73,6 +74,39 @@ if [ "$next" = "analyze" ] && [ ! -f "$FEATURE_DIR/analysis.md" ]; then
 fi
 
 # --- commit if anything changed ---
+# --- independent review by Codex (no model approves its own work) ---
+if [ "${REVIEW:-0}" = "1" ] && [ $EC -eq 0 ]; then
+  if ! git diff --quiet || [ -n "$(git ls-files --others --exclude-standard)" ]; then
+    echo "[$TS] running independent Codex review of implement tick" | tee -a "$LOG"
+    set +e
+    REVIEW_OUT=$(bash scripts/codex_review.sh 2>&1)
+    REVIEW_EXIT=$?
+    set -e
+    echo "$REVIEW_OUT" | tee -a "$LOG"
+    if [ $REVIEW_EXIT -eq 2 ]; then
+      echo "[$TS] Codex REJECTED - reverting working tree" | tee -a "$LOG"
+      git reset --hard HEAD >/dev/null 2>&1
+      git clean -fd >/dev/null 2>&1
+      {
+        echo ""
+        echo "## Rejected implement tick - $TS"
+        echo ""
+        echo "Codex rejected the last implement attempt and working tree was reverted. Reviewer verdict:"
+        echo ""
+        echo '```'
+        echo "$REVIEW_OUT" | tail -50
+        echo '```'
+      } >> docs/PROGRESS.md
+      git add docs/PROGRESS.md
+      git -c user.email='eslam.berkawy@gmail.com' -c user.name='Eslam El Berkawy' \
+        commit -m "docs: record rejected implement tick ($TS)" >/dev/null 2>&1 || true
+      echo "[$TS] Exiting after rejection" | tee -a "$LOG"
+      exit 0
+    fi
+  fi
+fi
+
+
 CHANGED=""
 if ! git diff --quiet || [ -n "$(git ls-files --others --exclude-standard)" ]; then
   git add -A
