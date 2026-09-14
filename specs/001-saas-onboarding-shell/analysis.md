@@ -306,3 +306,27 @@ and the full-surface sweeps) could run — or not run — independently and late
 Also edited: `contracts/openapi.yaml` gained `/companies/current/settings` (get/put, with `CompanySettingsView`/
 `CompanySettingsInput` schemas) and `/accounts/me/locale` (patch, with `LocaleUpdateRequest` schema) — both were
 referenced by tasks.md tasks but did not previously exist in the contract file.
+
+## Round 3 remediation
+
+Codex re-reviewed Round 2 and confirmed 6 of 7 fixes RESOLVED, with one blocker remaining.
+
+### 1. `/companies/current/settings` 409 had a description only, no response-body schema
+
+**Finding**: T105 (`tasks.md:616`, prior text) required the pre-completion 409 response to be schema-conformant,
+but `contracts/openapi.yaml:166` (GET) and the matching PUT 409 defined only a `description` — no
+`content`/`schema`, so there was nothing for a schema-conformance test to assert against.
+
+**Resolution**:
+- Added a new reusable component schema, `CompanySetupIncompleteError` (`contracts/openapi.yaml`, in
+  `components/schemas`, alongside `CompanySettingsInput`), with `statusCode` (integer, `enum: [409]`), `message`
+  (string), and `setupComplete` (boolean, `enum: [false]`), matching this file's existing convention of flat
+  objects with a `required` array and `enum`-constrained fixed values (e.g. `TenantStatus`, `SubscriptionView`).
+- Both the GET and PUT `409` responses on `/companies/current/settings` (`contracts/openapi.yaml`) now bind
+  `content.application/json.schema` to `$ref: "#/components/schemas/CompanySetupIncompleteError"`, in addition
+  to their existing `description`.
+- tasks.md T105 (`tasks.md:616`) and T106 (`tasks.md:670`) Acceptance Criteria now name
+  `CompanySetupIncompleteError` explicitly as the schema the 409 response body must conform to, giving the
+  contract test (T105) and its implementation (T106) a concrete, shared target.
+
+Task IDs T001–T113 are unchanged; no task was added, removed, or renumbered.

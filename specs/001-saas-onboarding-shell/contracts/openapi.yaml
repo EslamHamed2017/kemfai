@@ -169,6 +169,9 @@ paths:
             reachable — use /companies/current/setup (T054) instead. This is the one canonical status code for
             this condition; no other task/spec text may restate a different code for it (Round 2 remediation —
             see analysis.md).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CompanySetupIncompleteError" }
     put:
       tags: [company-setup]
       summary: >
@@ -187,6 +190,9 @@ paths:
             reachable — use /companies/current/setup (T054) instead. This is the one canonical status code for
             this condition; no other task/spec text may restate a different code for it (Round 2 remediation —
             see analysis.md).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CompanySetupIncompleteError" }
 
   /accounts/me/locale:
     patch:
@@ -449,6 +455,14 @@ components:
       required: [values]
       properties:
         values: { type: object, additionalProperties: true }
+
+    CompanySetupIncompleteError:
+      type: object
+      required: [statusCode, message, setupComplete]
+      properties:
+        statusCode: { type: integer, enum: [409] }
+        message: { type: string }
+        setupComplete: { type: boolean, enum: [false] }
 
     LocaleUpdateRequest:
       type: object

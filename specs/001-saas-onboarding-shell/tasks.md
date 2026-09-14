@@ -615,9 +615,10 @@ confirm every field persists, RTL fully mirrors, and no native Odoo UI/URL/termi
   - **Dependencies**: T022
   - **Acceptance Criteria**: 200/403/409 response codes exercised and schema-conformant, exactly as documented
     in `contracts/openapi.yaml`'s `/companies/current/settings` path (the sole canonical source for these
-    codes); specifically asserts the pre-completion (`Company.setup_complete=false`) case returns **409**, not
-    any other code — this test must not restate or diverge from the code documented in the contract, and T106
-    is the implementation that must match it exactly.
+    codes); specifically asserts the pre-completion (`Company.setup_complete=false`) case returns **409** with a
+    response body conforming to the `CompanySetupIncompleteError` schema (`contracts/openapi.yaml`), not any
+    other code or shape — this test must not restate or diverge from the code/schema documented in the
+    contract, and T106 is the implementation that must match it exactly.
   - **Roles**: Primary: Codex · Backup: GLM · Reviewer: Gemini
 
 ### Implementation for User Story 3
@@ -669,10 +670,11 @@ confirm every field persists, RTL fully mirrors, and no native Odoo UI/URL/termi
   - **Dependencies**: T055
   - **Acceptance Criteria**: Matches FR-028's "editable afterward through company settings, not only by
     re-running the wizard"; a call before `setup_complete=true` is rejected with the single canonical **409**
-    documented on the `GET`/`PUT /companies/current/settings` path in `contracts/openapi.yaml` (added by this
-    remediation pass — no longer deferred), directing the caller to the wizard (T054) instead; only Workspace
-    Owner may call it, enforced by `RoleGuard`/`TenantScopeGuard`; the response code and schema this
-    implementation returns MUST match `contracts/openapi.yaml` exactly, which is now the single source of truth
+    documented on the `GET`/`PUT /companies/current/settings` path in `contracts/openapi.yaml`, with a response
+    body conforming to the `CompanySetupIncompleteError` schema (added by this remediation pass — no longer
+    deferred), directing the caller to the wizard (T054) instead; only Workspace Owner may call it, enforced by
+    `RoleGuard`/`TenantScopeGuard`; the response code and schema this implementation returns MUST match
+    `contracts/openapi.yaml`'s `CompanySetupIncompleteError` exactly, which is now the single source of truth
     T105's contract test validates against.
   - **Roles**: Primary: GLM · Backup: Claude · Reviewer: Codex
 
