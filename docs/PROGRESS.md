@@ -128,3 +128,60 @@ in `--omit=dev` production installs, and were out of scope for the prior review'
   plan.md's Project Structure exactly.
 
 T001 marked `[X]` in tasks.md.
+
+## Rejected implement tick - 2026-09-15 06:00 +04
+
+Codex rejected the last implement attempt and working tree was reverted. Reviewer verdict:
+
+```
+> next dev
+
+ ⚠ Port 3000 is in use, trying 3001 instead.
+  ▲ Next.js 14.2.35
+  - Local:        http://localhost:3001
+
+ ✓ Starting...
+ ✓ Ready in 1622ms
+
+exec
+/bin/bash -lc "timeout 25s bash -c 'npm run dev -- -p 3199 > /tmp/kemfai-t002-next-3199.log 2>&1 & task_pid="'$!; for attempt in $(seq 1 20); do status=$(curl -sS -o /tmp/kemfai-t002-body-3199 -w "%{http_code}" http://127.0.0.1:3199/ || true); if [ "$status" = 200 ]; then printf "HTTP_STATUS=%s'"\\n\" \""'$status"; grep -o "KEMFAI" /tmp/kemfai-t002-body-3199 | head -1; kill "$task_pid"; wait "$task_pid" || true; exit 0; fi; sleep 1; done; sed -n "1,120p" /tmp/kemfai-t002-next-3199.log; kill "$task_pid" 2>/dev/null || true; exit 1'"'" in /home/hermesops/kemfai/frontend
+ succeeded in 4815ms:
+HTTP_STATUS=200
+KEMFAI
+
+codex
+Implemented task: T002.
+
+The scaffold meets its explicit acceptance criteria:
+
+- Next.js 14.2.35 App Router with Carbon and `next-intl`.
+- Required route groups exist.
+- `npm run dev -- -p 3199` returned HTTP 200.
+- Jest test genuinely passes: 1/1.
+- TypeScript check and production build pass.
+- `tasks.md` remains `[ ]`; it was not marked done prematurely.
+- No Odoo core edits, hard-coded entitlement values, Odoo UI leakage, accounting behavior, or tenant-isolation code was introduced.
+
+1. The mandatory Security/Tenant Gate fails: `npm audit --omit=dev` reports one critical and one high runtime vulnerability through Next.js/PostCSS. T002 cannot be accepted until the locked Next.js version conflict is resolved or the owner formally approves a documented exception with effective mitigations.
+2. `frontend/tsconfig.tsbuildinfo` is an unignored generated build artifact currently included in the untracked working tree and must not be committed.
+
+REVIEW VERDICT: REJECT
+tokens used
+32,097
+Implemented task: T002.
+
+The scaffold meets its explicit acceptance criteria:
+
+- Next.js 14.2.35 App Router with Carbon and `next-intl`.
+- Required route groups exist.
+- `npm run dev -- -p 3199` returned HTTP 200.
+- Jest test genuinely passes: 1/1.
+- TypeScript check and production build pass.
+- `tasks.md` remains `[ ]`; it was not marked done prematurely.
+- No Odoo core edits, hard-coded entitlement values, Odoo UI leakage, accounting behavior, or tenant-isolation code was introduced.
+
+1. The mandatory Security/Tenant Gate fails: `npm audit --omit=dev` reports one critical and one high runtime vulnerability through Next.js/PostCSS. T002 cannot be accepted until the locked Next.js version conflict is resolved or the owner formally approves a documented exception with effective mitigations.
+2. `frontend/tsconfig.tsbuildinfo` is an unignored generated build artifact currently included in the untracked working tree and must not be committed.
+
+REVIEW VERDICT: REJECT
+```
