@@ -34,7 +34,7 @@ code constants.
 runtime for `kemfai_*` addons).
 
 **Primary Dependencies**: NestJS 10 (OpenAPI/Swagger via `@nestjs/swagger`, `class-validator`/`class-transformer`)
-for the API/BFF; Next.js 14 (App Router) + React 18 + `@carbon/react` (Carbon Design System, RTL-capable) +
+for the API/BFF; Next.js 15 (App Router) + React 19 + `@carbon/react` (Carbon Design System, RTL-capable) +
 `next-intl` for the frontend; Odoo 18 Community + isolated `kemfai_*` addons as the business engine, reached from
 NestJS via Odoo's JSON-RPC/XML-RPC external API (no direct cross-service DB access); `keycloak-admin-client` /
 Keycloak REST Admin API for identity, verification email, and MFA (TOTP) enrollment; `@aws-sdk/client-s3`
@@ -137,7 +137,7 @@ specs/001-saas-onboarding-shell/
 ### Source Code (repository root)
 
 ```text
-frontend/                              # Next.js 14 App Router, Carbon-based, EN/AR LTR/RTL
+frontend/                              # Next.js 15 App Router, Carbon-based, EN/AR LTR/RTL
 ├── src/
 │   ├── app/
 │   │   ├── (public)/                  # plan list, pricing — no auth required

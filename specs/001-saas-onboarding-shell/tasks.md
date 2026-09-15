@@ -37,7 +37,7 @@ No task's Reviewer equals its Primary (Constitution "No self-review"; AGENTS.md 
 
 ## Path Conventions
 
-Per plan.md's Project Structure: `frontend/` (Next.js 14), `backend/api/` (NestJS 10 BFF), `backend/addons/`
+Per plan.md's Project Structure: `frontend/` (Next.js 15), `backend/api/` (NestJS 10 BFF), `backend/addons/`
 (Odoo 18 Community `kemfai_*` modules only), `infra/` (docker/keycloak/provisioning).
 
 ---
@@ -54,7 +54,7 @@ Per plan.md's Project Structure: `frontend/` (Next.js 14), `backend/api/` (NestJ
     plan.md's `backend/api/src/` structure skeleton (modules/, common/, integrations/, test/ directories present).
   - **Roles**: Primary: GLM · Backup: Claude · Reviewer: Codex
 
-- [ ] T002 [P] Initialize `frontend` Next.js 14 App Router project scaffold (`package.json`, `tsconfig.json`,
+- [ ] T002 [P] Initialize `frontend` Next.js 15 App Router project scaffold (`package.json`, `tsconfig.json`,
   `next.config.js`, `src/app/layout.tsx`) with `@carbon/react` and `next-intl` dependencies in `frontend/`
   - **Dependencies**: None
   - **Acceptance Criteria**: `npm run dev` boots an empty Next.js app; route groups

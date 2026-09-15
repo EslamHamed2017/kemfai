@@ -312,3 +312,24 @@ No relevant Odoo-core, tenant-isolation, accounting, feature-flag, or customer-v
 
 REVIEW VERDICT: REJECT
 ```
+
+## Owner Decision - T002 unlocked: upgrade to Next.js 15 - 2026-09-15 (Dubai)
+
+The owner (Eslam) reviewed the T002 decision request and **approved upgrading the frontend
+major version from Next.js 14 to Next.js 15** (with React 19), accepting the plan.md tech-stack
+change. Rationale: zero frontend code exists yet, so migration cost is zero now vs. very high
+after UI build-out; staying on 14 means shipping with two unauthenticated RCE advisories
+(GHSA-p293-qw3h-jr36, GHSA-2xp9-vwfh-vxw4) that have no patched 14.x release.
+
+Changes already applied to ratified docs (this commit):
+- specs/001-saas-onboarding-shell/plan.md: "Next.js 15 (App Router) + React 19", tree comment updated
+- specs/001-saas-onboarding-shell/tasks.md: T002 description now "Next.js 15 App Router project scaffold"
+
+Instructions to the autonomous executor:
+1. **T002 is unblocked** — reattempt at next tick. Scaffold `frontend/` with `next@15` (latest 15.x
+   patch), React 19, `@carbon/react`, `next-intl`, TypeScript, App Router. `npm audit --omit=dev`
+   must come back clean (or only documented, genuinely-unreachable residuals) per the security gate.
+2. T003's rejection reason (frontend container ENOENT because `frontend/package.json` did not
+   exist) resolves itself once T002 lands; re-run T003 after T002 passes review, and make
+   `test-compose.sh` actually verify the frontend serves HTTP, not just container count.
+3. No other components are affected (backend, Odoo, contracts unchanged).
