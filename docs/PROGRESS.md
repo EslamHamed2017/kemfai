@@ -333,3 +333,39 @@ Instructions to the autonomous executor:
    exist) resolves itself once T002 lands; re-run T003 after T002 passes review, and make
    `test-compose.sh` actually verify the frontend serves HTTP, not just container count.
 3. No other components are affected (backend, Odoo, contracts unchanged).
+
+## T002 implemented - 2026-09-15 (Dubai time)
+
+Scaffolded `frontend` (Next.js 15 App Router) per the owner's decision above, closing the Security Gate
+in the same pass.
+
+**What was built:**
+- `package.json` pinned to `next@15.5.25` (latest 15.x patch), `react@19.3.0`/`react-dom@19.3.0`,
+  `@carbon/react@1.116.0`, `next-intl@4.14.5`, TypeScript `5.9.3` (stable 5.x line — `typescript@7.x` on
+  the registry is a new, unproven major and not used here).
+- `src/app/layout.tsx` (minimal root layout, `dir="ltr"` default — full EN/AR dir-switching lands in T023)
+  and `src/app/page.tsx` (placeholder `KEMFAI` heading).
+- Empty route group directories matching plan.md's Project Structure exactly: `(public)/`, `(auth)/`,
+  `(onboarding)/`, `(internal)/` under `src/app/` (each holds a `.gitkeep` since git does not track empty
+  directories).
+- `jest.config.js` (via `next/jest`) + `tests/unit/home-page.spec.tsx` as the vertical-slice test.
+
+**Security gate (`npm audit --omit=dev`):**
+- Fresh install surfaced 2 advisories (1 moderate, 1 high) — both PostCSS (XSS via unescaped
+  `</style>`, arbitrary `.map` file disclosure via `sourceMappingURL`) pulled in as `next@15.5.25`'s
+  pinned transitive dependency (`postcss@8.4.31`).
+- Added a `package.json` `overrides` entry pinning `postcss@8.5.28` (latest patched release). Verified
+  `npm ls postcss` shows the override applied cleanly under `next`, and `npm run build`/`npm test` both
+  still pass after the override — no breaking change to Next's internal CSS pipeline.
+- Result: `npm audit --omit=dev` → **0 vulnerabilities**. No residual-risk acceptance needed this time.
+
+**Verification performed:**
+- `npm install` → 474 packages, `npm audit --omit=dev` → 0 vulnerabilities.
+- `npm run build` → succeeds (`next build`, static export of `/` and `/_not-found`, no warnings after
+  adding `outputFileTracingRoot` to silence the multi-lockfile workspace-root warning).
+- `npm test` → 1/1 passing (`Home` page smoke test via `@testing-library/react`).
+- `npm run dev` → boots (`Ready` in ~1.6s), `GET /` returns `200` with the rendered `<h1>KEMFAI</h1>`;
+  process stopped cleanly afterward.
+- No backend/Odoo/DB code touched; no Enterprise/QuickBooks code introduced.
+
+T002 marked `[X]` in tasks.md.

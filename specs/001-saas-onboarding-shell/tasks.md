@@ -54,7 +54,7 @@ Per plan.md's Project Structure: `frontend/` (Next.js 15), `backend/api/` (NestJ
     plan.md's `backend/api/src/` structure skeleton (modules/, common/, integrations/, test/ directories present).
   - **Roles**: Primary: GLM · Backup: Claude · Reviewer: Codex
 
-- [ ] T002 [P] Initialize `frontend` Next.js 15 App Router project scaffold (`package.json`, `tsconfig.json`,
+- [X] T002 [P] Initialize `frontend` Next.js 15 App Router project scaffold (`package.json`, `tsconfig.json`,
   `next.config.js`, `src/app/layout.tsx`) with `@carbon/react` and `next-intl` dependencies in `frontend/`
   - **Dependencies**: None
   - **Acceptance Criteria**: `npm run dev` boots an empty Next.js app; route groups

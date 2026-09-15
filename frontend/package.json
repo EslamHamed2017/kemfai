@@ -1,0 +1,36 @@
+{
+  "name": "kemfai-frontend",
+  "version": "0.1.0",
+  "description": "KEMFAI onboarding shell - Next.js 15 App Router, Carbon-based, EN/AR LTR/RTL.",
+  "private": true,
+  "license": "UNLICENSED",
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint",
+    "test": "jest",
+    "test:watch": "jest --watch"
+  },
+  "dependencies": {
+    "@carbon/react": "1.116.0",
+    "next": "15.5.25",
+    "next-intl": "4.14.5",
+    "react": "19.3.0",
+    "react-dom": "19.3.0"
+  },
+  "devDependencies": {
+    "@testing-library/jest-dom": "7.0.1",
+    "@testing-library/react": "16.3.3",
+    "@types/jest": "30.0.0",
+    "@types/node": "20.19.9",
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
+    "jest": "30.5.1",
+    "jest-environment-jsdom": "30.5.1",
+    "typescript": "5.9.3"
+  },
+  "overrides": {
+    "postcss": "8.5.28"
+  }
+}
