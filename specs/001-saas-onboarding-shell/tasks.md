@@ -61,7 +61,7 @@ Per plan.md's Project Structure: `frontend/` (Next.js 15), `backend/api/` (NestJ
     `(public)/(auth)/(onboarding)/(internal)` exist as empty directories matching plan.md's Project Structure.
   - **Roles**: Primary: Claude · Backup: Gemini · Reviewer: Codex
 
-- [ ] T003 [P] Extend `infra/docker/docker-compose.yml` with `keycloak`, `minio`, `redis`, `api`, and `frontend`
+- [X] T003 [P] Extend `infra/docker/docker-compose.yml` with `keycloak`, `minio`, `redis`, `api`, and `frontend`
   services alongside the existing `kemfai-db` and `kemfai-odoo` services
   - **Dependencies**: None
   - **Acceptance Criteria**: `docker compose up` starts all seven services; Keycloak reachable on its admin

@@ -36,6 +36,98 @@ services:
       - ../../backend/addons:/mnt/extra-addons
     restart: unless-stopped
 
+  redis:
+    image: redis:7-alpine
+    container_name: kemfai-redis
+    ports:
+      - "127.0.0.1:6379:6379"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  minio:
+    image: quay.io/minio/minio:latest
+    container_name: kemfai-minio
+    environment:
+      MINIO_ROOT_USER: kemfai_minio
+      MINIO_ROOT_PASSWORD: kemfai_dev_minio_secret
+    command: server /data --console-address ":9001"
+    ports:
+      - "127.0.0.1:9000:9000"
+      - "127.0.0.1:9001:9001"
+    volumes:
+      - kemfai-minio-data:/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://127.0.0.1:9000/minio/health/live"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.0
+    container_name: kemfai-keycloak
+    environment:
+      KEYCLOAK_ADMIN: admin
+      KEYCLOAK_ADMIN_PASSWORD: kemfai_dev_admin
+    command: start-dev
+    ports:
+      - "127.0.0.1:8080:8080"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "exec 3<>/dev/tcp/127.0.0.1/8080"]
+      interval: 10s
+      timeout: 5s
+      retries: 15
+      start_period: 30s
+
+  api:
+    build:
+      context: ../../backend/api
+    container_name: kemfai-api
+    depends_on:
+      kemfai-db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      PORT: 4000
+      NODE_ENV: development
+      REDIS_URL: redis://redis:6379
+      KEMFAI_ODOO_URL: http://kemfai-odoo:8069
+      KEYCLOAK_URL: http://keycloak:8080
+      STORAGE_ENDPOINT: http://minio:9000
+    ports:
+      - "127.0.0.1:4000:4000"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:4000/"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  frontend:
+    build:
+      context: ../../frontend
+    container_name: kemfai-frontend
+    depends_on:
+      - api
+    environment:
+      NEXT_PUBLIC_API_URL: http://localhost:4000
+      NEXT_PUBLIC_DEFAULT_LOCALE: en
+    ports:
+      - "127.0.0.1:3010:3000"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:3000/"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
 volumes:
   kemfai-db-data:
   kemfai-odoo-data:
+  kemfai-minio-data:
