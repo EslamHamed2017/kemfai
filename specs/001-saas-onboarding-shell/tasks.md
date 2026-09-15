@@ -75,7 +75,7 @@ Per plan.md's Project Structure: `frontend/` (Next.js 14), `backend/api/` (NestJ
     conflicting TS/React rules) documented in each config's header comment.
   - **Roles**: Primary: GLM · Backup: Claude · Reviewer: Codex
 
-- [ ] T005 [P] Scaffold `kemfai_*` Odoo addon skeletons: `backend/addons/kemfai_tenant_core/__manifest__.py`,
+- [X] T005 [P] Scaffold `kemfai_*` Odoo addon skeletons: `backend/addons/kemfai_tenant_core/__manifest__.py`,
   `backend/addons/kemfai_company_setup/__manifest__.py`, `backend/addons/kemfai_module_selection/__manifest__.py`,
   `backend/addons/kemfai_onboarding_checklist/__manifest__.py`, each depending only on Odoo Community `base`
   - **Dependencies**: None

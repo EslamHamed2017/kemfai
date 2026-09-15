@@ -185,3 +185,73 @@ The scaffold meets its explicit acceptance criteria:
 
 REVIEW VERDICT: REJECT
 ```
+
+## T005 implemented - 2026-09-15 (Dubai time)
+
+Skipped a third attempt at T002 (see Decision Request below) and picked up T005 instead — it is
+also unblocked (`Dependencies: None`) per tasks.md and carries no security-gate risk.
+
+**What was built:** four `kemfai_*` Odoo addon skeletons, each with only `__init__.py` +
+`__manifest__.py`, `depends: ["base"]` (exactly as T005 specifies — no inter-module depends added
+yet; those come with each addon's real implementation task):
+- `backend/addons/kemfai_tenant_core/`
+- `backend/addons/kemfai_company_setup/`
+- `backend/addons/kemfai_module_selection/`
+- `backend/addons/kemfai_onboarding_checklist/`
+
+All use `license: "LGPL-3"` (Constitution Principle II: Odoo Community/LGPL-compatible only),
+`category: "KEMFAI"`, `installable: True`, `application: False`.
+
+**Test added:** `backend/addons/test-install.sh` — spins up a throwaway `odoo:18` container on the
+dev stack's `docker_default` network against a scratch Postgres database (via the running
+`kemfai-db` container), installs every `kemfai_*` addon found in the directory, fails on any
+error/warning/traceback in the install log or non-zero exit, and always drops the scratch database
+afterward. This makes T005's acceptance criteria ("installs cleanly... with zero errors") a
+runnable, repeatable check rather than a one-off manual verification.
+
+**Verification performed:**
+- `backend/addons/test-install.sh` → `PASS: all kemfai_* addons installed cleanly with zero
+  errors/warnings.` (16 modules loaded total: the 4 kemfai_* addons plus their `base`-line
+  transitive deps; log grepped for error/critical/traceback/warning — none found).
+- `git status --porcelain` shows only new files under `backend/addons/` — no Odoo core file
+  touched.
+- `grep -ir "enterprise\|quickbooks" backend/addons/` → no matches.
+- Scratch test databases confirmed dropped after the run (`SELECT datname FROM pg_database WHERE
+  datname LIKE 'kemfai_test%'` → empty).
+
+T005 marked `[X]` in tasks.md.
+
+## Decision Request - T002 blocked on locked Next.js 14 major version
+
+**Context:** T002 (Next.js 14 frontend scaffold) has now failed the mandatory security gate twice
+across separate implement ticks (2026-09-14, and again on inspection today, 2026-09-15). Both prior
+attempts pinned to the latest available 14.x patch, which is what fixed the analogous NestJS 10
+issue in T001 — but that fix pattern does not apply here.
+
+**What's actually wrong:** `npm audit --omit=dev` against `next@14.2.35` (the latest 14.2.x patch
+available on the registry today) reports 22 advisories against the Next.js package itself,
+including **two critical, unauthenticated RCEs**:
+- `GHSA-p293-qw3h-jr36` — Unauthenticated RCE on Windows-hosted servers (range `>=13.4.0 <15.5.24`)
+- `GHSA-2xp9-vwfh-vxw4` — Unauthenticated RCE in the Image Optimization API when AVIF files are
+  used (range `>=10.0.0 <15.5.24`)
+
+plus several more high-severity DoS/SSRF advisories. Every one of these ranges' upper bound is in
+the `15.5.x` line — **there is no patched release anywhere on the Next.js 14 major version.** This
+is unlike T001's NestJS SSE advisory, where the rest of the tree was patchable and only one narrow,
+genuinely-unreachable (no SSE usage anywhere in this codebase) advisory remained as a documented
+residual risk.
+
+**Why I'm not guessing:** Two of these are unauthenticated RCEs in code paths (`next/image` with
+AVIF; Windows-hosted deploys) that later tasks (T036+, the actual UI build-out) will very plausibly
+exercise — this isn't a "dead code, permanently unreachable" situation I can responsibly wave
+through the way T001's SSE finding was. Resolving it for real means either:
+1. Upgrading the locked major version from Next.js 14 to 15 (breaks plan.md's ratified tech-stack
+   pin — a decision beyond a single task's scope), or
+2. Formally accepting residual risk with binding mitigations (e.g., contractually never enabling
+   AVIF in `next/image`, deploy only on Linux containers — already true per plan.md/infra, so the
+   Windows RCE is arguably N/A for production; but this needs an explicit owner sign-off given the
+   severity, not a unilateral call baked into a scaffolding task).
+
+**Ask:** Owner/reviewer decision needed on which path to take before T002 is reattempted. Until
+then, T002 stays `[ ]` and other unblocked, non-conflicting Setup-phase tasks (T003, T004 once
+T002 lands, or foundational Phase 2 work) should proceed instead.
