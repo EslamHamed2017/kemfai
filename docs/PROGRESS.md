@@ -417,3 +417,60 @@ since `infra/docker/docker-compose.yml`'s `kemfai-db` service does not publish a
   change, no tenant database touched.
 
 T007 marked `[X]` in tasks.md.
+
+## Rejected implement tick - 2026-09-17 00:00 +04
+
+Codex rejected the last implement attempt and working tree was reverted. Reviewer verdict:
+
+```
+> jest --config test/jest-integration.json --runInBand
+
+PASS test/integration/account-migration.integration-spec.ts
+PASS test/integration/tenant-migration.integration-spec.ts
+PASS test/integration/control-db-migration.integration-spec.ts
+
+Test Suites: 3 passed, 3 total
+Tests:       11 passed, 11 total
+Snapshots:   0 total
+Time:        4.509 s
+Ran all test suites.
+npm notice
+npm notice New major version of npm available! 10.8.2 -> 12.0.2
+npm notice Changelog: https://github.com/npm/cli/releases/tag/v12.0.2
+npm notice To update run: npm install -g npm@12.0.2
+npm notice
+
+codex
+Implemented task: **T008 — Tenant migration + entity**.
+
+The migration/entity correctly includes the required fields, exact `Pending|Creating|Ready|Failed` enum, and database-level uniqueness for `account_id`.
+
+Verification results:
+
+- `npm test`: passed — 1/1 test.
+- Integration suite against PostgreSQL: passed — 11/11 tests, including all four T008 tests.
+- `npm run build`: passed.
+- `npm run lint`: passed.
+- No Odoo core edits, hard-coded entitlements/trials, native Odoo UI leakage, accounting behavior, or missing feature gate is introduced by this task.
+
+1. `tenant.account_id` has no foreign key to `account.id`, despite `data-model.md` explicitly requiring `FK → Account (owner)`. The integration test actively hides this defect by creating Tenant rows with nonexistent account UUIDs. This permits orphaned tenant ownership records and violates the binding data model and tenant/data-integrity gate. T008 was therefore marked complete prematurely.
+
+REVIEW VERDICT: REJECT
+tokens used
+34,754
+Implemented task: **T008 — Tenant migration + entity**.
+
+The migration/entity correctly includes the required fields, exact `Pending|Creating|Ready|Failed` enum, and database-level uniqueness for `account_id`.
+
+Verification results:
+
+- `npm test`: passed — 1/1 test.
+- Integration suite against PostgreSQL: passed — 11/11 tests, including all four T008 tests.
+- `npm run build`: passed.
+- `npm run lint`: passed.
+- No Odoo core edits, hard-coded entitlements/trials, native Odoo UI leakage, accounting behavior, or missing feature gate is introduced by this task.
+
+1. `tenant.account_id` has no foreign key to `account.id`, despite `data-model.md` explicitly requiring `FK → Account (owner)`. The integration test actively hides this defect by creating Tenant rows with nonexistent account UUIDs. This permits orphaned tenant ownership records and violates the binding data model and tenant/data-integrity gate. T008 was therefore marked complete prematurely.
+
+REVIEW VERDICT: REJECT
+```
