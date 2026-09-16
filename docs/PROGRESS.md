@@ -369,3 +369,51 @@ in the same pass.
 - No backend/Odoo/DB code touched; no Enterprise/QuickBooks code introduced.
 
 T002 marked `[X]` in tasks.md.
+
+## T007 implemented - 2026-09-16 (Dubai time)
+
+Next unblocked task after T001-T006 (Phase 1 Setup + T006 foundational baseline, all already
+`[X]`). Implemented the `Account` migration + entity per data-model.md's Account table.
+
+**What was built:**
+- `backend/api/src/database/migrations/1789567327778-CreateAccount.ts` — creates the `citext`
+  extension, two Postgres enum types (`account_selected_billing_cycle_enum`,
+  `account_preferred_locale_enum`), the `account` table, and a unique index on `email`.
+- `backend/api/src/modules/accounts/entities/account.entity.ts` — TypeORM entity with every field
+  from data-model.md's Account table (`id`, `keycloakUserId`, `email`, `emailVerified`,
+  `mfaEnrolled`, `selectedPlanId`, `selectedBillingCycle`, `preferredLocale`, `createdAt`,
+  `updatedAt`). `preferred_locale` is included even though T007's own task-line field list omits
+  it, because T007's acceptance criteria says the entity must match data-model.md "verbatim", and
+  T104 (locale persistence, dependency: T007) sets `Account.preferred_locale` assuming the column
+  already exists with no migration task of its own — data-model.md is the canonical source here,
+  not a task-line paraphrase, so no Decision Request was needed. Only `Unverified -> Verified`
+  (via `email_verified`) is modeled; there is no separate `status` column, matching data-model.md's
+  explicit state note.
+- `backend/api/test/integration/account-migration.integration-spec.ts` — asserts: unique index on
+  `email` rejects a duplicate; `citext` makes uniqueness case-insensitive; every documented field
+  round-trips through Postgres; no `status` column exists; the three nullable fields
+  (`selected_plan_id`, `selected_billing_cycle`, `preferred_locale`) default to null.
+- Fixed a latent ordering bug in T006's `control-db-migration.integration-spec.ts`: its baseline
+  test asserted the Baseline migration was in the *freshly executed* list from its own
+  `runMigrations()` call, which only holds if no sibling suite touched the same live DB first.
+  Since T007's suite also calls `runMigrations()` against the same `kemfai_control` database in
+  the same test run, whichever file runs first "consumes" the fresh-execution signal for the
+  other. Changed the assertion to check the `migrations` table directly (already applied) rather
+  than the transient "executed this call" list — this was necessary for both suites to pass
+  together, and the same latent issue would otherwise resurface with every future
+  migration-carrying task (T008+).
+
+**Verification performed (throwaway `postgres:16` container, published on `127.0.0.1:15432`,
+since `infra/docker/docker-compose.yml`'s `kemfai-db` service does not publish a host port):**
+- `npm run migration:run` → applies `CreateAccount1789567327778` cleanly after `Baseline`.
+- `npm run test:integration -- --runInBand` → 2/2 suites, 7/7 tests passing, run against a fresh
+  DB, in both file-execution orders.
+- `npm test -- --runInBand` → 1/1 unit test still passing (unaffected).
+- `npm run lint` → clean (after `eslint --fix` on two Prettier-only formatting issues).
+- `npm run build` → succeeds.
+- `npm audit --omit=dev` → same 5 moderate `@nestjs/core` SSE-injection advisories already
+  accepted as residual risk in T001's log entry (no dependency changed by this task).
+- No Odoo core edits, hard-coded plan/entitlement values, or Odoo UI leakage; control-plane-only
+  change, no tenant database touched.
+
+T007 marked `[X]` in tasks.md.

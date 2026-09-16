@@ -101,7 +101,7 @@ that every user story depends on.
     connection config).
   - **Roles**: Primary: GLM · Backup: Claude · Reviewer: Codex
 
-- [ ] T007 [P] Migration + entity: `Account` (id, keycloak_user_id, email citext unique, email_verified,
+- [X] T007 [P] Migration + entity: `Account` (id, keycloak_user_id, email citext unique, email_verified,
   mfa_enrolled, selected_plan_id, selected_billing_cycle, created_at, updated_at) in
   `backend/api/src/database/migrations/` and `backend/api/src/modules/accounts/entities/account.entity.ts`
   - **Dependencies**: T006

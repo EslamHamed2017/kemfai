@@ -15,8 +15,10 @@ describe('kemfai_control DataSource (T006)', () => {
   it('connects to kemfai_control and applies the empty baseline migration', async () => {
     await controlDataSource.initialize();
 
-    const executed = await controlDataSource.runMigrations();
-    expect(executed.some((m) => m.name.startsWith('Baseline'))).toBe(true);
+    // Runs migrations idempotently: proves the baseline is *applied*, not merely that this
+    // particular call freshly executed it — a sibling suite's DataSource (e.g. T007's) may have
+    // already applied it against the same live DB earlier in the same test run.
+    await controlDataSource.runMigrations();
 
     const migrationRows = await controlDataSource.query(
       'SELECT name FROM migrations WHERE name LIKE $1',
