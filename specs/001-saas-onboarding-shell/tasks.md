@@ -92,7 +92,7 @@ that every user story depends on.
 
 **⚠️ CRITICAL**: No user story work can begin until this phase is complete.
 
-- [ ] T006 Configure the `kemfai_control` migration/ORM framework (e.g. TypeORM `DataSource`) pointed at a
+- [X] T006 Configure the `kemfai_control` migration/ORM framework (e.g. TypeORM `DataSource`) pointed at a
   dedicated control-plane Postgres database, distinct from any `kemfai_tenant_<id>` database, in
   `backend/api/src/database/data-source.ts`
   - **Dependencies**: T001, T003
