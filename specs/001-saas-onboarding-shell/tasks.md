@@ -68,7 +68,7 @@ Per plan.md's Project Structure: `frontend/` (Next.js 15), `backend/api/` (NestJ
     port; MinIO console reachable; Redis reachable from `backend/api`'s configured `REDIS_URL`.
   - **Roles**: Primary: GLM · Backup: Claude · Reviewer: Codex
 
-- [ ] T004 [P] Configure shared ESLint + Prettier config for `backend/api` and `frontend` in
+- [X] T004 [P] Configure shared ESLint + Prettier config for `backend/api` and `frontend` in
   `backend/api/.eslintrc.js` and `frontend/.eslintrc.js`
   - **Dependencies**: T001, T002
   - **Acceptance Criteria**: `npm run lint` runs clean on both empty scaffolds; consistent rule set (no
