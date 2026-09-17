@@ -117,7 +117,7 @@ that every user story depends on.
     level (FR-023); `status` enum matches `Pending|Creating|Ready|Failed` exactly.
   - **Roles**: Primary: GLM · Backup: Claude · Reviewer: Codex
 
-- [ ] T009 [P] Migration + entities: `Plan`, `Feature`, `PlanFeatureEntitlement`, `PlanSetting`,
+- [X] T009 [P] Migration + entities: `Plan`, `Feature`, `PlanFeatureEntitlement`, `PlanSetting`,
   `EntitlementDefault` in `backend/api/src/database/migrations/` and
   `backend/api/src/modules/entitlements/entities/`
   - **Dependencies**: T006

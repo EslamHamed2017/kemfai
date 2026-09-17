@@ -627,3 +627,54 @@ However, T009 was marked complete prematurely.
 
 REVIEW VERDICT: REJECT
 ```
+
+## T009 — Entitlement engine migration + entities (2026-09-17)
+
+Root cause of both prior rejections addressed directly:
+
+1. **Seed must happen in the migration itself, not rely on column defaults.** The previous attempt
+   declared `default_trial_window_days`/`default_auto_restrict_unpaid` as column-level DEFAULTs and
+   never inserted a row, so `entitlement_default` had 0 rows after a clean `migration:run` — the
+   test only passed because it inserted the row itself. This attempt's migration
+   (`CreateEntitlements1789620000000`) explicitly `INSERT`s the singleton (`id=1,
+   default_trial_window_days=14, default_auto_restrict_unpaid=true`) as its last statement, and `id`
+   carries no column DEFAULT — only a `CHECK (id = 1)` constraint enforcing the singleton shape.
+2. **Tests must be repeatable against an already-migrated database.** The previous attempt's
+   `afterEach` deleted `entitlement_default`, so a second run against the same DB found it empty and
+   failed. This attempt's `afterEach` only deletes rows from tables it creates test fixtures in
+   (`plan_feature_entitlement`, `plan_setting`, `feature`, `plan`) — `entitlement_default` is never
+   touched by any test, so the "seeded by the migration" assertion is checked against the real
+   migration-time row, not a test-manufactured one, and the suite is safe to run repeatedly.
+
+Added `Plan`, `Feature` (+`FeatureKind` enum), `PlanFeatureEntitlement` (composite PK
+`plan_id`/`feature_key`, FK to `feature.key` not `feature.id`), `PlanSetting` (both FR-030a fields
+nullable with no in-column default), and `EntitlementDefault` (DB-enforced singleton) — migration in
+`backend/api/src/database/migrations/1789620000000-CreateEntitlements.ts`, entities in
+`backend/api/src/modules/entitlements/entities/`. No plan-name string branching anywhere in
+`backend/api/src` (Constitution P-07) — confirmed by grep.
+
+New tests in `backend/api/test/integration/entitlements-migration.integration-spec.ts` cover: the
+migration-seeded singleton's exact values, the singleton `CHECK` constraint rejecting a second row,
+the composite PK on `PlanFeatureEntitlement` (via `.insert()`, since TypeORM's `.save()` upserts on
+an application-supplied composite key and would silently mask a PK violation as an UPDATE), FK
+rejection of a dangling `feature_key`, both `PlanSetting` fields persisting as `NULL` with no
+`column_default` in `information_schema`, explicit per-plan overrides of both fields, `Feature.key`
+uniqueness, and full verbatim field persistence across all four entities.
+
+**Verification performed** (throwaway `postgres:16` container, published on `127.0.0.1:15432`, same
+approach as T007/T008 since `kemfai-db` doesn't publish a host port):
+- `npm run migration:run` → applies `CreateEntitlements1789620000000` cleanly after
+  `Baseline`/`CreateAccount`/`CreateTenant`, including the seed `INSERT`.
+- `npm run migration:revert` then `npm run migration:run` → down/up cycle clean.
+- Raw `psql` check independent of the test suite: `entitlement_default` has exactly 1 row,
+  `(id=1, default_trial_window_days=14, default_auto_restrict_unpaid=true)`.
+- `npm run test:integration -- --runInBand` → 4/4 suites, 21/21 tests passing (8 new T009 tests) —
+  run **three consecutive times** against the same already-migrated database with no cleanup between
+  runs, all three green, directly proving the repeatability defect from the last rejection is fixed.
+- `npm test -- --runInBand` → 1/1 unit test still passing (unaffected).
+- `npm run lint` → clean (after `eslint --fix` on Prettier-only formatting).
+- `npm run build` → succeeds.
+- No Odoo core edits, hard-coded plan/entitlement values, or Odoo UI leakage; control-plane-only
+  change, no tenant database touched.
+
+T009 marked `[X]` in tasks.md.
