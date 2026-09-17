@@ -47,6 +47,11 @@ case "$next" in
     ;;
 esac
 
+# --- fix-until-accept: feed last reviewer verdict back into the same task ---
+if [ -n "${KEMFAI_FIX_NOTE:-}" ]; then
+  PROMPT="IMPORTANT: The previous attempt at this task was REJECTED by independent review. Fix the issues below and complete the SAME task properly (do not skip to another task). Reviewer verdict to address:\n\n${KEMFAI_FIX_NOTE}\n\n---\n${PROMPT}"
+fi
+
 # --- run Claude ---
 set +e
 OUT=$(claude -p "$PROMPT" \
