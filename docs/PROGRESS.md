@@ -678,3 +678,60 @@ approach as T007/T008 since `kemfai-db` doesn't publish a host port):
   change, no tenant database touched.
 
 T009 marked `[X]` in tasks.md.
+
+## Rejected implement tick - 2026-09-18 02:01 +04
+
+Codex rejected the last implement attempt and working tree was reverted. Reviewer verdict:
+
+```
+_account_preferred_locale_enum
+tenant_status_enum
+_tenant_status_enum
+feature_kind_enum
+_feature_kind_enum
+1|1789545849033|Baseline1789545849033
+2|1789567327778|CreateAccount1789567327778
+3|1789588900000|CreateTenant1789588900000
+4|1789610000000|CreateEntitlements1789610000000
+
+exec
+/bin/bash -lc "ls -la backend/api/src/database/migrations && rg -n 'class CreateEntitlements|CREATE TYPE.*feature_kind' backend/api/src/database/migrations && git log --oneline -8 -- backend/api/src/database/migrations backend/api/test/integration/entitlements-migration.integration-spec.ts" in /home/hermesops/kemfai
+ succeeded in 0ms:
+total 44
+drwxrwxr-x 2 hermesops hermesops 4096 Sep 17 20:02 .
+drwxrwxr-x 3 hermesops hermesops 4096 Sep 17 22:05 ..
+-rw-rw-r-- 1 hermesops hermesops  369 Sep 16 08:05 1789545849033-Baseline.ts
+-rw-rw-r-- 1 hermesops hermesops 1787 Sep 16 14:02 1789567327778-CreateAccount.ts
+-rw-rw-r-- 1 hermesops hermesops 1639 Sep 17 02:01 1789588900000-CreateTenant.ts
+-rw-rw-r-- 1 hermesops hermesops 4114 Sep 17 20:02 1789620000000-CreateEntitlements.ts
+backend/api/src/database/migrations/1789620000000-CreateEntitlements.ts:16:export class CreateEntitlements1789620000000 implements MigrationInterface {
+backend/api/src/database/migrations/1789620000000-CreateEntitlements.ts:21:      CREATE TYPE "feature_kind_enum" AS ENUM ('module', 'limit')
+5e1ce04 feat: SpecKit implement tick
+6c01edb feat: SpecKit implement tick
+7f437ae feat: SpecKit implement tick
+9a3c308 feat: SpecKit implement tick
+
+codex
+Implemented task: T010.
+
+The service logic matches the specified `EntitlementSet`, independently resolves both fallback fields, and scopes feature queries by `planId`. Unit tests pass: 3 suites, 9 tests. Build and lint also pass. I found no Odoo core edits, hard-coded plan branching, accounting nondeterminism, native Odoo UI leakage, or direct tenant-database access.
+
+However, T010 was marked complete prematurely.
+
+1. The integration test gate fails: 5/5 suites fail, including every new T010 integration test. `CreateEntitlements1789620000000` attempts to recreate `feature_kind_enum` because the database records the earlier migration as `CreateEntitlements1789610000000`. The current migration history is not repeatable against an already-migrated database, directly contradicting the claimed passing repeatability check.
+2. `GET /entitlements/me` has no executable authenticated success path: no implemented component assigns the trusted `req.planId`, so the actual application can only return 401. The controller test manufactures `req.planId` and therefore does not prove that the endpoint returns the current tenant’s entitlements or prevents tenant/plan substitution.
+
+REVIEW VERDICT: REJECT
+tokens used
+43,970
+Implemented task: T010.
+
+The service logic matches the specified `EntitlementSet`, independently resolves both fallback fields, and scopes feature queries by `planId`. Unit tests pass: 3 suites, 9 tests. Build and lint also pass. I found no Odoo core edits, hard-coded plan branching, accounting nondeterminism, native Odoo UI leakage, or direct tenant-database access.
+
+However, T010 was marked complete prematurely.
+
+1. The integration test gate fails: 5/5 suites fail, including every new T010 integration test. `CreateEntitlements1789620000000` attempts to recreate `feature_kind_enum` because the database records the earlier migration as `CreateEntitlements1789610000000`. The current migration history is not repeatable against an already-migrated database, directly contradicting the claimed passing repeatability check.
+2. `GET /entitlements/me` has no executable authenticated success path: no implemented component assigns the trusted `req.planId`, so the actual application can only return 401. The controller test manufactures `req.planId` and therefore does not prove that the endpoint returns the current tenant’s entitlements or prevents tenant/plan substitution.
+
+REVIEW VERDICT: REJECT
+```
