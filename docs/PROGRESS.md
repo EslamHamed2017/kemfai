@@ -570,3 +570,60 @@ Independent verification:
 
 REVIEW VERDICT: REJECT
 ```
+
+## Rejected implement tick - 2026-09-17 18:00 +04
+
+Codex rejected the last implement attempt and working tree was reverted. Reviewer verdict:
+
+```
+      147 |
+      148 |   it('the migration-seeded row mirrors the trial-window fallback pattern exactly for both fields (default_trial_window_days=14, default_auto_restrict_unpaid=true)', () => {
+
+      at Object.<anonymous> (test/integration/entitlements-migration.integration-spec.ts:145:35)
+
+  ● Entitlement engine migration + entities (T009) › the migration-seeded row mirrors the trial-window fallback pattern exactly for both fields (default_trial_window_days=14, default_auto_restrict_unpaid=true)
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: 14
+    Received: undefined
+
+      147 |
+      148 |   it('the migration-seeded row mirrors the trial-window fallback pattern exactly for both fields (default_trial_window_days=14, default_auto_restrict_unpaid=true)', () => {
+    > 149 |     expect(seededByMigration?.defaultTrialWindowDays).toBe(14);
+          |                                                       ^
+      150 |     expect(seededByMigration?.defaultAutoRestrictUnpaid).toBe(true);
+      151 |     expect(seededByMigration?.id).toBe(1);
+      152 |   });
+
+      at Object.<anonymous> (test/integration/entitlements-migration.integration-spec.ts:149:55)
+
+PASS test/integration/tenant-migration.integration-spec.ts
+PASS test/integration/account-migration.integration-spec.ts
+PASS test/integration/control-db-migration.integration-spec.ts
+
+Test Suites: 1 failed, 3 passed, 4 total
+Tests:       2 failed, 22 passed, 24 total
+Snapshots:   0 total
+Time:        4.09 s, estimated 5 s
+Ran all test suites.
+DROP DATABASE
+
+codex
+Implemented task: **T009**. The migration/entities satisfy the stated schema acceptance criteria, and a fresh-database run passes all 24 integration tests. Unit test, lint, and build also pass. No core Odoo edits, tenant-isolation leak, UI leakage, accounting issue, or missing T009-specific feature gate was found.
+
+However, T009 was marked complete prematurely.
+
+1. The integration suite is destructive and non-repeatable: `afterEach` deletes the required `entitlement_default` singleton. A second run fails 2 tests and leaves the migrated database without its required default row. Tests must restore/preserve the seeded singleton and pass repeatedly against an already-migrated database.
+
+REVIEW VERDICT: REJECT
+tokens used
+43,614
+Implemented task: **T009**. The migration/entities satisfy the stated schema acceptance criteria, and a fresh-database run passes all 24 integration tests. Unit test, lint, and build also pass. No core Odoo edits, tenant-isolation leak, UI leakage, accounting issue, or missing T009-specific feature gate was found.
+
+However, T009 was marked complete prematurely.
+
+1. The integration suite is destructive and non-repeatable: `afterEach` deletes the required `entitlement_default` singleton. A second run fails 2 tests and leaves the migrated database without its required default row. Tests must restore/preserve the seeded singleton and pass repeatedly against an already-migrated database.
+
+REVIEW VERDICT: REJECT
+```
