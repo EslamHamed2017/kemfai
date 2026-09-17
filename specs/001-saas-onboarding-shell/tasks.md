@@ -109,7 +109,7 @@ that every user story depends on.
     Account table verbatim; `Unverified → Verified` is the only state transition modeled.
   - **Roles**: Primary: GLM · Backup: Claude · Reviewer: Codex
 
-- [ ] T008 [P] Migration + entity: `Tenant` (id, account_id unique, status enum, odoo_db_name, minio_bucket,
+- [X] T008 [P] Migration + entity: `Tenant` (id, account_id unique, status enum, odoo_db_name, minio_bucket,
   provisioning_attempts, failure_reason, created_at, ready_at) in `backend/api/src/database/migrations/` and
   `backend/api/src/modules/tenants/entities/tenant.entity.ts`
   - **Dependencies**: T006, T007

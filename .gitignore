@@ -37,7 +37,7 @@ coverage/
 .pytest_cache/
 .coverage
 
-# KEMFAI runtime
-tenants/
-uploads/
-tmp/
+# KEMFAI runtime (root-level only — do not shadow src/ dirs like modules/tenants/)
+/tenants/
+/uploads/
+/tmp/

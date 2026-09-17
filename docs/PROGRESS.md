@@ -474,3 +474,42 @@ Verification results:
 
 REVIEW VERDICT: REJECT
 ```
+
+## T008 — Tenant migration + entity (2026-09-17)
+
+Root cause of the previous rejection found before redoing the work: `.gitignore`'s "KEMFAI runtime"
+block had a bare `tenants/` pattern (meant for a root-level runtime data directory), which also
+silently matched and ignored `backend/api/src/modules/tenants/` — the *source* directory for this
+task. Every prior implement tick's edits under that path were therefore invisible to git (untracked
++ ignored), which is why T008 kept reappearing unmarked despite on-disk evidence of past attempts,
+and why the FK omission never got persisted/fixed across ticks. Scoped the three KEMFAI-runtime
+patterns to the repo root (`/tenants/`, `/uploads/`, `/tmp/`) so they no longer shadow `src/` module
+directories.
+
+With the module directory now tracked, added the FK the last review flagged: `tenant.account_id`
+now carries `@ManyToOne(() => Account) @JoinColumn` with `ON DELETE RESTRICT`, plus the matching
+`CONSTRAINT "fk_tenant_account" FOREIGN KEY ... REFERENCES "account"("id")` in the
+`CreateTenant1789588900000` migration (`backend/api/src/database/migrations/`), alongside the unique
+index on `account_id` (DB-level idempotent provisioning, FR-023) and the exact
+`Pending|Creating|Ready|Failed` enum.
+
+New tests in `backend/api/test/integration/tenant-migration.integration-spec.ts` cover: unique
+`account_id` constraint, FK rejection of a nonexistent account (the specific defect Codex flagged),
+`ON DELETE RESTRICT` referential integrity, full-field persistence matching data-model.md verbatim,
+defaults (`status=Pending`, `provisioning_attempts=0`), and the enum's exact label set/order.
+
+**Verification performed** (throwaway `postgres:16` container, published on `127.0.0.1:15432`, since
+`infra/docker/docker-compose.yml`'s `kemfai-db` service does not publish a host port):
+- `npm run migration:run` → applies `CreateTenant1789588900000` cleanly after `Baseline`/`CreateAccount`.
+- `npm run migration:revert` then `npm run migration:run` → down/up cycle clean (drops FK-dependent
+  table/type, re-creates identically).
+- `npm run test:integration -- --runInBand` → 3/3 suites, 13/13 tests passing (6 new T008 tests),
+  including the full suite together and `tenant|control-db` in isolation to rule out the T007-era
+  cross-suite ordering issue.
+- `npm test -- --runInBand` → 1/1 unit test still passing (unaffected).
+- `npm run lint` → clean (after `eslint --fix` on two Prettier-only formatting issues in the new spec).
+- `npm run build` → succeeds.
+- No Odoo core edits, hard-coded plan/entitlement values, or Odoo UI leakage; control-plane-only
+  change, no tenant database touched.
+
+T008 marked `[X]` in tasks.md.
