@@ -513,3 +513,60 @@ defaults (`status=Pending`, `provisioning_attempts=0`), and the enum's exact lab
   change, no tenant database touched.
 
 T008 marked `[X]` in tasks.md.
+
+## Rejected implement tick - 2026-09-17 12:01 +04
+
+Codex rejected the last implement attempt and working tree was reverted. Reviewer verdict:
+
+```
+Time:        8.739 s
+Ran all test suites.
+
+ succeeded in 9571ms:
+ succeeded in 10091ms:
+
+> kemfai-api@0.1.0 lint
+> eslint "{src,test}/**/*.ts"
+
+
+codex
+The test suite passes, but it exposes an acceptance gap: the migration defines column defaults yet never inserts the required singleton `EntitlementDefault` row. The test manufactures that row itself, so it does not prove the specified seed exists after migration. I’m doing a final clean-schema check and cleanup before issuing the verdict.
+exec
+/bin/bash -lc "docker exec kemfai-t009-review-db psql -U kemfai -d kemfai_control -Atc 'SELECT count(*) FROM entitlement_default; SELECT column_default FROM information_schema.columns WHERE table_name='\"'\"'entitlement_default'\"'\"' AND column_name IN ('\"'\"'default_trial_window_days'\"'\"','\"'\"'default_auto_restrict_unpaid'\"'\"') ORDER BY column_name;' ; docker stop kemfai-t009-review-db" in /home/hermesops/kemfai
+ succeeded in 235ms:
+kemfai-t009-review-db
+
+codex
+Implemented task: **T009**.
+
+The migration/entities otherwise match the documented schema: composite PK, nullable plan overrides without defaults, singleton constraint, and no plan-name branching. No Odoo core edit, UI leakage, tenant-isolation breach, accounting nondeterminism, or applicable feature-flag violation was found.
+
+Independent verification:
+
+- Integration tests: 4 suites, 23 tests passed.
+- Unit tests: 1 passed.
+- Lint: passed.
+- Build: passed.
+- Clean database inspection found `entitlement_default` contains **0 rows** after migration.
+
+1. T009 requires `EntitlementDefault` to be seeded. The migration only defines column defaults and never inserts the singleton row. The test hides this defect by creating the row itself. T009 therefore fails its acceptance criteria, and marking it `[X]` is premature.
+
+REVIEW VERDICT: REJECT
+tokens used
+27,004
+Implemented task: **T009**.
+
+The migration/entities otherwise match the documented schema: composite PK, nullable plan overrides without defaults, singleton constraint, and no plan-name branching. No Odoo core edit, UI leakage, tenant-isolation breach, accounting nondeterminism, or applicable feature-flag violation was found.
+
+Independent verification:
+
+- Integration tests: 4 suites, 23 tests passed.
+- Unit tests: 1 passed.
+- Lint: passed.
+- Build: passed.
+- Clean database inspection found `entitlement_default` contains **0 rows** after migration.
+
+1. T009 requires `EntitlementDefault` to be seeded. The migration only defines column defaults and never inserts the singleton row. The test hides this defect by creating the row itself. T009 therefore fails its acceptance criteria, and marking it `[X]` is premature.
+
+REVIEW VERDICT: REJECT
+```
