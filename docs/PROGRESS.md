@@ -1333,3 +1333,39 @@ clearing the stale state described in point 4):
   change, no tenant database touched.
 
 T014 marked `[X]` in tasks.md.
+
+## T015 — Dev/quickstart entitlement seed (2026-09-18)
+
+Added `backend/api/src/database/seeds/dev-quickstart.seed.ts` (exported `runDevQuickstartSeed` +
+`npm run seed:dev` CLI runner). Fully idempotent: `EntitlementDefault` singleton restored-if-missing
+only (`ON CONFLICT DO NOTHING`, normally already created by the CreateEntitlements migration); one
+published `Plan` upserted on a deterministic dev-only UUID; three `Feature` rows (`module.accounting`,
+`module.invoicing`, `limit.users`) upserted on `key`; three `PlanFeatureEntitlement` rows upserted on
+the composite PK; `PlanSetting` inserted with BOTH FR-030a fields NULL per the acceptance criteria —
+insert-only so manual per-plan overrides survive re-runs. Plan name/values exist only in seed data
+(Constitution P-07 — grep confirms no plan-name string outside seed/test code).
+
+New test `backend/api/test/integration/dev-quickstart-seed.integration-spec.ts` (4 tests): exactly one
+published plan with entitlements + null-FR-030a `PlanSetting` after seeding (the DB-level precondition
+for `GET /public/plans` returning exactly one published plan once T031 exists — the endpoint itself is
+T031's to build); the fallback path exercised end-to-end through the real `EntitlementsService`
+(trialWindowDays=14, autoRestrictUnpaid=true resolved from `EntitlementDefault` against the seeded
+null/null `PlanSetting`); double-run idempotency (row counts unchanged, still one published plan);
+seed self-sufficiency for the `EntitlementDefault` singleton (deleted, then re-created by the seed;
+restored in a `finally` so the migration-seeded row other suites assert on is never left missing).
+
+**Verification performed** (against the running `kemfai-db` container, `172.16.6.2:5432`, as in prior
+ticks):
+- `npm run seed:dev` → exits 0; run twice → identical result, `SELECT count(*) FROM plan WHERE
+  published` = 1, `plan_setting` row has NULL/NULL FR-030a fields, `entitlement_default` singleton
+  present (14/true). Dev DB re-seeded after tests so it stays quickstart-ready.
+- `npm run test:integration -- --runInBand` → 11/11 suites, 76/76 tests passing, run **twice**
+  consecutively with identical results (repeatability; no cross-suite `entitlement_default`
+  interference).
+- `npm test -- --runInBand` → 3/3 suites, 16/16 unit tests passing (unaffected).
+- `npm run lint` → clean (after `eslint --fix` on one Prettier-only import-format issue).
+  `npm run build` → clean.
+- No Odoo core edits, no hard-coded entitlement values outside seed/test data, no Odoo UI leakage;
+  control-plane-only change, no tenant database touched.
+
+T015 marked `[X]` in tasks.md.

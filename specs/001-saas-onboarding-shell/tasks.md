@@ -178,7 +178,7 @@ that every user story depends on.
     convention).
   - **Roles**: Primary: GLM · Backup: Claude · Reviewer: Codex
 
-- [ ] T015 Seed script for dev/quickstart: `EntitlementDefault` singleton plus one published `Plan` with
+- [X] T015 Seed script for dev/quickstart: `EntitlementDefault` singleton plus one published `Plan` with
   `Feature`/`PlanFeatureEntitlement`/`PlanSetting` rows in `backend/api/src/database/seeds/`
   - **Dependencies**: T009
   - **Acceptance Criteria**: Running the seed against a fresh `kemfai_control` DB makes `GET /public/plans`

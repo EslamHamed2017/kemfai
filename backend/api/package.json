@@ -17,7 +17,8 @@
     "typeorm": "typeorm-ts-node-commonjs",
     "migration:run": "npm run typeorm -- migration:run -d src/database/data-source.ts",
     "migration:revert": "npm run typeorm -- migration:revert -d src/database/data-source.ts",
-    "migration:generate": "npm run typeorm -- migration:generate -d src/database/data-source.ts"
+    "migration:generate": "npm run typeorm -- migration:generate -d src/database/data-source.ts",
+    "seed:dev": "ts-node src/database/seeds/dev-quickstart.seed.ts"
   },
   "dependencies": {
     "@nestjs/bullmq": "10.2.3",
