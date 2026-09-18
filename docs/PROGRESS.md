@@ -1420,3 +1420,60 @@ afterward to restore the prior stack state (db/redis left running and healthy).
   (`git status`: only `docker-compose.yml` modified + new `infra/keycloak/`).
 
 T016 marked `[X]` in tasks.md.
+
+## Rejected implement tick - 2026-09-18 09:47 +04
+
+Codex rejected the last implement attempt and working tree was reverted. Reviewer verdict:
+
+```
+
+Test Suites: 4 passed, 4 total
+Tests:       30 passed, 30 total
+Snapshots:   0 total
+Time:        9.85 s
+Ran all test suites.
+
+ succeeded in 11369ms:
+
+> kemfai-api@0.1.0 lint
+> eslint "{src,test}/**/*.ts"
+
+
+exec
+/bin/bash -lc 'CONTROL_DB_HOST=172.16.6.2 CONTROL_DB_USER=odoo CONTROL_DB_PASSWORD=kemfai_dev_pg CONTROL_DB_NAME=kemfai_control npm run test:integration -- --runInBand' in /home/hermesops/kemfai/backend/api
+ succeeded in 8622ms:
+PASS test/integration/tenant-scope-guard.integration-spec.ts
+PASS test/integration/payment-submission-migration.integration-spec.ts
+PASS test/integration/entitlements-http.integration-spec.ts
+PASS test/integration/support-access-migration.integration-spec.ts
+PASS test/integration/dev-quickstart-seed.integration-spec.ts
+PASS test/integration/entitlements-service.integration-spec.ts
+PASS test/integration/entitlements-migration.integration-spec.ts
+PASS test/integration/audit-event-migration.integration-spec.ts
+PASS test/integration/subscription-migration.integration-spec.ts
+PASS test/integration/tenant-migration.integration-spec.ts
+PASS test/integration/account-migration.integration-spec.ts
+PASS test/integration/control-db-migration.integration-spec.ts
+
+Test Suites: 12 passed, 12 total
+Tests:       86 passed, 86 total
+Snapshots:   0 total
+Time:        8.147 s
+Ran all test suites.
+
+codex
+Implemented task: **T017**. Unit tests (30/30), integration tests (86/86), build, and lint all pass. No Odoo-core, hard-coded entitlement, accounting, UI-leakage, or feature-flag violation was found. However, `tasks.md` was marked complete prematurely.
+
+1. `TenantScopeGuard` only compares explicit `tenantId` values in headers/query/body/path. A Tenant A caller requesting a Tenant B resource by ordinary resource ID is not ownership-checked, so T017’s “any Tenant B resource” acceptance criterion and FR-001/SC-004 are not satisfied.
+2. `recordOrLogFailure()` swallows audit-write failures and then returns the 403. Therefore the guard can exit without writing `tenant_access.denied_cross_tenant`, directly violating the acceptance criterion. Tests do not cover this failure path.
+
+REVIEW VERDICT: REJECT
+tokens used
+32,346
+Implemented task: **T017**. Unit tests (30/30), integration tests (86/86), build, and lint all pass. No Odoo-core, hard-coded entitlement, accounting, UI-leakage, or feature-flag violation was found. However, `tasks.md` was marked complete prematurely.
+
+1. `TenantScopeGuard` only compares explicit `tenantId` values in headers/query/body/path. A Tenant A caller requesting a Tenant B resource by ordinary resource ID is not ownership-checked, so T017’s “any Tenant B resource” acceptance criterion and FR-001/SC-004 are not satisfied.
+2. `recordOrLogFailure()` swallows audit-write failures and then returns the 403. Therefore the guard can exit without writing `tenant_access.denied_cross_tenant`, directly violating the acceptance criterion. Tests do not cover this failure path.
+
+REVIEW VERDICT: REJECT
+```
