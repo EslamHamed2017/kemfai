@@ -103,8 +103,8 @@ services:
       STORAGE_ENDPOINT: http://minio:9000
       CONTROL_DB_HOST: kemfai-db
       CONTROL_DB_PORT: "5432"
-      CONTROL_DB_USER: odoo
-      CONTROL_DB_PASSWORD: kemfai_dev_pg
+      CONTROL_DB_USER: kemfai_api
+      CONTROL_DB_PASSWORD: ${CONTROL_DB_APP_PASSWORD:-kemfai_api_dev}
       CONTROL_DB_NAME: kemfai_control
     ports:
       - "127.0.0.1:4000:4000"
