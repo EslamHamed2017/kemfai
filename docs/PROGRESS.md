@@ -2083,3 +2083,60 @@ T028 meets its explicit row-count acceptance criterion. T032 does not fully meet
 
 REVIEW VERDICT: REJECT
 ```
+
+## Rejected implement tick - 2026-09-19 00:57 +04
+
+Codex rejected the last implement attempt and working tree was reverted. Reviewer verdict:
+
+```
+   218	
+   219	    const first = await request(app.getHttpServer())
+   220	      .post('/accounts/signup')
+   221	      .send(signupBody(email, plan.id))
+   222	      .expect(201);
+   223	    const accountId: string = first.body.accountId;
+   224	    createdAccountIds.push(accountId);
+   225	
+   226	    const second = await request(app.getHttpServer())
+   227	      .post('/accounts/signup')
+   228	      .send(signupBody(email, plan.id))
+   229	      .expect(201);
+   230	
+   231	    expect(second.body.accountId).toBe(accountId); // same account — not a second row
+   232	    expect(await countAccountRows(email)).toBe(1); // T028: exactly one row
+   233	    expect(fakeKeycloak.survivingUserIds()).toHaveLength(1);
+   234	
+   235	    const jobs = await verificationJobsFor(accountId);
+   236	    expect(jobs).toHaveLength(2); // original send + resend, distinct token versions
+   237	    expect(new Set(jobs.map((job) => job.id)).size).toBe(2);
+   238	  });
+   239	
+   240	  it('prompts plan re-selection (422) for an unverified duplicate whose plan is no longer published (review finding 1)', async () => {
+   241	    const plan = await createPlan(true);
+   242	    const email = suiteEmail('stale-plan');
+   243	
+   244	    const first = await request(app.getHttpServer())
+   245	      .post('/accounts/signup')
+
+codex
+Implemented tasks: T032 and T028.
+
+Unit tests pass: 183/183. Targeted signup integration tests pass: 7/7. Lint and build pass. The full integration suite fails: 135/136 passed, with queue-registration state contamination.
+
+1. T032 lacks runtime DTO validation. A missing or `null` password reaches `password.length` and returns an uncontrolled 500 instead of the required 422. The TypeScript interface provides no runtime protection.
+2. The incomplete accounts/onboarding module is publicly exposed without a feature-flag gate, violating the constitution’s mandatory gating rule.
+3. The mandatory Test Gate is not green: the full integration run failed. Therefore T028/T032 were marked done prematurely.
+
+REVIEW VERDICT: REJECT
+tokens used
+57,518
+Implemented tasks: T032 and T028.
+
+Unit tests pass: 183/183. Targeted signup integration tests pass: 7/7. Lint and build pass. The full integration suite fails: 135/136 passed, with queue-registration state contamination.
+
+1. T032 lacks runtime DTO validation. A missing or `null` password reaches `password.length` and returns an uncontrolled 500 instead of the required 422. The TypeScript interface provides no runtime protection.
+2. The incomplete accounts/onboarding module is publicly exposed without a feature-flag gate, violating the constitution’s mandatory gating rule.
+3. The mandatory Test Gate is not green: the full integration run failed. Therefore T028/T032 were marked done prematurely.
+
+REVIEW VERDICT: REJECT
+```
