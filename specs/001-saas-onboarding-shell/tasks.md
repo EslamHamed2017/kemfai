@@ -229,7 +229,7 @@ that every user story depends on.
     original result rather than re-executing side effects (Constitution Principle VII).
   - **Roles**: Primary: GLM · Backup: Claude · Reviewer: Codex
 
-- [ ] T021 Wire BullMQ + Redis module and register the five queues (`tenant.provision`,
+- [X] T021 Wire BullMQ + Redis module and register the five queues (`tenant.provision`,
   `email.send_verification`, `notification.billing_decision`, `support_access.expiry_sweep`,
   `trial.expiry_sweep`) in `backend/api/src/app.module.ts`
   - **Dependencies**: T001, T003

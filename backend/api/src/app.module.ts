@@ -10,9 +10,10 @@ import { BearerAuthGuard } from './common/guards/bearer-auth.guard';
 import { TenantScopeGuard } from './common/guards/tenant-scope.guard';
 import { RoleGuard } from './common/guards/role.guard';
 import { IdempotencyKeyInterceptor } from './common/interceptors/idempotency.interceptor';
+import { QueuesModule } from './common/queues/queues.module';
 
 @Module({
-  imports: [AuditModule, TenantContextModule, EntitlementsModule, IdempotencyModule],
+  imports: [AuditModule, TenantContextModule, EntitlementsModule, IdempotencyModule, QueuesModule],
   controllers: [AppController],
   providers: [
     AppService,
