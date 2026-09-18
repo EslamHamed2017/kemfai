@@ -1755,3 +1755,60 @@ However, T020 was marked done prematurely.
 
 REVIEW VERDICT: REJECT
 ```
+
+## Rejected implement tick - 2026-09-18 18:05 +04
+
+Codex rejected the last implement attempt and working tree was reverted. Reviewer verdict:
+
+```
+backend/api/src/database/data-source.ts:18:  password: process.env.CONTROL_DB_PASSWORD ?? 'kemfai_dev_pg',
+backend/api/src/database/data-source.ts:19:  database: process.env.CONTROL_DB_NAME ?? 'kemfai_control',
+infra/docker/docker-compose.yml:101:      NODE_ENV: development
+7aafc99 feat: SpecKit implement tick
+6a88920 feat: SpecKit implement tick
+4aa18a1 feat: SpecKit implement tick
+9cafb1b feat: SpecKit implement tick
+7d3fae1 feat: SpecKit implement tick
+
+exec
+/bin/bash -lc "sed -n '1,160p' infra/docker/odoo.conf; rg -n \"KEMFAI_ODOO_URL|ODOO_URL\" . --glob '"'!**/node_modules/**'"' --glob '"'!**/.git/**'"'; docker compose -f infra/docker/docker-compose.yml ps --format json 2>/dev/null || true" in /home/hermesops/kemfai
+ succeeded in 247ms:
+{"Command":"\"docker-entrypoint.s…\"","CreatedAt":"2026-09-16 20:00:48 +0000 UTC","ExitCode":0,"Health":"healthy","ID":"902b144a901f","Image":"postgres:16","Labels":"com.docker.compose.container-number=1,com.docker.compose.depends_on=,com.docker.compose.image=sha256:f1c3376c26f2609ab9f29f71f824103fe2fcd8ee0346485cb6122a4f93df6f94,com.docker.compose.project.config_files=/home/hermesops/kemfai/infra/docker/docker-compose.yml,com.docker.compose.project.working_dir=/home/hermesops/kemfai/infra/docker,com.docker.compose.service=kemfai-db,com.docker.compose.oneoff=False,com.docker.compose.project=docker,com.docker.compose.version=5.3.0,com.docker.compose.config-hash=c3708b4364d2e1b04ce70d7577ad7165b3cc18a2382422a00f104596acf6a05d","LocalVolumes":"1","Mounts":"/home/hermesop…,docker_kemfai-…","Name":"kemfai-db","Names":"kemfai-db","Networks":"docker_default","Ports":"5432/tcp","Project":"docker","Publishers":[{"URL":"","TargetPort":5432,"PublishedPort":0,"Protocol":"tcp"}],"RunningFor":"42 hours ago","Service":"kemfai-db","Size":"0B","State":"running","Status":"Up 42 hours (healthy)"}
+{"Command":"\"docker-entrypoint.s…\"","CreatedAt":"2026-09-16 20:04:12 +0000 UTC","ExitCode":0,"Health":"healthy","ID":"92ee86be749e","Image":"redis:7-alpine","Labels":"com.docker.compose.image=sha256:ff02b58f971e7d7d156a1267e283fcbbeee91773b6aa36c49dac28ecfe28eadf,com.docker.compose.project=docker,com.docker.compose.project.config_files=/home/hermesops/kemfai/infra/docker/docker-compose.yml,com.docker.compose.service=redis,com.docker.compose.version=5.3.0,com.docker.compose.config-hash=67810133b9a466f08a1def20067e99862f16e74878655e6f461555a508cd058d,com.docker.compose.container-number=1,com.docker.compose.oneoff=False,com.docker.compose.project.working_dir=/home/hermesops/kemfai/infra/docker,com.docker.compose.depends_on=","LocalVolumes":"1","Mounts":"6d3c2e8d54e409…","Name":"kemfai-redis","Names":"kemfai-redis","Networks":"docker_default","Ports":"127.0.0.1:6379-\u003e6379/tcp","Project":"docker","Publishers":[{"URL":"127.0.0.1","TargetPort":6379,"PublishedPort":6379,"Protocol":"tcp"}],"RunningFor":"42 hours ago","Service":"redis","Size":"0B","State":"running","Status":"Up 42 hours (healthy)"}
+
+codex
+Implemented task: **T026 — Odoo JSON-RPC client integration**.
+
+The unit implementation is stateless and re-authenticates for each database call. Its tenant-switching test correctly verifies that UIDs are not reused across calls.
+
+Verification performed:
+
+- New T026 tests: 6/6 passed.
+- Full API suite: 115/115 passed.
+- TypeScript build: passed.
+- ESLint: passed.
+- No Odoo core edits, native UI leakage, accounting changes, entitlement hard-coding, or feature-flag violations found.
+
+However, these are mock-only tests. No live Odoo integration test proves that the module can actually open the required session.
+
+1. The client reads `ODOO_URL`, but Docker supplies `KEMFAI_ODOO_URL`. Consequently, the API container falls back to `http://localhost:8069`, which points at the API container—not `kemfai-odoo`. T026’s required session cannot work in the repository’s declared environment. The misleading claim that `ODOO_URL` is wired by Compose appears in [odoo-rpc-client.ts](/home/hermesops/kemfai/backend/api/src/integrations/odoo-rpc/odoo-rpc-client.ts:13), while the actual variable is in [docker-compose.yml](/home/hermesops/kemfai/infra/docker/docker-compose.yml:103). T026 was therefore marked complete prematurely.
+REVIEW VERDICT: REJECT
+tokens used
+57,641
+Implemented task: **T026 — Odoo JSON-RPC client integration**.
+
+The unit implementation is stateless and re-authenticates for each database call. Its tenant-switching test correctly verifies that UIDs are not reused across calls.
+
+Verification performed:
+
+- New T026 tests: 6/6 passed.
+- Full API suite: 115/115 passed.
+- TypeScript build: passed.
+- ESLint: passed.
+- No Odoo core edits, native UI leakage, accounting changes, entitlement hard-coding, or feature-flag violations found.
+
+However, these are mock-only tests. No live Odoo integration test proves that the module can actually open the required session.
+
+1. The client reads `ODOO_URL`, but Docker supplies `KEMFAI_ODOO_URL`. Consequently, the API container falls back to `http://localhost:8069`, which points at the API container—not `kemfai-odoo`. T026’s required session cannot work in the repository’s declared environment. The misleading claim that `ODOO_URL` is wired by Compose appears in [odoo-rpc-client.ts](/home/hermesops/kemfai/backend/api/src/integrations/odoo-rpc/odoo-rpc-client.ts:13), while the actual variable is in [docker-compose.yml](/home/hermesops/kemfai/infra/docker/docker-compose.yml:103). T026 was therefore marked complete prematurely.
+REVIEW VERDICT: REJECT
+```
