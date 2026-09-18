@@ -735,3 +735,60 @@ However, T010 was marked complete prematurely.
 
 REVIEW VERDICT: REJECT
 ```
+
+## Rejected implement tick - 2026-09-18 04:00 +04
+
+Codex rejected the last implement attempt and working tree was reverted. Reviewer verdict:
+
+```
+erpprofitv2-app Up 12 days 127.0.0.1:8069->8069/tcp, 8071-8072/tcp
+omniroute Up 2 weeks (healthy) 0.0.0.0:20128->20128/tcp, [::]:20128->20128/tcp
+hermes-agent-tmxy-hermes-agent-1 Up 5 days 0.0.0.0:32786->4860/tcp, [::]:32786->4860/tcp
+traefik-traefik-1 Up 2 weeks 
+backend/api/test/integration/entitlements-service.integration-spec.ts:64:      .save({ planId: plan.id, trialWindowDays: 30, autoRestrictUnpaid: false });
+backend/api/test/integration/entitlements-service.integration-spec.ts:71:      trialWindowDays: 30,
+backend/api/test/integration/entitlements-service.integration-spec.ts:92:      .save({ planId: plan.id, trialWindowDays: 45, autoRestrictUnpaid: null });
+backend/api/src/modules/entitlements/entities/entitlement-default.entity.ts:7: * `defaultTrialWindowDays=14` and `defaultAutoRestrictUnpaid=true`.
+
+exec
+/bin/bash -lc "docker inspect kemfai-db --format '{{json .Config.Env}} {{json .NetworkSettings.Networks}} {{json .Config.Labels}}'" in /home/hermesops/kemfai
+ succeeded in 0ms:
+["POSTGRES_DB=postgres","POSTGRES_USER=odoo","POSTGRES_PASSWORD=kemfai_dev_pg","PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/lib/postgresql/16/bin","GOSU_VERSION=1.19","LANG=en_US.utf8","PG_MAJOR=16","PG_VERSION=16.15-1.pgdg13+2","PGDATA=/var/lib/postgresql/data"] {"docker_default":{"IPAMConfig":null,"Links":null,"Aliases":["kemfai-db","kemfai-db"],"DriverOpts":null,"GwPriority":0,"NetworkID":"feb272aeed50d8e172b2ab937d8f56fb8e2f5ad0e89620d5ba0c89a078ebc62d","EndpointID":"39545f8b149d389556a15657af01545673df2abd121e5efdc95e1f778f5a352c","Gateway":"172.16.6.1","IPAddress":"172.16.6.2","MacAddress":"ce:c1:4b:a7:66:67","IPPrefixLen":24,"IPv6Gateway":"","GlobalIPv6Address":"","GlobalIPv6PrefixLen":0,"DNSNames":["kemfai-db","902b144a901f"]}} {"com.docker.compose.config-hash":"c3708b4364d2e1b04ce70d7577ad7165b3cc18a2382422a00f104596acf6a05d","com.docker.compose.container-number":"1","com.docker.compose.depends_on":"","com.docker.compose.image":"sha256:f1c3376c26f2609ab9f29f71f824103fe2fcd8ee0346485cb6122a4f93df6f94","com.docker.compose.oneoff":"False","com.docker.compose.project":"docker","com.docker.compose.project.config_files":"/home/hermesops/kemfai/infra/docker/docker-compose.yml","com.docker.compose.project.working_dir":"/home/hermesops/kemfai/infra/docker","com.docker.compose.service":"kemfai-db","com.docker.compose.version":"5.3.0"}
+
+exec
+/bin/bash -lc 'CONTROL_DB_HOST=172.16.6.2 CONTROL_DB_USER=odoo CONTROL_DB_PASSWORD=kemfai_dev_pg CONTROL_DB_NAME=kemfai_control npm run test:integration -- --runInBand test/integration/entitlements-service.integration-spec.ts' in /home/hermesops/kemfai/backend/api
+ succeeded in 3697ms:
+PASS test/integration/entitlements-service.integration-spec.ts
+  EntitlementsService (T010)
+    ✓ resolves features, trialWindowDays, and autoRestrictUnpaid from an explicit PlanSetting override (no fallback) (45 ms)
+    ✓ falls back to EntitlementDefault.default_trial_window_days when PlanSetting.trial_window_days is null, independently of autoRestrictUnpaid (12 ms)
+    ✓ falls back to EntitlementDefault.default_auto_restrict_unpaid when PlanSetting.auto_restrict_unpaid is null, independently of trialWindowDays (16 ms)
+    ✓ falls back to both EntitlementDefault fields when no PlanSetting row exists for the plan at all (6 ms)
+    ✓ maps a null limitValue on PlanFeatureEntitlement to a null EntitlementSet feature limitValue (12 ms)
+
+Test Suites: 1 passed, 1 total
+Tests:       5 passed, 5 total
+Snapshots:   0 total
+Time:        3.215 s
+Ran all test suites matching /test\/integration\/entitlements-service.integration-spec.ts/i.
+
+codex
+Implemented task: **T010, partially**. The service and five integration tests exist; with the repository’s running PostgreSQL container configured, all five pass. Build and lint also pass. The default test command cannot connect without database environment variables.
+
+`tasks.md` remains unchecked, correctly. No core Odoo edits, hard-coded production entitlement values, Odoo UI leakage, accounting nondeterminism, or demonstrated tenant leak were introduced.
+
+1. T010 is incomplete: the required `GET /entitlements/me` controller does not exist, so the specified API contract is not implemented.
+2. No HTTP integration test proves authentication, trusted tenant-to-plan resolution, response shape, or resistance to cross-tenant/plan substitution.
+
+REVIEW VERDICT: REJECT
+tokens used
+40,753
+Implemented task: **T010, partially**. The service and five integration tests exist; with the repository’s running PostgreSQL container configured, all five pass. Build and lint also pass. The default test command cannot connect without database environment variables.
+
+`tasks.md` remains unchecked, correctly. No core Odoo edits, hard-coded production entitlement values, Odoo UI leakage, accounting nondeterminism, or demonstrated tenant leak were introduced.
+
+1. T010 is incomplete: the required `GET /entitlements/me` controller does not exist, so the specified API contract is not implemented.
+2. No HTTP integration test proves authentication, trusted tenant-to-plan resolution, response shape, or resistance to cross-tenant/plan substitution.
+
+REVIEW VERDICT: REJECT
+```
