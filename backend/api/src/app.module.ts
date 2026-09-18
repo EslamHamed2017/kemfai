@@ -9,6 +9,7 @@ import { TenantContextModule } from './common/tenant-context/tenant-context.modu
 import { BearerAuthGuard } from './common/guards/bearer-auth.guard';
 import { TenantScopeGuard } from './common/guards/tenant-scope.guard';
 import { RoleGuard } from './common/guards/role.guard';
+import { FeatureFlagGuard } from './common/guards/feature-flag.guard';
 import { IdempotencyKeyInterceptor } from './common/interceptors/idempotency.interceptor';
 import { QueuesModule } from './common/queues/queues.module';
 
@@ -18,11 +19,14 @@ import { QueuesModule } from './common/queues/queues.module';
   providers: [
     AppService,
     // Global guard chain: authentication (T017), then tenant scoping (T017), then role
-    // enforcement (T018) — all APP_GUARD so no route can forget them (registration order =
-    // execution order). Public surfaces opt out explicitly via @Public().
+    // enforcement (T018), then module-completeness gating (T100) — all APP_GUARD so no route
+    // can forget them (registration order = execution order). Public surfaces opt out
+    // explicitly via @Public(); FeatureFlagGuard only acts on handlers declaring
+    // @RequireFeatureFlag().
     { provide: APP_GUARD, useClass: BearerAuthGuard },
     { provide: APP_GUARD, useClass: TenantScopeGuard },
     { provide: APP_GUARD, useClass: RoleGuard },
+    { provide: APP_GUARD, useClass: FeatureFlagGuard },
     // Global idempotency-key replay guard (T020) — applies to every mutating route, current
     // and future, without each one opting in; it only activates when a caller actually
     // sends an Idempotency-Key header.

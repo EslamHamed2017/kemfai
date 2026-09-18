@@ -288,7 +288,7 @@ that every user story depends on.
     `FeatureFlag` reads outside this service.
   - **Roles**: Primary: GLM · Backup: Claude · Reviewer: Codex
 
-- [ ] T100 [P] Implement `FeatureFlagGuard`, applied to any customer-facing route/UI surface for a module not
+- [X] T100 [P] Implement `FeatureFlagGuard`, applied to any customer-facing route/UI surface for a module not
   yet fully complete, denying/hiding access when `FeatureFlag.enabled=false`, in
   `backend/api/src/common/guards/feature-flag.guard.ts` (C1 remediation — see analysis.md)
   - **Dependencies**: T099
