@@ -52,13 +52,21 @@ if [ -n "${KEMFAI_FIX_NOTE:-}" ]; then
   PROMPT="IMPORTANT: The previous attempt at this task was REJECTED by independent review. Fix the issues below and complete the SAME task properly (do not skip to another task). Reviewer verdict to address:\n\n${KEMFAI_FIX_NOTE}\n\n---\n${PROMPT}"
 fi
 
-# --- run Claude ---
+# --- run executor: Claude first, GLM (opencode) fallback on usage/session limits ---
 set +e
 OUT=$(claude -p "$PROMPT" \
   --permission-mode acceptEdits \
   --allowedTools 'Read,Write,Edit,Glob,Grep,Bash' \
   --output-format text 2>&1)
 EC=$?
+if [ $EC -ne 0 ] && echo "$OUT" | grep -qiE "session limit|usage limit|rate limit|quota|429|overloaded"; then
+  echo "[$TS] Claude unavailable (usage/session limit) — falling back to GLM via opencode" | tee -a "$LOG"
+  OUT=$(opencode run --auto -m zai-coding/glm-5.2 "$PROMPT" 2>&1 | grep -v "level=")
+  EC=$?
+  if [ $EC -ne 0 ]; then
+    echo "[$TS] GLM fallback also failed (exit $EC)" | tee -a "$LOG"
+  fi
+fi
 set -e
 echo "$OUT" | tee -a "$LOG" >/dev/null
 echo "[$TS] claude exit: $EC" | tee -a "$LOG"
