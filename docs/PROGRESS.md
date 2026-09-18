@@ -1100,3 +1100,60 @@ Files: `backend/api/src/database/migrations/1789680000000-CreateSupportAccess.ts
 `backend/api/src/modules/support-access/entities/support-access-grant.entity.ts`,
 `backend/api/src/modules/support-access/entities/support-access-usage.entity.ts`,
 `backend/api/test/integration/support-access-migration.integration-spec.ts`.
+
+## Rejected implement tick - 2026-09-18 07:27 +04
+
+Codex rejected the last implement attempt and working tree was reverted. Reviewer verdict:
+
+```
+Test Suites: 10 failed, 10 total
+Tests:       70 failed, 1 passed, 71 total
+Snapshots:   0 total
+Time:        5.503 s, estimated 7 s
+Ran all test suites.
+Jest did not exit one second after the test run has completed.
+
+'This usually means that there are asynchronous operations that weren't stopped in your tests. Consider running Jest with `--detectOpenHandles` to troubleshoot this issue.
+
+exec
+/bin/bash -lc "docker ps --format '{{.Names}} {{.Status}} {{.Ports}}'; sed -n '160,195p' ../../specs/001-saas-onboarding-shell/data-model.md; CONTROL_DB_HOST=172.16.6.2 CONTROL_DB_PORT=5432 CONTROL_DB_USER=odoo CONTROL_DB_PASSWORD=kemfai_dev_pg CONTROL_DB_NAME=kemfai_control npm run test:integration -- --runInBand test/integration/audit-event-migration.integration-spec.ts" in /home/hermesops/kemfai/backend/api
+ succeeded in 4461ms:
+
+> kemfai-api@0.1.0 test:integration
+> jest --config test/jest-integration.json --runInBand test/integration/audit-event-migration.integration-spec.ts
+
+PASS test/integration/audit-event-migration.integration-spec.ts
+  AuditEvent migration + entity (T014)
+    ✓ matches data-model.md's AuditEvent table: persists every documented field verbatim (34 ms)
+    ✓ allows tenant_id and actor_id to be null for a pre-tenant system event (5 ms)
+    ✓ rejects a non-system actor with a null actor_id at the database level (62 ms)
+    ✓ rejects an audit event referencing a nonexistent tenant (FK constraint) (25 ms)
+    ✓ the actor_type enum matches account|internal_user|system exactly (3 ms)
+    ✓ the API/BFF's database role can INSERT into audit_event (6 ms)
+    ✓ the API/BFF's database role cannot UPDATE audit_event rows (FR-008 immutability, DB-enforced) (8 ms)
+    ✓ the API/BFF's database role cannot DELETE audit_event rows (FR-008 immutability, DB-enforced) (5 ms)
+
+Test Suites: 1 passed, 1 total
+Tests:       8 passed, 8 total
+Snapshots:   0 total
+Time:        3.837 s
+Ran all test suites matching /test\/integration\/audit-event-migration.integration-spec.ts/i.
+
+codex
+Implemented task: T014. The migration, entity, and eight targeted integration tests exist; the targeted suite passes 8/8 with the project database. Unit tests pass 16/16. No Odoo core edit, hard-coded entitlement/trial value, UI leakage, accounting change, or tenant-database isolation regression was found.
+
+1. The restricted `kemfai_audit_writer` role is not the API/BFF database role. The application still connects through `CONTROL_DB_USER`, while the new code explicitly admits no application module authenticates with the restricted role. Therefore the real API connection can still update/delete `audit_event`, directly failing T014’s acceptance criterion and FR-008.
+2. The test only proves that an unused test role lacks UPDATE/DELETE privileges; it does not test the application’s configured database identity. It consequently passes while the required production invariant remains absent.
+3. T014 was marked complete prematurely. The full integration command also failed in the default environment (70 failures), although the correctly configured targeted T014 suite passed.
+
+REVIEW VERDICT: REJECT
+tokens used
+41,600
+Implemented task: T014. The migration, entity, and eight targeted integration tests exist; the targeted suite passes 8/8 with the project database. Unit tests pass 16/16. No Odoo core edit, hard-coded entitlement/trial value, UI leakage, accounting change, or tenant-database isolation regression was found.
+
+1. The restricted `kemfai_audit_writer` role is not the API/BFF database role. The application still connects through `CONTROL_DB_USER`, while the new code explicitly admits no application module authenticates with the restricted role. Therefore the real API connection can still update/delete `audit_event`, directly failing T014’s acceptance criterion and FR-008.
+2. The test only proves that an unused test role lacks UPDATE/DELETE privileges; it does not test the application’s configured database identity. It consequently passes while the required production invariant remains absent.
+3. T014 was marked complete prematurely. The full integration command also failed in the default environment (70 failures), although the correctly configured targeted T014 suite passed.
+
+REVIEW VERDICT: REJECT
+```
