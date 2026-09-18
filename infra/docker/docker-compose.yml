@@ -103,6 +103,11 @@ services:
       KEMFAI_ODOO_URL: http://kemfai-odoo:8069
       KEYCLOAK_URL: http://keycloak:8080
       STORAGE_ENDPOINT: http://minio:9000
+      # T025: must match the minio service's MINIO_ROOT_USER/MINIO_ROOT_PASSWORD above —
+      # the API/BFF's own service credentials are the only credentials ever allowed to
+      # reach a tenant bucket (research.md §5).
+      STORAGE_ACCESS_KEY: kemfai_minio
+      STORAGE_SECRET_KEY: kemfai_dev_minio_secret
       CONTROL_DB_HOST: kemfai-db
       CONTROL_DB_PORT: "5432"
       CONTROL_DB_USER: kemfai_api

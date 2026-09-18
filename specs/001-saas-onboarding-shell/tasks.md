@@ -259,7 +259,7 @@ that every user story depends on.
     by T113 (Round 2 remediation — see analysis.md).
   - **Roles**: Primary: Claude · Backup: GLM · Reviewer: Codex
 
-- [ ] T025 [P] Implement MinIO integration module (bucket-per-tenant client + presigned URL helper) in
+- [X] T025 [P] Implement MinIO integration module (bucket-per-tenant client + presigned URL helper) in
   `backend/api/src/integrations/minio/`
   - **Dependencies**: T001, T003
   - **Acceptance Criteria**: Module exposes `createTenantBucket(tenantId)` and
