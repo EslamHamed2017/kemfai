@@ -309,7 +309,7 @@ that every user story depends on.
     identically to UI-driven and raw HTTP paths.
   - **Roles**: Primary: GLM · Backup: Claude · Reviewer: Codex
 
-- [ ] T102 Implement the `trial.expiry_sweep` BullMQ scheduled job (every 30 seconds, mirroring
+- [X] T102 Implement the `trial.expiry_sweep` BullMQ scheduled job (every 30 seconds, mirroring
   `support_access.expiry_sweep`/T090) that proactively detects newly-crossed-threshold unpaid tenants and emits
   `tenant.trial.restricted`, in `backend/api/src/integrations/provisioning/trial-expiry-sweep.processor.ts` (F2
   remediation — see analysis.md)

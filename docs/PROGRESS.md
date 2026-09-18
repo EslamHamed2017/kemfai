@@ -1869,3 +1869,42 @@ The unit suite passed (138 tests), and build/lint passed. However, the T102 inte
 
 REVIEW VERDICT: REJECT
 ```
+
+## T102 — trial.expiry_sweep BullMQ sweep (2026-09-18 22:xx +04, re-attempt after rejection)
+
+Re-implemented T102 after the previous attempt was rejected on three grounds: (1) its
+dedicated integration suite failed 6/6 on a DB auth mismatch, (2) it added a
+`Tenant.trial_restricted_at` column that directly contradicts data-model.md's "no persisted
+restricted column" requirement, (3) it set that column before writing the audit event
+outside a transaction, breaking the documented "next tick self-heals" guarantee.
+
+Fix: dropped the persisted-column approach entirely. `TrialExpirySweepProcessor`
+(`backend/api/src/integrations/provisioning/trial-expiry-sweep.processor.ts`) is a BullMQ
+`@Processor(QUEUE_TRIAL_EXPIRY_SWEEP)`/`WorkerHost` that, on each 30s tick, scans tenants
+with `ready_at IS NOT NULL`, skips any whose Subscription is missing/`Active`, resolves
+`trialWindowDays`/`autoRestrictUnpaid` via `EntitlementsService` (never hard-coded), and for
+a tenant past its window emits `tenant.trial.restricted` via `AuditService` — but only if no
+`tenant.trial.restricted` audit_event row already exists for that tenant. The append-only
+audit log itself is the idempotency marker (mirrors `SupportAccessGrant`'s computed-expiry
+pattern per data-model.md), so there is no separate state write to race or leave
+inconsistent — no transaction is needed because there is only the one write. Wired via a new
+`TrialExpirySweepModule` into `AppModule`. No migration, no Tenant entity change.
+
+Testing: `trial-expiry-sweep.processor.spec.ts` (7 tests, mocking `controlDataSource` the
+same way `trial-window.guard.spec.ts` (T101) does) covers: first-crossing emits the event;
+running the sweep twice does not double-audit (idempotency, mirrors T086); Active
+Subscription is never restricted, including a tenant that transitions to Active between two
+ticks; no-Subscription-yet is skipped; `autoRestrictUnpaid=false` never restricts; within-window
+never restricts. Also ran a one-off ad-hoc smoke check directly against the real `kemfai-db`
+container (`CONTROL_DB_HOST=172.16.6.2 CONTROL_DB_USER=odoo CONTROL_DB_PASSWORD=kemfai_dev_pg
+CONTROL_DB_NAME=kemfai_control`, the working credential convention documented elsewhere in
+this file — NOT the in-container `kemfai_api` app role, which is unreachable from the host
+since `kemfai-db` publishes no port) to confirm the real SQL (query builder, `repo.exists`)
+behaves identically to the mocks: tick 1 writes exactly one `tenant.trial.restricted` row,
+tick 2 is a no-op. That scratch file was deleted afterward — it was a manual sanity check for
+this rejected-and-refixed task, not committed as a suite.
+
+Verification: `npx jest` → 20/20 suites, 145/145 tests passing (138 prior + 7 new). `npm run
+lint` clean. `npm run build` clean.
+
+T102 marked `[X]` in tasks.md.
