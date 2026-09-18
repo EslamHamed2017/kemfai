@@ -391,7 +391,7 @@ tenant/workspace exists until the verification link is used, and the account can
 
 ### Implementation for User Story 1
 
-- [ ] T031 [US1] Implement `GET /public/plans` returning published `PlanSummary` list sourced from
+- [X] T031 [US1] Implement `GET /public/plans` returning published `PlanSummary` list sourced from
   `PlanFeatureEntitlement` (empty state per FR-011) in `backend/api/src/modules/plans/plans.controller.ts` and
   `plans.service.ts`
   - **Dependencies**: T009, T015

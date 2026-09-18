@@ -5,6 +5,7 @@ import { AppService } from './app.service';
 import { AuditModule } from './modules/audit/audit.module';
 import { EntitlementsModule } from './modules/entitlements/entitlements.module';
 import { IdempotencyModule } from './modules/idempotency/idempotency.module';
+import { PlansModule } from './modules/plans/plans.module';
 import { TenantContextModule } from './common/tenant-context/tenant-context.module';
 import { BearerAuthGuard } from './common/guards/bearer-auth.guard';
 import { TenantScopeGuard } from './common/guards/tenant-scope.guard';
@@ -21,6 +22,7 @@ import { TrialExpirySweepModule } from './integrations/provisioning/trial-expiry
     TenantContextModule,
     EntitlementsModule,
     IdempotencyModule,
+    PlansModule,
     QueuesModule,
     TrialExpirySweepModule,
   ],
