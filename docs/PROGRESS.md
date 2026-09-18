@@ -1931,3 +1931,60 @@ Verification: `npm test` → 20/20 suites, 146/146 tests passing (145 prior + 1 
 lint` clean.
 
 T113 marked `[X]` in tasks.md.
+
+## Rejected implement tick - 2026-09-19 00:05 +04
+
+Codex rejected the last implement attempt and working tree was reverted. Reviewer verdict:
+
+```
+PASS test/integration/dev-quickstart-seed.integration-spec.ts
+PASS test/integration/feature-flag-migration.integration-spec.ts
+PASS test/integration/idempotency-key-migration.integration-spec.ts
+PASS test/integration/control-db-migration.integration-spec.ts
+
+Test Suites: 1 failed, 18 passed, 19 total
+Tests:       1 failed, 127 passed, 128 total
+Snapshots:   0 total
+Time:        11.678 s, estimated 20 s
+Ran all test suites.
+
+codex
+Implemented task: T031 — `GET /public/plans`.
+
+The endpoint itself satisfies T031’s functional criteria: unpublished plans are excluded, the response matches `PlanSummary`, entitlements are configuration-backed, and no published plans returns `[]`. No Odoo-core edit, tenant leak, hard-coded entitlement/trial value, accounting issue, native Odoo UI exposure, or missing applicable feature gate was found.
+
+Independent results:
+
+- Unit tests: 146/146 passed.
+- T031 integration tests: 2/2 passed.
+- Build and lint: passed.
+- Full integration suite: failed, 127/128 passed.
+- The new test’s cleanup indiscriminately deletes every plan and plan entitlement in the shared control database, rather than only records created by the test.
+
+T031 was marked complete prematurely because the mandatory Test Gate is not green.
+
+1. The full integration suite fails in `queues-registration.integration-spec.ts`; mandatory quality gates cannot be waived as an “environmental flake.”
+2. `plans-http.integration-spec.ts` performs destructive global cleanup with unscoped `DELETE FROM "plan_feature_entitlement"` and `DELETE FROM "plan"`, erasing unrelated configuration/fixture data and making the test suite order-dependent.
+
+REVIEW VERDICT: REJECT
+tokens used
+51,586
+Implemented task: T031 — `GET /public/plans`.
+
+The endpoint itself satisfies T031’s functional criteria: unpublished plans are excluded, the response matches `PlanSummary`, entitlements are configuration-backed, and no published plans returns `[]`. No Odoo-core edit, tenant leak, hard-coded entitlement/trial value, accounting issue, native Odoo UI exposure, or missing applicable feature gate was found.
+
+Independent results:
+
+- Unit tests: 146/146 passed.
+- T031 integration tests: 2/2 passed.
+- Build and lint: passed.
+- Full integration suite: failed, 127/128 passed.
+- The new test’s cleanup indiscriminately deletes every plan and plan entitlement in the shared control database, rather than only records created by the test.
+
+T031 was marked complete prematurely because the mandatory Test Gate is not green.
+
+1. The full integration suite fails in `queues-registration.integration-spec.ts`; mandatory quality gates cannot be waived as an “environmental flake.”
+2. `plans-http.integration-spec.ts` performs destructive global cleanup with unscoped `DELETE FROM "plan_feature_entitlement"` and `DELETE FROM "plan"`, erasing unrelated configuration/fixture data and making the test suite order-dependent.
+
+REVIEW VERDICT: REJECT
+```
