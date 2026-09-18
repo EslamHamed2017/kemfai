@@ -1,0 +1,53 @@
+{
+  "id": "kemfai-internal",
+  "realm": "kemfai-internal",
+  "displayName": "KEMFAI Internal",
+  "enabled": true,
+  "loginWithEmailAllowed": true,
+  "duplicateEmailsAllowed": false,
+  "registrationAllowed": false,
+  "roles": {
+    "realm": [
+      {
+        "id": "9a1f2c34-1b2c-4e3f-8a9b-4c5d6e7f8c01",
+        "name": "BillingAdmin",
+        "description": "Billing Admin - approve/reject/request-more-info on payment submissions, cross-tenant. MUST NOT be reachable by any customer identity (FR-004, enforced by realm separation).",
+        "composite": false,
+        "clientRole": false,
+        "containerId": "kemfai-internal"
+      },
+      {
+        "id": "9a1f2c34-1b2c-4e3f-8a9b-4c5d6e7f8c02",
+        "name": "Support",
+        "description": "Support - may hold customer-granted, time-limited workspace access only (FR-005).",
+        "composite": false,
+        "clientRole": false,
+        "containerId": "kemfai-internal"
+      },
+      {
+        "id": "9a1f2c34-1b2c-4e3f-8a9b-4c5d6e7f8c03",
+        "name": "SuperAdmin",
+        "description": "Super Admin - cross-tenant read/administrative over tenant and subscription records.",
+        "composite": false,
+        "clientRole": false,
+        "containerId": "kemfai-internal"
+      },
+      {
+        "id": "9a1f2c34-1b2c-4e3f-8a9b-4c5d6e7f8c04",
+        "name": "CustomerSuccess",
+        "description": "Customer Success - cross-tenant read/administrative over tenant and subscription records.",
+        "composite": false,
+        "clientRole": false,
+        "containerId": "kemfai-internal"
+      },
+      {
+        "id": "9a1f2c34-1b2c-4e3f-8a9b-4c5d6e7f8c05",
+        "name": "TechnicalAdmin",
+        "description": "Technical Admin - cross-tenant read/administrative over tenant and subscription records.",
+        "composite": false,
+        "clientRole": false,
+        "containerId": "kemfai-internal"
+      }
+    ]
+  }
+}

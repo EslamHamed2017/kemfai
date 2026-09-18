@@ -186,7 +186,7 @@ that every user story depends on.
     seeded plan specifically to exercise the `EntitlementDefault` fallback path end-to-end.
   - **Roles**: Primary: GLM · Backup: Claude · Reviewer: Codex
 
-- [ ] T016 Author Keycloak realm exports `infra/keycloak/kemfai-customers-realm.json` (Workspace Owner role,
+- [X] T016 Author Keycloak realm exports `infra/keycloak/kemfai-customers-realm.json` (Workspace Owner role,
   `VERIFY_EMAIL` + `CONFIGURE_TOTP` required actions enabled) and `infra/keycloak/kemfai-internal-realm.json`
   (Billing Admin, Support, Super Admin, Customer Success, Technical Admin roles), wired into the docker-compose
   realm-import volume from T003

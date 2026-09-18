@@ -74,7 +74,9 @@ services:
     environment:
       KEYCLOAK_ADMIN: admin
       KEYCLOAK_ADMIN_PASSWORD: kemfai_dev_admin
-    command: start-dev
+    command: start-dev --import-realm
+    volumes:
+      - ../keycloak:/opt/keycloak/data/import:ro
     ports:
       - "127.0.0.1:8080:8080"
     restart: unless-stopped

@@ -1369,3 +1369,54 @@ ticks):
   control-plane-only change, no tenant database touched.
 
 T015 marked `[X]` in tasks.md.
+
+## T016 — Keycloak realm exports (2026-09-18)
+
+Implemented the next unblocked task (first unchecked Phase 2 task; deps T003 `[X]`). Authored both
+realm exports and wired them into the compose stack.
+
+**What was built:**
+- `infra/keycloak/kemfai-customers-realm.json` — realm `kemfai-customers` (matches the committed
+  `KEYCLOAK_CUSTOMERS_REALM` convention from T010's BearerAuthGuard/.env.example), realm role
+  `WorkspaceOwner` (scope: own tenant only, FR-002), required actions `VERIFY_EMAIL`
+  (enabled + defaultAction — FR-019: email verification gates all tenant access) and
+  `CONFIGURE_TOTP` (enabled, opt-in only — FR-020: MFA never blocks onboarding), `verifyEmail: true`.
+  Also defines the public OIDC client `kemfai-api` (Authorization Code + PKCE, no direct grants)
+  with an `oidc-audience-mapper` so access tokens carry `aud: kemfai-api` — the exact audience the
+  already-committed `BearerAuthGuard` (T010) validates; without this client the committed
+  `KEYCLOAK_API_AUDIENCE` convention would be unsatisfiable. No users seeded (T016 defines
+  roles/actions only; the quickstart's Billing Admin user is Story 6's concern).
+- `infra/keycloak/kemfai-internal-realm.json` — realm `kemfai-internal` with exactly the five
+  internal roles. Role names match the `support_access_grantee_role_enum` labels committed in T013
+  verbatim (`BillingAdmin`, `Support`, `SuperAdmin`, `CustomerSuccess`, `TechnicalAdmin`) so the DB
+  enum's "matching the internal roles named in T016" claim is literally true; human-readable names
+  ("Billing Admin", FR-003) live in each role's description.
+- `infra/docker/docker-compose.yml` — keycloak service now runs `start-dev --import-realm` with
+  `../keycloak:/opt/keycloak/data/import:ro` (the T003 realm-import volume wiring).
+- **FR-004 separation is structural**: two distinct realms (separate trust domains), disjoint role
+  name sets, no composite roles, and no `identityProviders`/`identityProviderMappers` anywhere —
+  Keycloak cannot grant a `kemfai-customers` user a `kemfai-internal` role because no such role
+  exists in that realm and no brokering path connects them.
+
+**Test:** `infra/keycloak/test-realms.sh` (T005's `test-install.sh` pattern) — part 1 statically
+validates both JSON files (exact role sets, disjointness, deep scan for foreign role names, no
+brokering/composites, required-actions flags); part 2 force-recreates the keycloak service (fresh
+container filesystem = genuine "fresh docker compose up") and waits for both realms in the Admin
+API; part 3 live-verifies via the Admin REST API: both realms enabled, WorkspaceOwner present with
+none of the five internal roles in the customers realm, all five internal roles present with no
+WorkspaceOwner, `VERIFY_EMAIL`/`CONFIGURE_TOTP` enabled
+(`authentication/required-actions` — the `/required-actions` path 404s on KC 26), no live
+identityProviders, no client scope referencing an internal role, and the `kemfai-api` client
+public + standard-flow + audience-mapped. Only the keycloak service is touched; it is stopped
+afterward to restore the prior stack state (db/redis left running and healthy).
+
+**Verification performed:**
+- `./infra/keycloak/test-realms.sh` → PASSED, run **twice** consecutively (repeatability); both
+  runs show `Realm 'kemfai-customers' imported` + `Realm 'kemfai-internal' imported` in Keycloak's
+  own logs.
+- `npm test` → 3/3 suites, 16/16 unit tests passing (backend untouched, no regression).
+- `npm run lint` → clean. `npm run build` → clean.
+- No Odoo core edits, no tenant database touched, no code outside `infra/` changed
+  (`git status`: only `docker-compose.yml` modified + new `infra/keycloak/`).
+
+T016 marked `[X]` in tasks.md.

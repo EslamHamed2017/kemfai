@@ -1,0 +1,85 @@
+{
+  "id": "kemfai-customers",
+  "realm": "kemfai-customers",
+  "displayName": "KEMFAI Customers",
+  "enabled": true,
+  "verifyEmail": true,
+  "loginWithEmailAllowed": true,
+  "duplicateEmailsAllowed": false,
+  "registrationAllowed": false,
+  "roles": {
+    "realm": [
+      {
+        "id": "9a1f2c34-1b2c-4e3f-8a9b-4c5d6e7f8a01",
+        "name": "WorkspaceOwner",
+        "description": "Workspace Owner - automatically assigned to the verifying user of a tenant, scoped to their own tenant only (FR-002, data-model.md Roles & Scopes). Role name matches the camel-case convention committed in support_access_grantee_role_enum.",
+        "composite": false,
+        "clientRole": false,
+        "containerId": "kemfai-customers"
+      }
+    ]
+  },
+  "requiredActions": [
+    {
+      "alias": "VERIFY_EMAIL",
+      "name": "Verify Email",
+      "providerId": "VERIFY_EMAIL",
+      "enabled": true,
+      "defaultAction": true,
+      "priority": 10,
+      "config": {}
+    },
+    {
+      "alias": "CONFIGURE_TOTP",
+      "name": "Configure OTP",
+      "providerId": "CONFIGURE_TOTP",
+      "enabled": true,
+      "defaultAction": false,
+      "priority": 20,
+      "config": {}
+    }
+  ],
+  "clients": [
+    {
+      "id": "9a1f2c34-1b2c-4e3f-8a9b-4c5d6e7f8b01",
+      "clientId": "kemfai-api",
+      "name": "KEMFAI API",
+      "description": "Public OIDC client for the KEMFAI frontend (Authorization Code + PKCE). Access tokens carry the audience 'kemfai-api', which is what the API/BFF BearerAuthGuard validates (KEYCLOAK_API_AUDIENCE, T010).",
+      "enabled": true,
+      "publicClient": true,
+      "standardFlowEnabled": true,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": false,
+      "protocol": "openid-connect",
+      "redirectUris": [
+        "http://localhost:3000/*",
+        "http://127.0.0.1:3000/*",
+        "http://localhost:3010/*",
+        "http://127.0.0.1:3010/*"
+      ],
+      "webOrigins": [
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+        "http://localhost:3010",
+        "http://127.0.0.1:3010"
+      ],
+      "attributes": {
+        "pkce.code.challenge.method": "S256"
+      },
+      "protocolMappers": [
+        {
+          "id": "9a1f2c34-1b2c-4e3f-8a9b-4c5d6e7f8b02",
+          "name": "kemfai-api audience",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "consentRequired": false,
+          "config": {
+            "included.client.audience": "kemfai-api",
+            "id.token.claim": "false",
+            "access.token.claim": "true"
+          }
+        }
+      ]
+    }
+  ]
+}
