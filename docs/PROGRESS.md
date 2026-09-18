@@ -1524,3 +1524,60 @@ CONTROL_DB_NAME=kemfai_control npm run test:integration -- --runInBand: 12 suite
 pass.
 
 T017 marked `[X]` in tasks.md.
+
+## Rejected implement tick - 2026-09-18 12:00 +04
+
+Codex rejected the last implement attempt and working tree was reverted. Reviewer verdict:
+
+```
+src/common/guards/role.guard.ts:12: * (FR-006). Handlers with no `@Roles()` are not role-restricted by this guard.
+src/common/guards/role.guard.ts:22:export class RoleGuard implements CanActivate {
+src/modules/support-access/entities/support-access-usage.entity.ts:9:import { SupportAccessGrant } from './support-access-grant.entity';
+src/modules/support-access/entities/support-access-usage.entity.ts:12: * One row per support-access attempt, allowed or denied (data-model.md "SupportAccessUsage",
+src/modules/support-access/entities/support-access-usage.entity.ts:17:export class SupportAccessUsage {
+src/modules/support-access/entities/support-access-usage.entity.ts:24:  @ManyToOne(() => SupportAccessGrant, { onDelete: 'RESTRICT' })
+src/modules/support-access/entities/support-access-usage.entity.ts:26:  grant: SupportAccessGrant;
+src/modules/support-access/entities/support-access-grant.entity.ts:12:export enum SupportAccessGranteeRole {
+src/modules/support-access/entities/support-access-grant.entity.ts:22: * (data-model.md "SupportAccessGrant", FR-039–FR-041). `expiresAt` is mandatory — enforced
+src/modules/support-access/entities/support-access-grant.entity.ts:25:@Entity({ name: 'support_access_grant' })
+src/modules/support-access/entities/support-access-grant.entity.ts:26:export class SupportAccessGrant {
+src/modules/support-access/entities/support-access-grant.entity.ts:47:    enum: SupportAccessGranteeRole,
+src/modules/support-access/entities/support-access-grant.entity.ts:48:    enumName: 'support_access_grantee_role_enum',
+src/modules/support-access/entities/support-access-grant.entity.ts:50:  granteeRole: SupportAccessGranteeRole;
+
+codex
+Implemented task: **T018**.
+
+Tests exist and genuinely pass:
+
+- Jest: 5 suites, 43 tests passed.
+- Nest build passed.
+- ESLint passed.
+
+No Odoo core edits, hard-coded entitlement values, native Odoo UI leakage, accounting changes, or new feature-flag violations were found.
+
+However, T018 does not satisfy the Roles & Scopes table. `RoleGuard` checks only realm roles. A `Support` token is accepted without verifying an active, unexpired, unrevoked customer grant or recording support-access usage, violating FR-005 and the task’s explicit scope requirement. The test suite omits this mandatory behavior. Marking T018 complete was premature.
+
+1. `RoleGuard` does not enforce Support’s tenant-specific active-grant scope, so an internal Support identity can pass authorization solely by possessing the `Support` realm role.
+2. `tasks.md` marks T018 complete despite that missing required authorization behavior and missing tests for it.
+
+REVIEW VERDICT: REJECT
+tokens used
+31,832
+Implemented task: **T018**.
+
+Tests exist and genuinely pass:
+
+- Jest: 5 suites, 43 tests passed.
+- Nest build passed.
+- ESLint passed.
+
+No Odoo core edits, hard-coded entitlement values, native Odoo UI leakage, accounting changes, or new feature-flag violations were found.
+
+However, T018 does not satisfy the Roles & Scopes table. `RoleGuard` checks only realm roles. A `Support` token is accepted without verifying an active, unexpired, unrevoked customer grant or recording support-access usage, violating FR-005 and the task’s explicit scope requirement. The test suite omits this mandatory behavior. Marking T018 complete was premature.
+
+1. `RoleGuard` does not enforce Support’s tenant-specific active-grant scope, so an internal Support identity can pass authorization solely by possessing the `Support` realm role.
+2. `tasks.md` marks T018 complete despite that missing required authorization behavior and missing tests for it.
+
+REVIEW VERDICT: REJECT
+```
