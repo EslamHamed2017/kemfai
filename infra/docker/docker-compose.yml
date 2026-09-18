@@ -108,6 +108,12 @@ services:
       CONTROL_DB_USER: kemfai_api
       CONTROL_DB_PASSWORD: ${CONTROL_DB_APP_PASSWORD:-kemfai_api_dev}
       CONTROL_DB_NAME: kemfai_control
+      # T022: the BFF serves specs/001-saas-onboarding-shell/contracts/openapi.yaml
+      # verbatim; mount it read-only rather than copying it into the image (single
+      # source of truth — no second copy to drift).
+      OPENAPI_CONTRACT_PATH: /kemfai-specs/001-saas-onboarding-shell/contracts/openapi.yaml
+    volumes:
+      - ../../specs:/kemfai-specs:ro
     ports:
       - "127.0.0.1:4000:4000"
     restart: unless-stopped

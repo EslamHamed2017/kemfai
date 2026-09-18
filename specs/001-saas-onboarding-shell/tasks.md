@@ -237,7 +237,7 @@ that every user story depends on.
     docker-compose Redis instance; each queue's job-id/dedupe-key strategy matches contracts/events.md's table.
   - **Roles**: Primary: GLM · Backup: Claude · Reviewer: Codex
 
-- [ ] T022 Wire Swagger/OpenAPI bootstrap in `backend/api/src/main.ts` so the live BFF conforms to
+- [X] T022 Wire Swagger/OpenAPI bootstrap in `backend/api/src/main.ts` so the live BFF conforms to
   `contracts/openapi.yaml` (tags, schemas, `bearerAuth` security scheme)
   - **Dependencies**: T001
   - **Acceptance Criteria**: `/api-docs` (or equivalent) renders every path/tag from contracts/openapi.yaml;
