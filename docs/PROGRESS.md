@@ -1214,3 +1214,60 @@ Verification:
 
 REVIEW VERDICT: REJECT
 ```
+
+## Rejected implement tick - 2026-09-18 07:46 +04
+
+Codex rejected the last implement attempt and working tree was reverted. Reviewer verdict:
+
+```
+
+exec
+/bin/bash -lc 'CONTROL_DB_HOST=172.16.6.2 CONTROL_DB_USER=odoo CONTROL_DB_PASSWORD=kemfai_dev_pg CONTROL_DB_NAME=kemfai_control npm run test:integration -- --runInBand test/integration/audit-event-migration.integration-spec.ts' in /home/hermesops/kemfai/backend/api
+ succeeded in 3921ms:
+PASS test/integration/audit-event-migration.integration-spec.ts
+  AuditEvent migration + entity (T014)
+    ✓ matches data-model.md's AuditEvent table: persists every documented field verbatim (29 ms)
+    ✓ allows tenant_id and actor_id to be null for a pre-tenant system event (4 ms)
+    ✓ rejects a non-system actor with a null actor_id at the database level (78 ms)
+    ✓ rejects an audit event referencing a nonexistent tenant (FK constraint) (3 ms)
+    ✓ the actor_type enum matches account|internal_user|system exactly (3 ms)
+    ✓ the API/BFF's database role can INSERT into audit_event (4 ms)
+    ✓ the API/BFF's database role cannot UPDATE audit_event rows (FR-008 immutability, DB-enforced) (3 ms)
+    ✓ the API/BFF's database role cannot DELETE audit_event rows (FR-008 immutability, DB-enforced) (4 ms)
+
+Test Suites: 1 passed, 1 total
+Tests:       8 passed, 8 total
+Snapshots:   0 total
+Time:        3.51 s, estimated 4 s
+Ran all test suites matching /test\/integration\/audit-event-migration.integration-spec.ts/i.
+
+codex
+Implemented task: **T014 — AuditEvent migration and entity**.
+
+Evidence:
+
+- API build and lint passed.
+- Unit tests passed: 3 suites, 16 tests.
+- T014 integration test passed against live PostgreSQL: 8/8 tests, including actual restricted-role `UPDATE` and `DELETE` failures.
+- No Odoo core edits, accounting changes, hard-coded entitlements, UI leakage, feature-flag issue, or tenant-isolation regression found.
+
+1. The tested `kemfai_api` role is not the API/BFF’s actual database role. Docker configuration still connects the API as `odoo`, which owns the migrated table and can bypass the revocations. `kemfai_api` is created `NOLOGIN` and only temporarily enabled by the test. Therefore T014’s production acceptance criterion is not satisfied, and marking it complete is premature.
+2. `CONTROL_DB_APP_ROLE` is interpolated directly into migration SQL without safe identifier/literal escaping. A malformed configured role name can break the migration or inject SQL.
+
+REVIEW VERDICT: REJECT
+tokens used
+32,673
+Implemented task: **T014 — AuditEvent migration and entity**.
+
+Evidence:
+
+- API build and lint passed.
+- Unit tests passed: 3 suites, 16 tests.
+- T014 integration test passed against live PostgreSQL: 8/8 tests, including actual restricted-role `UPDATE` and `DELETE` failures.
+- No Odoo core edits, accounting changes, hard-coded entitlements, UI leakage, feature-flag issue, or tenant-isolation regression found.
+
+1. The tested `kemfai_api` role is not the API/BFF’s actual database role. Docker configuration still connects the API as `odoo`, which owns the migrated table and can bypass the revocations. `kemfai_api` is created `NOLOGIN` and only temporarily enabled by the test. Therefore T014’s production acceptance criterion is not satisfied, and marking it complete is premature.
+2. `CONTROL_DB_APP_ROLE` is interpolated directly into migration SQL without safe identifier/literal escaping. A malformed configured role name can break the migration or inject SQL.
+
+REVIEW VERDICT: REJECT
+```
