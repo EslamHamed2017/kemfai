@@ -792,3 +792,60 @@ Implemented task: **T010, partially**. The service and five integration tests ex
 
 REVIEW VERDICT: REJECT
 ```
+
+## Rejected implement tick - 2026-09-18 04:13 +04
+
+Codex rejected the last implement attempt and working tree was reverted. Reviewer verdict:
+
+```
+POSTGRES_PASSWORD=[redacted]
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/lib/postgresql/16/bin
+GOSU_VERSION=1.19
+LANG=en_US.utf8
+PG_MAJOR=16
+PG_VERSION=16.15-1.pgdg13+2
+PGDATA=/var/lib/postgresql/data
+
+
+exec
+/bin/bash -lc 'CONTROL_DB_HOST=172.16.6.2 CONTROL_DB_USER=odoo CONTROL_DB_PASSWORD=kemfai_dev_pg CONTROL_DB_NAME=kemfai_control npm run test:integration -- --runInBand; npm run lint; npm run build' in /home/hermesops/kemfai/backend/api
+ succeeded in 14408ms:
+PASS test/integration/entitlements-http.integration-spec.ts
+PASS test/integration/account-migration.integration-spec.ts
+PASS test/integration/tenant-migration.integration-spec.ts
+PASS test/integration/entitlements-service.integration-spec.ts
+PASS test/integration/entitlements-migration.integration-spec.ts
+PASS test/integration/control-db-migration.integration-spec.ts
+
+Test Suites: 6 passed, 6 total
+Tests:       31 passed, 31 total
+Snapshots:   0 total
+Time:        5.503 s, estimated 6 s
+Ran all test suites.
+
+> kemfai-api@0.1.0 lint
+> eslint "{src,test}/**/*.ts"
+
+
+> kemfai-api@0.1.0 build
+> nest build
+
+
+codex
+Implemented task: **T010**. The service behavior and response schema match the stated acceptance criteria. With the running control database configured correctly, unit tests passed 1/1, integration tests passed 31/31, lint passed, and build passed. No Odoo core edits, hard-coded entitlement values, native Odoo UI leakage, accounting changes, or tenant-plan substitution path were found.
+
+`tasks.md` was marked done prematurely because the security gate is not satisfied.
+
+1. `BearerAuthGuard` verifies only the JWT signature and `RS256`; it does not validate the expected Keycloak issuer or API audience. Any token signed by the realm for another client can be accepted by this API. Add issuer/audience validation and tests rejecting validly signed tokens with the wrong `iss` or `aud`.
+
+REVIEW VERDICT: REJECT
+tokens used
+41,264
+Implemented task: **T010**. The service behavior and response schema match the stated acceptance criteria. With the running control database configured correctly, unit tests passed 1/1, integration tests passed 31/31, lint passed, and build passed. No Odoo core edits, hard-coded entitlement values, native Odoo UI leakage, accounting changes, or tenant-plan substitution path were found.
+
+`tasks.md` was marked done prematurely because the security gate is not satisfied.
+
+1. `BearerAuthGuard` verifies only the JWT signature and `RS256`; it does not validate the expected Keycloak issuer or API audience. Any token signed by the realm for another client can be accepted by this API. Add issuer/audience validation and tests rejecting validly signed tokens with the wrong `iss` or `aud`.
+
+REVIEW VERDICT: REJECT
+```
