@@ -2291,3 +2291,60 @@ Token-issuance/enqueue failures during signup never fail the 201 (resend-verific
   dependency added or changed by this task.
 
 T033 and T029 marked `[X]` in tasks.md only after all of the above were green.
+
+## Rejected implement tick - 2026-09-19 02:18 +04
+
+Codex rejected the last implement attempt and working tree was reverted. Reviewer verdict:
+
+```
+PASS src/integrations/odoo-rpc/odoo-rpc.service.spec.ts
+PASS src/app.controller.spec.ts
+PASS src/integrations/minio/minio-storage.service.spec.ts
+PASS src/integrations/odoo-rpc/odoo-rpc-client.spec.ts
+PASS src/common/queues/queue-names.spec.ts
+PASS src/integrations/minio/tenant-bucket-naming.spec.ts
+
+Test Suites: 24 passed, 24 total
+Tests:       206 passed, 206 total
+Snapshots:   0 total
+Time:        7.475 s, estimated 8 s
+Ran all test suites.
+
+codex
+Implemented task: **T034**, `POST /accounts/resend-verification`.
+
+The production code appears to satisfy T034’s stated behavior: public feature-gated endpoint, normalized email lookup, 202 empty response for known/unknown/verified accounts, fresh token issuance for unverified accounts, and latest-token-wins invalidation. I found no Odoo-core edit, hard-coded entitlement/trial value, Odoo UI leakage, accounting impact, or tenant-isolation violation.
+
+Verification:
+
+- `npm test -- --runInBand`: 24 suites, 206 tests passed.
+- `npm run lint`: passed.
+- `npm run build`: passed.
+- T034 integration suite: failed, 11/11 tests, because PostgreSQL authentication failed.
+- Its cleanup also crashes by calling `suiteEmailQueue.getJobs()` when initialization failed.
+
+1. The mandatory integration/acceptance test gate is not green; the claimed 11/11 passing result is not reproducible from the actual working tree/environment.
+2. The new integration suite has broken failure cleanup, masking setup failures with an additional `TypeError`.
+3. T034 was marked `[X]` prematurely before independent acceptance and while its submitted integration suite currently fails.
+
+REVIEW VERDICT: REJECT
+tokens used
+40,014
+Implemented task: **T034**, `POST /accounts/resend-verification`.
+
+The production code appears to satisfy T034’s stated behavior: public feature-gated endpoint, normalized email lookup, 202 empty response for known/unknown/verified accounts, fresh token issuance for unverified accounts, and latest-token-wins invalidation. I found no Odoo-core edit, hard-coded entitlement/trial value, Odoo UI leakage, accounting impact, or tenant-isolation violation.
+
+Verification:
+
+- `npm test -- --runInBand`: 24 suites, 206 tests passed.
+- `npm run lint`: passed.
+- `npm run build`: passed.
+- T034 integration suite: failed, 11/11 tests, because PostgreSQL authentication failed.
+- Its cleanup also crashes by calling `suiteEmailQueue.getJobs()` when initialization failed.
+
+1. The mandatory integration/acceptance test gate is not green; the claimed 11/11 passing result is not reproducible from the actual working tree/environment.
+2. The new integration suite has broken failure cleanup, masking setup failures with an additional `TypeError`.
+3. T034 was marked `[X]` prematurely before independent acceptance and while its submitted integration suite currently fails.
+
+REVIEW VERDICT: REJECT
+```
