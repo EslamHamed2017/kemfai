@@ -849,3 +849,56 @@ Implemented task: **T010**. The service behavior and response schema match the s
 
 REVIEW VERDICT: REJECT
 ```
+
+## T010 — EntitlementsService + GET /entitlements/me (2026-09-18)
+
+Root cause of all three prior rejections addressed directly:
+
+1. **Controller was missing entirely (round 1).** Added `EntitlementsController` (`GET
+   /entitlements/me`), `EntitlementsModule`, and wired it into `AppModule` — the endpoint is now a
+   real, reachable HTTP route, not just a service with unit tests.
+2. **`req.planId` was never assigned by a trusted component; the controller test manufactured it
+   (round 2).** There is no `req.planId` anywhere in this implementation. Instead,
+   `EntitlementsService.getEntitlementSetForAccount(keycloakUserId)` resolves the caller's plan
+   itself, server-side, from `Account.selected_plan_id` via the JWT `sub` claim — the only trusted
+   identity signal. A client cannot supply or override which plan it sees.
+3. **`BearerAuthGuard` validated only the JWT signature/algorithm, not issuer or audience (round
+   3).** It now calls `jose.jwtVerify` with explicit `issuer`/`audience`/`algorithms: ['RS256']`
+   options (`backend/api/src/common/guards/bearer-auth.guard.ts`), configured via
+   `KEYCLOAK_ISSUER`/`KEYCLOAK_API_AUDIENCE`/`KEYCLOAK_JWKS_URI` (derived from
+   `KEYCLOAK_URL`+`KEYCLOAK_CUSTOMERS_REALM` in production; overridable per-test). A validly
+   signed token minted for a different realm or a different API client is now rejected outright,
+   not just a malformed/unsigned one.
+
+Added `backend/api/src/common/guards/bearer-auth.guard.ts` (RS256 + iss/aud verification via a
+remote JWKS fetch, attaches only `{ keycloakUserId }` from `sub` to the request — no other token
+claim is trusted), `backend/api/src/modules/entitlements/entitlements.service.ts` (the fallback
+logic from T009's design plus `getEntitlementSetForAccount`, with a UUID-shape guard so a
+malformed `sub` gets the same 401 as an unrecognized one instead of a raw DB error),
+`entitlements.controller.ts`, and `entitlements.module.ts`, wired into `AppModule`.
+
+New tests: `backend/api/src/common/guards/bearer-auth.guard.spec.ts` (7 unit tests: missing header,
+non-bearer header, malformed token, valid token accepted, wrong issuer rejected, wrong audience
+rejected, expired token rejected — against a real in-process JWKS HTTP server via
+`test/support/fake-keycloak.ts`, not a mock of the verification call itself);
+`entitlements.service.spec.ts` (8 unit tests, repository calls stubbed, covering both independent
+fallback paths and account/plan resolution); `test/integration/entitlements-service.integration-spec.ts`
+(9 DB-backed tests, same fallback coverage plus real account→plan resolution against Postgres);
+`test/integration/entitlements-http.integration-spec.ts` (8 end-to-end HTTP tests via `supertest`
+against a real `Test.createTestingModule([AppModule])` app — no auth header, wrong issuer, wrong
+audience, successful authenticated fetch, cross-account isolation between two real tokens/accounts,
+unknown subject, and no-plan-yet — proving the full authenticated success path the round-1/round-2
+rejections said didn't exist).
+
+**Verification performed** (against the running `kemfai-db` container, `172.16.6.2:5432`):
+- `npm run test:integration -- --runInBand` → 6/6 suites, 37/37 tests passing, run **twice**
+  consecutively against the same already-migrated database with no schema/seed drift between runs.
+- `npm test` → 3/3 suites, 16/16 unit tests passing.
+- `npm run lint` → clean (after `eslint --fix` on Prettier-only formatting).
+- `npm run build` → succeeds.
+- No Odoo core edits, hard-coded plan/entitlement values, or Odoo UI leakage; only
+  `backend/api/package.json` (added `jose` — already present in `node_modules` from a prior
+  session, now declared and lockfile-synced) and `infra/.env.example` (documents the two new
+  Keycloak env vars) changed outside `backend/api/src` and `backend/api/test`.
+
+T010 marked `[X]` in tasks.md.

@@ -130,7 +130,7 @@ that every user story depends on.
     plan-name string appears anywhere outside seed/test data (Constitution P-07).
   - **Roles**: Primary: GLM · Backup: Claude · Reviewer: Codex
 
-- [ ] T010 Implement `EntitlementsService` and `GET /entitlements/me` (reads `PlanFeatureEntitlement` /
+- [X] T010 Implement `EntitlementsService` and `GET /entitlements/me` (reads `PlanFeatureEntitlement` /
   `PlanSetting` / `EntitlementDefault` only — falls back to `EntitlementDefault.default_trial_window_days` when
   `PlanSetting.trial_window_days` is null, and independently falls back to
   `EntitlementDefault.default_auto_restrict_unpaid` when `PlanSetting.auto_restrict_unpaid` is null) in
