@@ -212,7 +212,7 @@ that every user story depends on.
     per-endpoint duplicate authorization logic exists (FR-006 satisfied structurally).
   - **Roles**: Primary: GLM · Backup: Claude · Reviewer: Codex
 
-- [ ] T019 Implement `AuditService` and `AuditEventInterceptor` (writes the full FR-007 event catalog from
+- [X] T019 Implement `AuditService` and `AuditEventInterceptor` (writes the full FR-007 event catalog from
   contracts/events.md, append-only) in `backend/api/src/modules/audit/audit.service.ts` and
   `backend/api/src/common/interceptors/audit-event.interceptor.ts`
   - **Dependencies**: T014
