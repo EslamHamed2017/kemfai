@@ -78,7 +78,15 @@ if [ "$next" = "analyze" ] && [ ! -f "$FEATURE_DIR/analysis.md" ]; then
   echo "[$TS] runner captured analyze output into analysis.md" | tee -a "$LOG"
 fi
 
-# --- commit if anything changed ---
+# --- commit only reviewed work: on failed implement, revert partial changes ---
+if [ "$next" = "implement" ] && [ $EC -ne 0 ]; then
+  if ! git diff --quiet || [ -n "$(git ls-files --others --exclude-standard)" ]; then
+    echo "[$TS] implement stage failed (exit $EC) — reverting uncommitted/partial changes" | tee -a "$LOG"
+    git reset --hard HEAD >/dev/null 2>&1
+    git clean -fd >/dev/null 2>&1
+  fi
+fi
+
 # --- independent review by Codex (no model approves its own work) ---
 if [ "${REVIEW:-0}" = "1" ] && [ $EC -eq 0 ]; then
   if ! git diff --quiet || [ -n "$(git ls-files --others --exclude-standard)" ]; then
