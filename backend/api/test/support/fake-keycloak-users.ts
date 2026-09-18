@@ -8,19 +8,23 @@ import {
 export interface FakeKeycloakUser {
   id: string;
   email: string;
+  emailVerified: boolean;
   requiredActions: string[];
 }
 
 /**
- * In-memory KeycloakUserProvisioner for HTTP integration tests (T032/T028): mirrors the
- * real client's observable semantics — duplicate emails conflict (409), compensation
- * deletes are recorded, and failure modes are programmable per-test — while the real
- * Admin REST client's wire behavior is covered by its own unit spec.
+ * In-memory KeycloakUserProvisioner for HTTP integration tests (T032/T028, T033/T029):
+ * mirrors the real client's observable semantics — duplicate emails conflict (409),
+ * compensation deletes are recorded, verification mirroring flips `emailVerified` and
+ * clears only VERIFY_EMAIL (preserving other required actions), and failure modes are
+ * programmable per-test — while the real Admin REST client's wire behavior is covered by
+ * its own unit spec.
  */
 export class FakeKeycloakUsers implements KeycloakUserProvisioner {
   readonly users = new Map<string, FakeKeycloakUser>();
   readonly deletedUserIds: string[] = [];
   failNextCreate: Error | null = null;
+  failNextMarkVerified: Error | null = null;
 
   async createUser(input: CreateKeycloakUserInput): Promise<void> {
     if (this.failNextCreate) {
@@ -36,6 +40,7 @@ export class FakeKeycloakUsers implements KeycloakUserProvisioner {
     this.users.set(input.id, {
       id: input.id,
       email: input.email,
+      emailVerified: false,
       requiredActions: [...input.requiredActions],
     });
   }
@@ -43,6 +48,20 @@ export class FakeKeycloakUsers implements KeycloakUserProvisioner {
   async deleteUser(id: string): Promise<void> {
     this.deletedUserIds.push(id);
     this.users.delete(id);
+  }
+
+  async markEmailVerified(id: string): Promise<void> {
+    if (this.failNextMarkVerified) {
+      const error = this.failNextMarkVerified;
+      this.failNextMarkVerified = null;
+      throw error;
+    }
+    const user = this.users.get(id);
+    if (!user) {
+      throw new KeycloakUnavailableError(`fake keycloak holds no user ${id}`);
+    }
+    user.emailVerified = true;
+    user.requiredActions = user.requiredActions.filter((action) => action !== 'VERIFY_EMAIL');
   }
 
   survivingUsers(): FakeKeycloakUser[] {
@@ -62,5 +81,6 @@ export class FakeKeycloakUsers implements KeycloakUserProvisioner {
     this.users.clear();
     this.deletedUserIds.length = 0;
     this.failNextCreate = null;
+    this.failNextMarkVerified = null;
   }
 }

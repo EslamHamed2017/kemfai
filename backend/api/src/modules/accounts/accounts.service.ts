@@ -1,5 +1,7 @@
 import {
   ConflictException,
+  HttpException,
+  HttpStatus,
   Inject,
   Injectable,
   Logger,
@@ -13,7 +15,9 @@ import controlDataSource from '../../database/data-source';
 import { AuditService } from '../audit/audit.service';
 import { Plan } from '../entitlements/entities/plan.entity';
 import { Account } from './entities/account.entity';
+import { EmailVerificationToken } from './entities/email-verification-token.entity';
 import { SignupRequestDto } from './dto/signup.request.dto';
+import { hashVerificationToken, mintVerificationToken } from './tokens/email-verification-token';
 import {
   CreateKeycloakUserInput,
   KEYCLOAK_USER_PROVISIONER,
@@ -21,10 +25,16 @@ import {
 } from '../../integrations/keycloak/keycloak-user-provisioner';
 import {
   QUEUE_EMAIL_SEND_VERIFICATION,
+  QUEUE_TENANT_PROVISION,
   emailVerificationJobId,
+  tenantProvisionJobId,
 } from '../../common/queues/queue-names';
 
 export interface SignupResult {
+  accountId: string;
+}
+
+export interface VerifyEmailResult {
   accountId: string;
 }
 
@@ -38,6 +48,26 @@ export const DUPLICATE_EMAIL_GENERIC_MESSAGE =
   'This email cannot be used to create a new account. If it is yours, sign in or reset your password instead.';
 export const SIGNUP_TEMPORARILY_UNAVAILABLE_MESSAGE =
   'Signup is temporarily unavailable. Please try again shortly.';
+export const VERIFICATION_TEMPORARILY_UNAVAILABLE_MESSAGE =
+  'Email verification is temporarily unavailable. Please try again shortly.';
+
+/** 410 reason codes + human messages (Edge Cases, FR-021; FR-012 actionable states for T038). */
+export type VerificationGoneReason = 'invalid' | 'expired' | 'superseded' | 'used';
+
+export const VERIFICATION_GONE_MESSAGES: Record<VerificationGoneReason, string> = {
+  invalid: 'This verification link is not valid. Please request a new one.',
+  expired: 'This verification link has expired. Please request a new one.',
+  superseded:
+    'A newer verification link has been issued for this account; only the most recent link can be used.',
+  used: 'This verification link has already been used. If you still need to verify, request a new one.',
+};
+
+export function verificationGoneException(reason: VerificationGoneReason): HttpException {
+  return new HttpException(
+    { statusCode: HttpStatus.GONE, reason, message: VERIFICATION_GONE_MESSAGES[reason] },
+    HttpStatus.GONE,
+  );
+}
 
 /**
  * T032 — `POST /accounts/signup` (FR-016–FR-019, Acceptance Scenarios 1.1/1.2/1.6, Edge
@@ -73,6 +103,8 @@ export class AccountsService {
     private readonly audit: AuditService,
     @InjectQueue(QUEUE_EMAIL_SEND_VERIFICATION)
     private readonly emailVerificationQueue: Queue,
+    @InjectQueue(QUEUE_TENANT_PROVISION)
+    private readonly tenantProvisionQueue: Queue,
     @Inject(KEYCLOAK_USER_PROVISIONER)
     private readonly keycloakUsers: KeycloakUserProvisioner,
   ) {}
@@ -152,6 +184,157 @@ export class AccountsService {
   }
 
   /**
+   * T033 — `POST /accounts/verify-email` (FR-021/FR-022 trigger, Acceptance Scenario 1.3,
+   * Edge Cases "link used twice / newer link issued").
+   *
+   * Saga ordering (T032's failure-atomicity discipline, adapted):
+   *   1. Read-only validation with precise 410 reasons (unknown / used / expired /
+   *      superseded / stale link for an already-verified account) — no writes, so a
+   *      doomed request never touches Keycloak.
+   *   2. Keycloak mirror (`markEmailVerified`, idempotent) BEFORE any local write: on
+   *      failure a controlled 503 returns with the token untouched — the same link
+   *      remains retryable. (A Keycloak user still carrying the VERIFY_EMAIL required
+   *      action would be stranded on Keycloak's own verification screen even after the
+   *      BFF verified them — the mirror is therefore a required step, not cosmetic.)
+   *   3. Atomic decide+consume: one guarded UPDATE re-checks unconsumed/unexpired/
+   *      is-latest-wins, so concurrent replays of the same link collapse to exactly
+   *      one winner (loser → 410). "Latest" is proven by `issuance_sequence`, never by
+   *      timestamp comparison.
+   *   4. One-way account flag, guarded `WHERE email_verified = false`: a concurrent
+   *      winner's flip makes this request a 200 no-op with NO second audit event and
+   *      NO duplicate tenant.provision job (idempotency, FR-023 spirit).
+   *   5. Audit BEFORE any success signal; on failure compensate the flag AND the token
+   *      consumption (best effort) so a committed verified account can never lack its
+   *      audit trail, and answer 503 — the same link stays retryable. The Keycloak
+   *      mirror is deliberately NOT reverted: BFF-side gates read Account.email_verified,
+   *      so a Keycloak-verified-but-BFF-unverified divergence grants nothing and
+   *      self-heals on retry/resend.
+   *   6. Enqueue `tenant.provision` keyed by the bare account_id (events.md) — BullMQ
+   *      dedupes duplicate adds; an enqueue failure is logged for ops (recoverable via
+   *      provisioning-retry, T045) and never fails the request.
+   */
+  async verifyEmail(token: string): Promise<VerifyEmailResult> {
+    const tokenHash = hashVerificationToken(token);
+    const tokenRepo = controlDataSource.getRepository(EmailVerificationToken);
+    const accountRepo = controlDataSource.getRepository(Account);
+
+    // Step 1 — read-only validation with precise reasons.
+    const row = await tokenRepo.findOne({ where: { tokenHash } });
+    if (!row) {
+      throw verificationGoneException('invalid');
+    }
+    if (row.consumedAt) {
+      throw verificationGoneException('used');
+    }
+    if (row.expiresAt.getTime() <= Date.now()) {
+      throw verificationGoneException('expired');
+    }
+    const latest = await tokenRepo.findOne({
+      where: { accountId: row.accountId },
+      order: { issuanceSequence: 'DESC' },
+    });
+    if (!latest || latest.id !== row.id) {
+      throw verificationGoneException('superseded');
+    }
+    const account = await accountRepo.findOne({ where: { id: row.accountId } });
+    if (!account) {
+      // FK guarantees this cannot happen; treated as an invalid link, never a 500.
+      throw verificationGoneException('invalid');
+    }
+    if (account.emailVerified) {
+      // One-way state: a live link for an already-verified account is stale by definition.
+      throw verificationGoneException('used');
+    }
+
+    // Step 2 — Keycloak mirror first; transient failure keeps the link retryable.
+    try {
+      await this.keycloakUsers.markEmailVerified(account.keycloakUserId);
+    } catch (error) {
+      this.logger.error(
+        `Keycloak email-verification mirror failed for user ${account.keycloakUserId} (account ${account.id})`,
+        error as Error,
+      );
+      throw new ServiceUnavailableException(VERIFICATION_TEMPORARILY_UNAVAILABLE_MESSAGE);
+    }
+
+    // Step 3 — atomic decide+consume (guards every step-1 condition again under race).
+    const consumed = await controlDataSource.query(
+      `UPDATE email_verification_token AS t
+         SET consumed_at = now()
+       WHERE t.token_hash = $1
+         AND t.consumed_at IS NULL
+         AND t.expires_at > now()
+         AND NOT EXISTS (
+           SELECT 1 FROM email_verification_token AS newer
+           WHERE newer.account_id = t.account_id
+             AND newer.issuance_sequence > t.issuance_sequence
+         )
+       RETURNING t.account_id`,
+      [tokenHash],
+    );
+    if (consumed.length === 0) {
+      // Lost the race: another request consumed this link, or a newer link appeared.
+      throw verificationGoneException('used');
+    }
+
+    // Step 4 — one-way flag flip; 0 affected rows means a concurrent winner already did it.
+    const flagResult = await accountRepo.update(
+      { id: account.id, emailVerified: false },
+      { emailVerified: true },
+    );
+    if ((flagResult.affected ?? 0) === 1) {
+      // Step 5 — audit before any success signal; compensate on failure.
+      try {
+        await this.audit.recordAccountEmailVerified({ accountId: account.id });
+      } catch (error) {
+        this.logger.error(
+          `account.email_verified audit write failed for account ${account.id}; compensating verification`,
+          error as Error,
+        );
+        await this.bestEffortCompensateVerification(account.id, row.id);
+        throw new ServiceUnavailableException(VERIFICATION_TEMPORARILY_UNAVAILABLE_MESSAGE);
+      }
+
+      // Step 6 — tenant provisioning; never blocks the response (events.md).
+      try {
+        await this.tenantProvisionQueue.add(
+          'provision',
+          { accountId: account.id },
+          { jobId: tenantProvisionJobId(account.id) },
+        );
+      } catch (error) {
+        this.logger.error(
+          `tenant.provision enqueue failed for account ${account.id} — recoverable via provisioning-retry (T045)`,
+          error as Error,
+        );
+      }
+    }
+
+    return { accountId: account.id };
+  }
+
+  /** Compensation: undo the flag flip and the token consumption. Best effort, logged. */
+  private async bestEffortCompensateVerification(
+    accountId: string,
+    tokenId: string,
+  ): Promise<void> {
+    try {
+      await controlDataSource
+        .getRepository(Account)
+        .update({ id: accountId, emailVerified: true }, { emailVerified: false });
+      await controlDataSource.query(
+        `UPDATE email_verification_token SET consumed_at = NULL WHERE id = $1`,
+        [tokenId],
+      );
+    } catch (error) {
+      this.logger.error(
+        `Verification compensation failed for account ${accountId} / token ${tokenId} — manual cleanup required`,
+        error as Error,
+      );
+    }
+  }
+
+  /**
    * The email already has an Account row — Edge Cases: never a second row. A VERIFIED
    * account gets the generic Scenario 1.6 rejection; an UNVERIFIED one gets its
    * verification re-sent, with the latest submitted plan/cycle choice carried onto the
@@ -186,13 +369,40 @@ export class AccountsService {
     return { accountId: existing.id };
   }
 
+  /**
+   * Issues a fresh verification link (T033) and dispatches its email. Every issuance —
+   * signup, the unverified-duplicate resend below, and resend-verification (T034) — goes
+   * through here, which is what makes "a newer link supersedes every earlier one"
+   * (FR-021) hold: each INSERT is a new globally-higher `issuance_sequence`, and
+   * consumption honors only the account's max-sequence row.
+   *
+   * Failure semantics match the accepted T032 contract: a token-registry or enqueue
+   * failure is logged for ops and NEVER fails signup — the response has already been
+   * earned by steps 1–4, and the customer recovers via resend-verification (T034).
+   */
   private async enqueueVerificationEmail(accountId: string, email: string): Promise<void> {
-    const tokenVersion = randomUUID();
+    const minted = mintVerificationToken();
+    try {
+      await controlDataSource.getRepository(EmailVerificationToken).insert({
+        accountId,
+        tokenHash: hashVerificationToken(minted.token),
+        tokenVersion: minted.tokenVersion,
+        expiresAt: minted.expiresAt,
+      });
+    } catch (error) {
+      this.logger.error(
+        `verification-token issuance failed for account ${accountId} — recoverable via resend-verification (T034); email dispatch skipped (no consumable link exists)`,
+        error as Error,
+      );
+      return;
+    }
+
     try {
       await this.emailVerificationQueue.add(
         'send',
-        { accountId, email, tokenVersion },
-        { jobId: emailVerificationJobId(accountId, tokenVersion) },
+        // `token` is the raw link bearer — the email worker's payload, never persisted.
+        { accountId, email, tokenVersion: minted.tokenVersion, token: minted.token },
+        { jobId: emailVerificationJobId(accountId, minted.tokenVersion) },
       );
     } catch (error) {
       this.logger.error(

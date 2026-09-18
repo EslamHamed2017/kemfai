@@ -1,8 +1,9 @@
 import { Body, Controller, HttpCode, HttpStatus, Post } from '@nestjs/common';
 import { Public } from '../../common/decorators/public.decorator';
 import { RequireFeatureFlag } from '../../common/decorators/feature-flag.decorator';
-import { AccountsService, SignupResult } from './accounts.service';
+import { AccountsService, SignupResult, VerifyEmailResult } from './accounts.service';
 import { SignupRequestDto } from './dto/signup.request.dto';
+import { VerifyEmailRequestDto } from './dto/verify-email.request.dto';
 
 /**
  * The accounts surface of the onboarding shell (T032+). `module.accounts` is the
@@ -28,5 +29,18 @@ export class AccountsController {
   @HttpCode(HttpStatus.CREATED)
   signup(@Body() dto: SignupRequestDto): Promise<SignupResult> {
     return this.accounts.signup(dto);
+  }
+
+  /**
+   * T033 — consumes the emailed verification link's bearer token (FR-021). Public like
+   * signup: the caller is proving account ownership with the token itself, so there is
+   * no bearer identity to authenticate yet. 200 verifies and triggers provisioning;
+   * every invalid/expired/superseded/used token is a 410 (Edge Cases).
+   */
+  @Public()
+  @Post('verify-email')
+  @HttpCode(HttpStatus.OK)
+  verifyEmail(@Body() dto: VerifyEmailRequestDto): Promise<VerifyEmailResult> {
+    return this.accounts.verifyEmail(dto.token);
   }
 }

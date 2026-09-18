@@ -18,8 +18,9 @@ import {
  *     dev bootstrap admin (KEYCLOAK_ADMIN/KEYCLOAK_ADMIN_PASSWORD via admin-cli, the
  *     credentials already committed to infra/.env.example for local development).
  *
- * Only user create/delete are implemented — the minimum Admin REST surface signup needs;
- * broader admin capabilities are deliberately not reachable through this class.
+ * User create/delete (T032) and email-verification mirroring (T033) are implemented —
+ * the minimum Admin REST surface the accounts saga needs; broader admin capabilities are
+ * deliberately not reachable through this class.
  */
 
 interface AdminTokenConfig {
@@ -166,6 +167,54 @@ export class AdminRestKeycloakUserProvisioner implements KeycloakUserProvisioner
     // 404 = user never existed / already compensated — the caller's goal is already met.
     if (!response.ok && response.status !== 404) {
       throw new KeycloakUnavailableError(`Keycloak user deletion returned ${response.status}`);
+    }
+  }
+
+  async markEmailVerified(id: string): Promise<void> {
+    const token = await this.adminToken();
+    const userUrl = `${this.baseUrl()}/admin/realms/${this.realm()}/users/${id}`;
+
+    let user: { requiredActions?: string[] };
+    try {
+      const response = await fetch(userUrl, {
+        headers: { authorization: `Bearer ${token}` },
+        signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+      });
+      if (!response.ok) {
+        throw new KeycloakUnavailableError(`Keycloak user fetch returned ${response.status}`);
+      }
+      user = (await response.json()) as { requiredActions?: string[] };
+    } catch (error) {
+      if (error instanceof KeycloakUnavailableError) {
+        throw error;
+      }
+      throw new KeycloakUnavailableError('Keycloak user fetch is unreachable', error);
+    }
+
+    // Preserve every other required action — only VERIFY_EMAIL is satisfied by this call.
+    const remainingActions = (user.requiredActions ?? []).filter(
+      (action) => action !== 'VERIFY_EMAIL',
+    );
+
+    let response: Response;
+    try {
+      response = await fetch(userUrl, {
+        method: 'PUT',
+        headers: {
+          authorization: `Bearer ${token}`,
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({
+          emailVerified: true,
+          requiredActions: remainingActions,
+        }),
+        signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+      });
+    } catch (error) {
+      throw new KeycloakUnavailableError('Keycloak user update is unreachable', error);
+    }
+    if (!response.ok) {
+      throw new KeycloakUnavailableError(`Keycloak user update returned ${response.status}`);
     }
   }
 }

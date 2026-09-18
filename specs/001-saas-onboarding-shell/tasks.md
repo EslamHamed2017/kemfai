@@ -365,7 +365,7 @@ tenant/workspace exists until the verification link is used, and the account can
     Edge Cases).
   - **Roles**: Primary: Codex · Backup: GLM · Reviewer: Gemini
 
-- [ ] T029 [P] [US1] Integration test: verification-link reuse/supersession — only the most recently issued,
+- [X] T029 [P] [US1] Integration test: verification-link reuse/supersession — only the most recently issued,
   unexpired link is honored; earlier links are rejected in
   `backend/api/test/integration/accounts-verification.integration-spec.ts`
   - **Dependencies**: T007
@@ -408,7 +408,7 @@ tenant/workspace exists until the verification link is used, and the account can
     still published, prompting re-selection if not (Edge Cases).
   - **Roles**: Primary: GLM · Backup: Claude · Reviewer: Codex
 
-- [ ] T033 [US1] Implement `POST /accounts/verify-email` (consumes the Keycloak `VERIFY_EMAIL` token, sets
+- [X] T033 [US1] Implement `POST /accounts/verify-email` (consumes the Keycloak `VERIFY_EMAIL` token, sets
   `email_verified`, enqueues `tenant.provision`, emits `account.email_verified`) in
   `backend/api/src/modules/accounts/accounts.service.ts`
   - **Dependencies**: T032

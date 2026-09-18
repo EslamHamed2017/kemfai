@@ -1,5 +1,6 @@
 import {
   ConflictException,
+  HttpException,
   ServiceUnavailableException,
   UnprocessableEntityException,
 } from '@nestjs/common';
@@ -8,8 +9,10 @@ import controlDataSource from '../../database/data-source';
 import { AuditService } from '../audit/audit.service';
 import { Plan } from '../entitlements/entities/plan.entity';
 import { Account, BillingCycle } from './entities/account.entity';
+import { EmailVerificationToken } from './entities/email-verification-token.entity';
 import { AccountsService } from './accounts.service';
 import { SignupRequestDto } from './dto/signup.request.dto';
+import { hashVerificationToken } from './tokens/email-verification-token';
 import {
   KeycloakUserConflictError,
   KeycloakUnavailableError,
@@ -17,9 +20,10 @@ import {
 
 /**
  * Unit coverage of the T032 signup saga's ordering, revalidation, and compensation rules
- * (review findings 2026-09-19 00:37 + 00:57) with stubbed repositories/queue/provisioner.
+ * (review findings 2026-09-19 00:37 + 00:57) and of the T033 verify-email saga's
+ * validation/atomicity/compensation rules, with stubbed repositories/queues/provisioner.
  * DB-level proof (unique email constraint as the idempotency anchor, audit rows, BullMQ
- * job ids) lives in test/integration/accounts-signup.integration-spec.ts.
+ * job ids, latest-link-wins) lives in test/integration/accounts-*.integration-spec.ts.
  */
 
 const PLAN_ID = '11111111-1111-4111-8111-111111111111';
@@ -49,6 +53,7 @@ describe('AccountsService.signup (T032, unit)', () => {
   let planRepo: { findOne: jest.Mock };
   let createUser: jest.Mock;
   let deleteUser: jest.Mock;
+  let markEmailVerified: jest.Mock;
   let recordAccountCreated: jest.Mock;
   let queueAdd: jest.Mock;
   let insertShouldCollide: boolean;
@@ -59,6 +64,7 @@ describe('AccountsService.signup (T032, unit)', () => {
     existingAccount = null;
     createUser = jest.fn().mockResolvedValue(undefined);
     deleteUser = jest.fn().mockResolvedValue(undefined);
+    markEmailVerified = jest.fn().mockResolvedValue(undefined);
     recordAccountCreated = jest.fn().mockResolvedValue(undefined);
     queueAdd = jest.fn().mockResolvedValue(undefined);
   });
@@ -95,6 +101,7 @@ describe('AccountsService.signup (T032, unit)', () => {
           KNOWN_PLANS.has(where.id) && where.published === true ? { id: where.id } : null,
         ),
     };
+    const tokenRepo = { insert: jest.fn().mockResolvedValue(undefined) };
 
     jest.spyOn(controlDataSource, 'getRepository').mockImplementation((target: any) => {
       if (target === Plan) {
@@ -103,13 +110,17 @@ describe('AccountsService.signup (T032, unit)', () => {
       if (target === Account) {
         return accountRepo as any;
       }
+      if (target === EmailVerificationToken) {
+        return tokenRepo as any;
+      }
       throw new Error(`Unexpected repository requested for ${String(target)}`);
     });
 
     const audit = { recordAccountCreated } as unknown as AuditService;
     const queue = { add: queueAdd } as unknown as Queue;
-    const provisioner = { createUser, deleteUser };
-    return new AccountsService(audit, queue, provisioner as never);
+    const tenantQueue = { add: jest.fn().mockResolvedValue(undefined) } as unknown as Queue;
+    const provisioner = { createUser, deleteUser, markEmailVerified };
+    return new AccountsService(audit, queue, tenantQueue, provisioner as never);
   }
 
   function makeExistingAccount(overrides: Partial<Account> = {}): Account {
@@ -157,11 +168,12 @@ describe('AccountsService.signup (T032, unit)', () => {
     expect(queueAdd).toHaveBeenCalledTimes(1);
     const [jobName, payload, options] = queueAdd.mock.calls[0] as [
       string,
-      { accountId: string; tokenVersion: string },
+      { accountId: string; tokenVersion: string; token: string },
       { jobId: string },
     ];
     expect(jobName).toBe('send');
     expect(payload.accountId).toBe('generated-id-1');
+    expect(typeof payload.token).toBe('string'); // raw link bearer rides the job, never the DB
     expect(options.jobId).toBe(`${payload.accountId}.${payload.tokenVersion}`);
 
     // Compensation-critical ordering: Keycloak user -> audit -> queue, all after the row.
@@ -277,5 +289,250 @@ describe('AccountsService.signup (T032, unit)', () => {
     expect(result).toEqual({ accountId: 'generated-id-1' });
     expect(recordAccountCreated).toHaveBeenCalledTimes(1);
     expect(accountRepo.delete).not.toHaveBeenCalled();
+  });
+
+  it('token-issuance failure: signup still succeeds, no email job (no consumable link exists)', async () => {
+    const service = makeService();
+    jest.spyOn(controlDataSource, 'getRepository').mockImplementation((target: any) => {
+      if (target === Plan) {
+        return planRepo as any;
+      }
+      if (target === Account) {
+        return accountRepo as any;
+      }
+      if (target === EmailVerificationToken) {
+        return { insert: jest.fn().mockRejectedValue(new Error('token insert failed')) } as any;
+      }
+      throw new Error(`Unexpected repository requested for ${String(target)}`);
+    });
+
+    const result = await service.signup(makeDto());
+    expect(result).toEqual({ accountId: 'generated-id-1' });
+    expect(recordAccountCreated).toHaveBeenCalledTimes(1);
+    expect(queueAdd).not.toHaveBeenCalled();
+  });
+});
+
+describe('AccountsService.verifyEmail (T033, unit)', () => {
+  const RAW_TOKEN = 'unit-test-raw-token-value';
+  const TOKEN_HASH = hashVerificationToken(RAW_TOKEN);
+
+  let accountRepo: { findOne: jest.Mock; update: jest.Mock };
+  let tokenRepo: { findOne: jest.Mock };
+  let planRepo: { findOne: jest.Mock };
+  let markEmailVerified: jest.Mock;
+  let recordAccountEmailVerified: jest.Mock;
+  let tenantQueueAdd: jest.Mock;
+  let query: jest.Mock;
+
+  let tokenRow: EmailVerificationToken;
+  let latestRow: EmailVerificationToken | null;
+  let account: Account | null;
+  let updateResult: { affected: number };
+
+  function makeTokenRow(overrides: Partial<EmailVerificationToken> = {}): EmailVerificationToken {
+    return {
+      id: 'token-row-id',
+      accountId: 'existing-account-id',
+      tokenHash: TOKEN_HASH,
+      tokenVersion: 'eeeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee',
+      issuanceSequence: '5',
+      issuedAt: new Date(Date.now() - 60_000),
+      expiresAt: new Date(Date.now() + 3_600_000),
+      consumedAt: null,
+      ...overrides,
+    } as EmailVerificationToken;
+  }
+
+  function makeAccount(overrides: Partial<Account> = {}): Account {
+    return {
+      id: 'existing-account-id',
+      keycloakUserId: 'existing-kc-user-id',
+      email: 'owner@example.com',
+      emailVerified: false,
+      mfaEnrolled: false,
+      selectedPlanId: PLAN_ID,
+      selectedBillingCycle: BillingCycle.MONTHLY,
+      preferredLocale: null,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      ...overrides,
+    } as Account;
+  }
+
+  beforeEach(() => {
+    tokenRow = makeTokenRow();
+    latestRow = tokenRow;
+    account = makeAccount();
+    updateResult = { affected: 1 };
+    markEmailVerified = jest.fn().mockResolvedValue(undefined);
+    recordAccountEmailVerified = jest.fn().mockResolvedValue(undefined);
+    tenantQueueAdd = jest.fn().mockResolvedValue(undefined);
+    query = jest.fn().mockResolvedValue([{ account_id: 'existing-account-id' }]);
+
+    planRepo = { findOne: jest.fn() };
+    accountRepo = {
+      findOne: jest.fn().mockImplementation(async () => account),
+      update: jest.fn().mockImplementation(async () => updateResult),
+    };
+    tokenRepo = {
+      // First findOne: by tokenHash → the row. Second findOne: by accountId → latest row.
+      findOne: jest
+        .fn()
+        .mockImplementation(async (criteria: { where: Record<string, unknown> }) => {
+          if ('tokenHash' in criteria.where) {
+            return tokenRow;
+          }
+          return latestRow;
+        }),
+    };
+
+    jest.spyOn(controlDataSource, 'getRepository').mockImplementation((target: any) => {
+      if (target === Plan) {
+        return planRepo as any;
+      }
+      if (target === Account) {
+        return accountRepo as any;
+      }
+      if (target === EmailVerificationToken) {
+        return tokenRepo as any;
+      }
+      throw new Error(`Unexpected repository requested for ${String(target)}`);
+    });
+    jest.spyOn(controlDataSource, 'query').mockImplementation(query as any);
+  });
+
+  afterEach(() => {
+    jest.restoreAllMocks();
+  });
+
+  function makeService(): AccountsService {
+    const audit = { recordAccountEmailVerified } as unknown as AuditService;
+    const emailQueue = { add: jest.fn() } as unknown as Queue;
+    const tenantQueue = { add: tenantQueueAdd } as unknown as Queue;
+    const provisioner = { createUser: jest.fn(), deleteUser: jest.fn(), markEmailVerified };
+    return new AccountsService(audit, emailQueue, tenantQueue, provisioner as never);
+  }
+
+  function expectGone(reason: string): (service: AccountsService) => Promise<void> {
+    return async (service: AccountsService) => {
+      await expect(service.verifyEmail(RAW_TOKEN)).rejects.toThrow(HttpException);
+      try {
+        await service.verifyEmail(RAW_TOKEN);
+      } catch (error) {
+        const httpError = error as HttpException;
+        expect(httpError.getStatus()).toBe(410);
+        expect((httpError.getResponse() as { reason: string }).reason).toBe(reason);
+      }
+    };
+  }
+
+  it('happy path: mirror → atomic consume → one-way flag → audit → provision job, in that order', async () => {
+    const service = makeService();
+    const result = await service.verifyEmail(RAW_TOKEN);
+
+    expect(result).toEqual({ accountId: 'existing-account-id' });
+    expect(markEmailVerified).toHaveBeenCalledWith('existing-kc-user-id');
+    expect(query).toHaveBeenCalledTimes(1); // the atomic decide+consume UPDATE
+    expect(accountRepo.update).toHaveBeenCalledWith(
+      { id: 'existing-account-id', emailVerified: false },
+      { emailVerified: true },
+    );
+    expect(recordAccountEmailVerified).toHaveBeenCalledWith({ accountId: 'existing-account-id' });
+    expect(tenantQueueAdd).toHaveBeenCalledWith(
+      'provision',
+      { accountId: 'existing-account-id' },
+      { jobId: 'existing-account-id' }, // events.md: bare account_id job id
+    );
+
+    const order = [
+      markEmailVerified.mock.invocationCallOrder[0],
+      query.mock.invocationCallOrder[0],
+      accountRepo.update.mock.invocationCallOrder[0],
+      recordAccountEmailVerified.mock.invocationCallOrder[0],
+      tenantQueueAdd.mock.invocationCallOrder[0],
+    ];
+    expect(order).toEqual([...order].sort((a, b) => a - b));
+  });
+
+  it('unknown token hash → 410 invalid, zero side effects', async () => {
+    tokenRow = null as unknown as EmailVerificationToken;
+    const service = makeService();
+    await expectGone('invalid')(service);
+    expect(markEmailVerified).not.toHaveBeenCalled();
+    expect(query).not.toHaveBeenCalled();
+    expect(recordAccountEmailVerified).not.toHaveBeenCalled();
+  });
+
+  it('already-consumed token → 410 used (Edge Case: link used twice)', async () => {
+    tokenRow = makeTokenRow({ consumedAt: new Date() });
+    await expectGone('used')(makeService());
+  });
+
+  it('expired token → 410 expired', async () => {
+    tokenRow = makeTokenRow({ expiresAt: new Date(Date.now() - 1_000) });
+    await expectGone('expired')(makeService());
+  });
+
+  it('newer link issued → 410 superseded (FR-021 latest-wins)', async () => {
+    latestRow = makeTokenRow({ id: 'newer-token-row-id', issuanceSequence: '6' });
+    await expectGone('superseded')(makeService());
+  });
+
+  it('live token for an already-verified account → 410 used (one-way state)', async () => {
+    account = makeAccount({ emailVerified: true });
+    await expectGone('used')(makeService());
+  });
+
+  it('Keycloak mirror failure → 503, token NOT consumed (same link stays retryable)', async () => {
+    markEmailVerified.mockRejectedValue(new KeycloakUnavailableError('kc down'));
+    await expect(makeService().verifyEmail(RAW_TOKEN)).rejects.toThrow(ServiceUnavailableException);
+    expect(query).not.toHaveBeenCalled();
+    expect(accountRepo.update).not.toHaveBeenCalled();
+    expect(recordAccountEmailVerified).not.toHaveBeenCalled();
+    expect(tenantQueueAdd).not.toHaveBeenCalled();
+  });
+
+  it('atomic consume loses the race → 410 used, no flag/audit/job work', async () => {
+    query.mockResolvedValue([]);
+    await expectGone('used')(makeService());
+    expect(accountRepo.update).not.toHaveBeenCalled();
+    expect(recordAccountEmailVerified).not.toHaveBeenCalled();
+  });
+
+  it('audit failure → compensates flag flip AND token consumption, answers 503', async () => {
+    recordAccountEmailVerified.mockRejectedValue(new Error('audit insert failed'));
+    await expect(makeService().verifyEmail(RAW_TOKEN)).rejects.toThrow(ServiceUnavailableException);
+
+    // Flag flipped then un-flipped; token consumed then un-consumed.
+    expect(accountRepo.update).toHaveBeenNthCalledWith(
+      1,
+      { id: 'existing-account-id', emailVerified: false },
+      { emailVerified: true },
+    );
+    expect(accountRepo.update).toHaveBeenNthCalledWith(
+      2,
+      { id: 'existing-account-id', emailVerified: true },
+      { emailVerified: false },
+    );
+    expect(query).toHaveBeenCalledTimes(2); // consume + compensation un-consume
+    expect(tenantQueueAdd).not.toHaveBeenCalled();
+  });
+
+  it('provision enqueue failure → verification still succeeds (recoverable via T045 retry)', async () => {
+    tenantQueueAdd.mockRejectedValue(new Error('redis down'));
+    const service = makeService();
+    const result = await service.verifyEmail(RAW_TOKEN);
+    expect(result).toEqual({ accountId: 'existing-account-id' });
+    expect(recordAccountEmailVerified).toHaveBeenCalledTimes(1);
+  });
+
+  it('concurrent winner already flipped the flag → 200 no-op, NO duplicate audit or job', async () => {
+    updateResult = { affected: 0 };
+    const service = makeService();
+    const result = await service.verifyEmail(RAW_TOKEN);
+    expect(result).toEqual({ accountId: 'existing-account-id' });
+    expect(recordAccountEmailVerified).not.toHaveBeenCalled();
+    expect(tenantQueueAdd).not.toHaveBeenCalled();
   });
 });

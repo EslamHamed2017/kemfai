@@ -2231,3 +2231,63 @@ precedent; no non-breaking fix exists to apply.
   construction (bootstrap serves the committed file verbatim; openapi-bootstrap suite passed).
 
 T032 and T028 marked `[X]` in tasks.md only after all of the above were green.
+
+## T033 + T029 — POST /accounts/verify-email implementation + integration test (2026-09-19, 1st attempt)
+
+Executed by GLM (T033 Primary; T029 Primary is Codex with GLM Backup — picked up as the next unblocked
+implementable slice since T027/T030/T103 are test-first tasks that cannot pass before T033–T035/T104 exist).
+
+**Mechanism decision (technical, not a baseline change — flagged for transparency):** the ratified contract
+(`contracts/openapi.yaml` `POST /accounts/verify-email` with a `token` body and 200/410) plus spec.md Edge
+Cases ("only the most recently issued, unexpired link is honored") require the BFF itself to judge a raw
+bearer token single-use/latest-wins — which Keycloak's Admin REST cannot answer for an arbitrary token. So
+the link token is a 256-bit CSPRNG base64url opaque secret stored ONLY as a SHA-256 hash in a new control-plane
+`email_verification_token` registry (migration `1789790000000-CreateEmailVerificationToken`; no raw token ever
+persisted; no custom crypto beyond randomBytes/sha256, honoring research.md §2's no-hand-rolled-OTP intent).
+Keycloak remains authoritative for authentication and its `VERIFY_EMAIL` required action: on consumption the
+BFF mirrors `emailVerified=true` and clears ONLY `VERIFY_EMAIL` via a new
+`KeycloakUserProvisioner.markEmailVerified` (Admin REST GET+PUT, preserving other required actions), so the
+user is never stranded on Keycloak's own verification screen (data-model: Account.email_verified "mirrors
+Keycloak state").
+
+**Latest-wins is race-free by construction:** every issuance INSERTs a row with a globally monotonic
+`issuance_sequence` (bigserial); consumption is ONE guarded UPDATE (unconsumed + unexpired + NOT EXISTS a
+higher-sequence row for the account) RETURNING the account — concurrent replays of one link collapse to
+exactly one winner (410 for the loser), and supersession cannot be missed regardless of issuance concurrency.
+Each issuance (signup, unverified-duplicate resend — the path T034 will reuse) mints a fresh version that
+matches the `email.send_verification` job-id strategy (`account_id` + token version, events.md); the raw token
+rides the job payload (the emailed link), never the DB.
+
+**Saga ordering follows the accepted T032 discipline:** read-only validation with precise 410 reasons
+(invalid/expired/superseded/used) → Keycloak mirror BEFORE any local write (transient failure → controlled 503
+with the token untouched, same link retryable) → atomic decide+consume → one-way guarded
+`email_verified=false→true` flip (0 affected rows = concurrent winner: 200 no-op with NO duplicate audit and
+NO duplicate `tenant.provision` job) → `account.email_verified` audit before any success signal (failure →
+compensate flag + un-consume token, 503, link stays retryable; Keycloak mirror deliberately not reverted —
+BFF gates read the Account row, so the divergence grants nothing and self-heals via retry/resend) →
+`tenant.provision` enqueue keyed by the bare `account_id` (events.md), enqueue failure logged, never blocks.
+Token-issuance/enqueue failures during signup never fail the 201 (resend-verification T034 recovers).
+
+**Verification performed** (kemfai-db @ 172.16.6.2, kemfai-redis):
+- New suite `test/integration/accounts-verification.integration-spec.ts` (T029/T033 acceptance, HTTP level):
+  13/13 — happy path (verify + KC mirror + audit + provision job keyed by account_id + one-way 409 on later
+  signup), reuse→410 used, supersession (older link 410 before AND after the newer link is consumed — T029's
+  exact AC), expired→410, unknown→410 invalid, malformed body→422 (missing/empty/non-string), KC-mirror-failure
+  →503 then SAME link succeeds, audit-failure →503 with full local compensation then SAME link succeeds,
+  provision-enqueue-failure →200, concurrent same-link → exactly one 200/one 410/one audit/one job,
+  FeatureFlag-off →404 (class-level gate inherited).
+- `npm run test:integration -- --runInBand` → **21/21 suites, 161/161 tests, THREE consecutive full runs**
+  (repeatability+contamination gate) against the same migrated DB/Redis; post-run DB verified empty
+  (account=0, audit_event=0, email_verification_token=0, plan=0) and both per-entity queues empty of jobs
+  (queues-registration's empty-queues assertion green; the suite removes its email jobs by suite email prefix
+  and tenant.provision jobs by their account-keyed job ids).
+- Migration round-trip: `1789790000000-CreateEmailVerificationToken` revert+re-run clean (down() drops only the
+  table — the bigserial sequence is OWNED BY the column).
+- `npm test` → 24 suites, 201/201 (+16 new unit tests: verify-email saga unit coverage incl. ordering,
+  410-reason classification, KC 503, audit compensation, enqueue-failure tolerance, concurrent-winner no-op;
+  Admin REST `markEmailVerified` wire tests incl. VERIFY_EMAIL-only removal preserving CONFIGURE_TOTP;
+  token-issuance-failure signup tolerance). `npm run lint` clean. `npm run build` clean.
+- `npm audit --omit=dev` → 9 moderate / 0 high / 0 critical — identical to the T032-accepted baseline; no
+  dependency added or changed by this task.
+
+T033 and T029 marked `[X]` in tasks.md only after all of the above were green.

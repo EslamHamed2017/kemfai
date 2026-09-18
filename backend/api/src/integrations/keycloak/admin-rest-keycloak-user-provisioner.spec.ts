@@ -24,6 +24,10 @@ interface FakeAdminServer {
   tokenStatus: number;
   createStatus: number;
   tokenResponses: number;
+  /** Current per-user state served by GET .../users/{id} (requiredActions preserved across PUTs). */
+  users: Map<string, { emailVerified: boolean; requiredActions: string[] }>;
+  getStatus: number;
+  putStatus: number;
   close(): Promise<void>;
 }
 
@@ -35,6 +39,9 @@ async function startFakeAdminServer(): Promise<FakeAdminServer> {
     tokenStatus: 200,
     createStatus: 201,
     tokenResponses: 0,
+    users: new Map(),
+    getStatus: 200,
+    putStatus: 204,
     close: () => Promise.resolve(),
   };
 
@@ -60,6 +67,41 @@ async function startFakeAdminServer(): Promise<FakeAdminServer> {
       }
       if (req.method === 'POST' && req.url?.endsWith('/admin/realms/kemfai-customers/users')) {
         res.statusCode = state.createStatus;
+        res.end();
+        return;
+      }
+      const userMatch = /\/admin\/realms\/kemfai-customers\/users\/([^/]+)$/.exec(req.url ?? '');
+      if (req.method === 'GET' && userMatch) {
+        const user = state.users.get(userMatch[1]);
+        if (!user || state.getStatus !== 200) {
+          res.statusCode = state.getStatus !== 200 ? state.getStatus : 404;
+          res.end();
+          return;
+        }
+        res.statusCode = 200;
+        res.setHeader('content-type', 'application/json');
+        res.end(JSON.stringify({ id: userMatch[1], ...user }));
+        return;
+      }
+      if (req.method === 'PUT' && userMatch) {
+        if (state.putStatus !== 204) {
+          res.statusCode = state.putStatus;
+          res.end();
+          return;
+        }
+        const body = JSON.parse(recorded.body ?? '{}') as {
+          emailVerified?: boolean;
+          requiredActions?: string[];
+        };
+        const existing = state.users.get(userMatch[1]) ?? {
+          emailVerified: false,
+          requiredActions: [],
+        };
+        state.users.set(userMatch[1], {
+          emailVerified: body.emailVerified ?? existing.emailVerified,
+          requiredActions: body.requiredActions ?? existing.requiredActions,
+        });
+        res.statusCode = 204;
         res.end();
         return;
       }
@@ -260,5 +302,93 @@ describe('AdminRestKeycloakUserProvisioner (T032, unit)', () => {
     } finally {
       restore();
     }
+  });
+
+  describe('markEmailVerified (T033)', () => {
+    const env = () =>
+      envWith({
+        KEYCLOAK_URL: server.baseUrl,
+        KEYCLOAK_USERS_CLIENT_ID: 'kemfai-api-admin',
+        KEYCLOAK_USERS_CLIENT_SECRET: 'service-secret',
+        KEYCLOAK_ADMIN: undefined,
+        KEYCLOAK_ADMIN_PASSWORD: undefined,
+      });
+
+    it('sets emailVerified=true and removes ONLY VERIFY_EMAIL, preserving other required actions', async () => {
+      server.users.set(USER_INPUT.id, {
+        emailVerified: false,
+        requiredActions: ['VERIFY_EMAIL', 'CONFIGURE_TOTP'],
+      });
+      const restore = env();
+      try {
+        const provisioner = new AdminRestKeycloakUserProvisioner();
+        await provisioner.markEmailVerified(USER_INPUT.id);
+
+        const getRequest = server.requests.find(
+          (r) => r.method === 'GET' && r.url.endsWith(`/users/${USER_INPUT.id}`),
+        );
+        expect(getRequest?.authorization).toMatch(/^Bearer token-/);
+
+        const putRequest = server.requests.find(
+          (r) => r.method === 'PUT' && r.url.endsWith(`/users/${USER_INPUT.id}`),
+        );
+        expect(JSON.parse(putRequest?.body ?? '{}')).toEqual({
+          emailVerified: true,
+          requiredActions: ['CONFIGURE_TOTP'],
+        });
+
+        const after = server.users.get(USER_INPUT.id);
+        expect(after?.emailVerified).toBe(true);
+        expect(after?.requiredActions).toEqual(['CONFIGURE_TOTP']);
+      } finally {
+        restore();
+      }
+    });
+
+    it('is idempotent when no other required actions exist', async () => {
+      server.users.set(USER_INPUT.id, { emailVerified: false, requiredActions: ['VERIFY_EMAIL'] });
+      const restore = env();
+      try {
+        const provisioner = new AdminRestKeycloakUserProvisioner();
+        await provisioner.markEmailVerified(USER_INPUT.id);
+        await provisioner.markEmailVerified(USER_INPUT.id);
+
+        const after = server.users.get(USER_INPUT.id);
+        expect(after?.emailVerified).toBe(true);
+        expect(after?.requiredActions).toEqual([]);
+      } finally {
+        restore();
+      }
+    });
+
+    it('maps a GET failure to KeycloakUnavailableError without a PUT', async () => {
+      server.getStatus = 500;
+      const restore = env();
+      try {
+        const provisioner = new AdminRestKeycloakUserProvisioner();
+        await expect(provisioner.markEmailVerified(USER_INPUT.id)).rejects.toThrow(
+          KeycloakUnavailableError,
+        );
+        expect(server.requests.some((r) => r.method === 'PUT')).toBe(false);
+      } finally {
+        restore();
+        server.getStatus = 200;
+      }
+    });
+
+    it('maps a PUT failure to KeycloakUnavailableError', async () => {
+      server.users.set(USER_INPUT.id, { emailVerified: false, requiredActions: ['VERIFY_EMAIL'] });
+      server.putStatus = 500;
+      const restore = env();
+      try {
+        const provisioner = new AdminRestKeycloakUserProvisioner();
+        await expect(provisioner.markEmailVerified(USER_INPUT.id)).rejects.toThrow(
+          KeycloakUnavailableError,
+        );
+      } finally {
+        restore();
+        server.putStatus = 204;
+      }
+    });
   });
 });

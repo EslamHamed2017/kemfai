@@ -30,6 +30,15 @@ export interface KeycloakUserProvisioner {
    * after the user was created. A 404 (user already gone) resolves as success.
    */
   deleteUser(id: string): Promise<void>;
+
+  /**
+   * Mirrors completed email verification into Keycloak (T033): sets `emailVerified=true`
+   * and removes ONLY the `VERIFY_EMAIL` required action (other required actions, e.g. a
+   * future `CONFIGURE_TOTP`, are preserved). Idempotent — re-invoking on an already
+   * verified user is a no-op. Rejects with {@link KeycloakUnavailableError} on every
+   * failure so callers answer a controlled 503 and the verification link stays usable.
+   */
+  markEmailVerified(id: string): Promise<void>;
 }
 
 /** Injection token — bind the real Admin REST client in KeycloakModule, fakes in tests. */
