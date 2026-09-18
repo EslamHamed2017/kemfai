@@ -252,7 +252,7 @@ that every user story depends on.
     `dir="ltr"` for English, with no layout content lost (Constitution Principle V, FR-014).
   - **Roles**: Primary: Claude · Backup: Gemini · Reviewer: Codex
 
-- [ ] T024 [P] Generate typed API client from `contracts/openapi.yaml` into `frontend/src/lib/api-client/`
+- [X] T024 [P] Generate typed API client from `contracts/openapi.yaml` into `frontend/src/lib/api-client/`
   - **Dependencies**: T002, T022, T113
   - **Acceptance Criteria**: Generated client's request/response types match every schema in
     contracts/openapi.yaml with no manual `any` overrides, including the `PATCH /accounts/me/locale` path added
