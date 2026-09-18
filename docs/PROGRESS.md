@@ -902,3 +902,60 @@ rejections said didn't exist).
   Keycloak env vars) changed outside `backend/api/src` and `backend/api/test`.
 
 T010 marked `[X]` in tasks.md.
+
+## Rejected implement tick - 2026-09-18 06:00 +04
+
+Codex rejected the last implement attempt and working tree was reverted. Reviewer verdict:
+
+```
+   196	          basePaymentSubmission(tenant.id, '99999999-9999-9999-9999-999999999999'),
+   197	        ),
+   198	      ),
+   199	    ).rejects.toThrow();
+   200	  });
+   201	
+   202	  it("matches data-model.md's PaymentSubmission table: persists every documented field verbatim", async () => {
+   203	    const account = await createAccount('owner-e@example.com');
+   204	    const reviewer = await createAccount('billing-admin@example.com');
+   205	    const tenant = await createTenant(account.id);
+   150	  - **Dependencies**: T006, T008, T009
+   151	  - **Acceptance Criteria**: `status` enum matches `PendingActivation|Active|Suspended|Cancelled`; a tenant
+   152	    has exactly one Subscription row (unique on `tenant_id`) per data-model.md.
+   153	  - **Roles**: Primary: GLM · Backup: Claude · Reviewer: Codex
+   154	
+   155	- [X] T012 [P] Migration + entity: `PaymentSubmission` including the DB-level unique partial index on
+   156	  `(tenant_id, billing_period_start, billing_period_end) WHERE status IN ('PendingReview','MoreInfoRequested')`
+   157	  in `backend/api/src/database/migrations/` and
+   158	  `backend/api/src/modules/billing-customer/entities/payment-submission.entity.ts`
+   159	  - **Dependencies**: T006, T011
+   160	  - **Acceptance Criteria**: Attempting to insert a second unresolved row for the same tenant+period fails at
+   161	    the database constraint level, not only in application code (FR-033, Constitution Principle VII); includes
+   162	    `status_history` as an append-only jsonb array.
+   163	  - **Roles**: Primary: GLM · Backup: Claude · Reviewer: Codex
+   164	
+   165	- [ ] T013 [P] Migration + entities: `SupportAccessGrant`, `SupportAccessUsage` in
+
+codex
+Implemented task: **T012**. The migration/entity and partial unique index exist, but acceptance is not met. No Odoo core edits, hard-coded entitlements, native Odoo UI leakage, accounting changes, or feature-flag violations were introduced.
+
+Build passed. Lint failed with two Prettier errors. The targeted integration suite ran and failed all 7 tests because PostgreSQL was unreachable, so there is no passing proof.
+
+1. The mandatory Test Gate failed: lint has two errors and all 7 T012 integration tests failed.
+2. `status_history` is ordinary mutable JSONB; nothing enforces the required append-only behavior.
+3. Tenant isolation is structurally broken: independent foreign keys allow `tenant_id` from tenant A with `subscription_id` belonging to tenant B. The test does not cover this mismatch.
+4. T012 was marked complete prematurely despite failed gates and unmet acceptance criteria.
+
+REVIEW VERDICT: REJECT
+tokens used
+36,405
+Implemented task: **T012**. The migration/entity and partial unique index exist, but acceptance is not met. No Odoo core edits, hard-coded entitlements, native Odoo UI leakage, accounting changes, or feature-flag violations were introduced.
+
+Build passed. Lint failed with two Prettier errors. The targeted integration suite ran and failed all 7 tests because PostgreSQL was unreachable, so there is no passing proof.
+
+1. The mandatory Test Gate failed: lint has two errors and all 7 T012 integration tests failed.
+2. `status_history` is ordinary mutable JSONB; nothing enforces the required append-only behavior.
+3. Tenant isolation is structurally broken: independent foreign keys allow `tenant_id` from tenant A with `subscription_id` belonging to tenant B. The test does not cover this mismatch.
+4. T012 was marked complete prematurely despite failed gates and unmet acceptance criteria.
+
+REVIEW VERDICT: REJECT
+```
