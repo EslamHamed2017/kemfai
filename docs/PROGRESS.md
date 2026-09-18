@@ -1812,3 +1812,60 @@ However, these are mock-only tests. No live Odoo integration test proves that th
 1. The client reads `ODOO_URL`, but Docker supplies `KEMFAI_ODOO_URL`. Consequently, the API container falls back to `http://localhost:8069`, which points at the API container—not `kemfai-odoo`. T026’s required session cannot work in the repository’s declared environment. The misleading claim that `ODOO_URL` is wired by Compose appears in [odoo-rpc-client.ts](/home/hermesops/kemfai/backend/api/src/integrations/odoo-rpc/odoo-rpc-client.ts:13), while the actual variable is in [docker-compose.yml](/home/hermesops/kemfai/infra/docker/docker-compose.yml:103). T026 was therefore marked complete prematurely.
 REVIEW VERDICT: REJECT
 ```
+
+## Rejected implement tick - 2026-09-18 22:05 +04
+
+Codex rejected the last implement attempt and working tree was reverted. Reviewer verdict:
+
+```
+      at PostgresQueryRunner.query (src/driver/postgres/PostgresQueryRunner.ts:245:47)
+      at DataSource.query (src/data-source/DataSource.ts:541:42)
+      at Object.<anonymous> (test/integration/trial-expiry-sweep.integration-spec.ts:38:29)
+
+  ● trial.expiry_sweep processor (T102) › a tenant whose Subscription becomes Active before the sweep runs is never restricted
+
+    error: password authentication failed for user "kemfai_api"
+
+      at parseErrorMessage (node_modules/pg-protocol/src/parser.ts:395:9)
+      at Parser.handlePacket (node_modules/pg-protocol/src/parser.ts:212:19)
+      at Parser.parse (node_modules/pg-protocol/src/parser.ts:105:30)
+      at Socket.<anonymous> (node_modules/pg-protocol/src/index.ts:7:48)
+
+  ● trial.expiry_sweep processor (T102) › a tenant whose Subscription becomes Active before the sweep runs is never restricted
+
+    TypeORMError: Driver not Connected
+
+      at PostgresDriver.obtainMasterConnection (src/driver/postgres/PostgresDriver.ts:1216:19)
+      at PostgresQueryRunner.connect (src/driver/postgres/PostgresQueryRunner.ts:111:18)
+      at PostgresQueryRunner.query (src/driver/postgres/PostgresQueryRunner.ts:245:47)
+      at DataSource.query (src/data-source/DataSource.ts:541:42)
+      at Object.<anonymous> (test/integration/trial-expiry-sweep.integration-spec.ts:38:29)
+
+Test Suites: 1 failed, 1 total
+Tests:       6 failed, 6 total
+Snapshots:   0 total
+Time:        4.432 s, estimated 5 s
+Ran all test suites matching /test\/integration\/trial-expiry-sweep.integration-spec.ts/i.
+
+codex
+Implemented task: **T102**.
+
+The unit suite passed (138 tests), and build/lint passed. However, the T102 integration suite ran and failed all 6 tests due to database authentication, so its acceptance criteria are not proven.
+
+1. T102 was marked complete prematurely: its dedicated integration suite has 6/6 failing tests, violating the mandatory Test Gate.
+2. The migration adds `Tenant.trial_restricted_at`, directly contradicting `data-model.md`, which explicitly requires computed restriction and says no persisted “restricted” column is introduced.
+3. The processor sets `trial_restricted_at` before writing the audit event without a transaction. If audit insertion fails, retries exclude the tenant permanently, so `tenant.trial.restricted` is never emitted and the documented “next tick self-heals” guarantee is broken.
+
+REVIEW VERDICT: REJECT
+tokens used
+38,467
+Implemented task: **T102**.
+
+The unit suite passed (138 tests), and build/lint passed. However, the T102 integration suite ran and failed all 6 tests due to database authentication, so its acceptance criteria are not proven.
+
+1. T102 was marked complete prematurely: its dedicated integration suite has 6/6 failing tests, violating the mandatory Test Gate.
+2. The migration adds `Tenant.trial_restricted_at`, directly contradicting `data-model.md`, which explicitly requires computed restriction and says no persisted “restricted” column is introduced.
+3. The processor sets `trial_restricted_at` before writing the audit event without a transaction. If audit insertion fails, retries exclude the tenant permanently, so `tenant.trial.restricted` is never emitted and the documented “next tick self-heals” guarantee is broken.
+
+REVIEW VERDICT: REJECT
+```
