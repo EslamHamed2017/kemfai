@@ -144,7 +144,7 @@ that every user story depends on.
     (FR-030, FR-030a).
   - **Roles**: Primary: GLM · Backup: Claude · Reviewer: Codex
 
-- [ ] T011 [P] Migration + entity: `Subscription` (id, tenant_id, plan_id, billing_cycle, status enum,
+- [X] T011 [P] Migration + entity: `Subscription` (id, tenant_id, plan_id, billing_cycle, status enum,
   current_period_start/end, activated_at/by, created_at/updated_at) in
   `backend/api/src/database/migrations/` and `backend/api/src/modules/billing-customer/entities/subscription.entity.ts`
   - **Dependencies**: T006, T008, T009
