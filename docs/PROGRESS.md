@@ -1157,3 +1157,60 @@ Implemented task: T014. The migration, entity, and eight targeted integration te
 
 REVIEW VERDICT: REJECT
 ```
+
+## Rejected implement tick - 2026-09-18 07:37 +04
+
+Codex rejected the last implement attempt and working tree was reverted. Reviewer verdict:
+
+```
+   125	    build:
+   168	  - **Acceptance Criteria**: `expires_at` is `NOT NULL` on `SupportAccessGrant` (mandatory expiry, FR-039);
+   169	    `SupportAccessUsage` has `was_denied` + `denial_reason` for logging denied attempts (FR-041).
+   170	  - **Roles**: Primary: GLM · Backup: Claude · Reviewer: Codex
+   171	
+   172	- [X] T014 [P] Migration + entity: `AuditEvent`, with `UPDATE`/`DELETE` privileges revoked from the API/BFF's
+   173	  database role at the migration level, in `backend/api/src/database/migrations/` and
+   174	  `backend/api/src/modules/audit/entities/audit-event.entity.ts`
+   175	  - **Dependencies**: T006
+   176	  - **Acceptance Criteria**: Attempting an `UPDATE` or `DELETE` against this table using the API's DB role
+   177	    fails at the Postgres privilege level (FR-008 "immutable once written" enforced infrastructurally, not by
+   178	    convention).
+   179	  - **Roles**: Primary: GLM · Backup: Claude · Reviewer: Codex
+   180	
+   181	- [ ] T015 Seed script for dev/quickstart: `EntitlementDefault` singleton plus one published `Plan` with
+   182	  `Feature`/`PlanFeatureEntitlement`/`PlanSetting` rows in `backend/api/src/database/seeds/`
+
+codex
+Implemented task: **T014 — AuditEvent migration and entity**.
+
+The entity/schema match the specified model, and PostgreSQL genuinely rejects `UPDATE` and `DELETE` when connected as the configured `kemfai_api` runtime role. No Odoo-core edit, tenant-isolation break, accounting nondeterminism, UI leakage, entitlement hard-coding, or missing feature gate was introduced.
+
+Verification:
+
+- Build: passed
+- Lint: passed
+- Unit tests: 16/16 passed
+- Integration tests: 71/71 passed, including all eight T014 tests
+- `tasks.md` was marked complete, but the Security Gate below makes that premature.
+
+1. The migration embeds the publicly known development password `kemfai_dev_api_pg` and creates a login role with it in every environment ([db-roles.ts](/home/hermesops/kemfai/backend/api/src/database/db-roles.ts:15), [migration](/home/hermesops/kemfai/backend/api/src/database/migrations/1789700000000-CreateAuditEvent.ts:29)). Because migrations are production artifacts, a production database lacking this role would receive a control-plane account with a source-controlled credential and broad current/future table DML privileges. Role credentials must be provisioned externally from environment/secrets, not baked into a migration.
+
+REVIEW VERDICT: REJECT
+tokens used
+46,444
+Implemented task: **T014 — AuditEvent migration and entity**.
+
+The entity/schema match the specified model, and PostgreSQL genuinely rejects `UPDATE` and `DELETE` when connected as the configured `kemfai_api` runtime role. No Odoo-core edit, tenant-isolation break, accounting nondeterminism, UI leakage, entitlement hard-coding, or missing feature gate was introduced.
+
+Verification:
+
+- Build: passed
+- Lint: passed
+- Unit tests: 16/16 passed
+- Integration tests: 71/71 passed, including all eight T014 tests
+- `tasks.md` was marked complete, but the Security Gate below makes that premature.
+
+1. The migration embeds the publicly known development password `kemfai_dev_api_pg` and creates a login role with it in every environment ([db-roles.ts](/home/hermesops/kemfai/backend/api/src/database/db-roles.ts:15), [migration](/home/hermesops/kemfai/backend/api/src/database/migrations/1789700000000-CreateAuditEvent.ts:29)). Because migrations are production artifacts, a production database lacking this role would receive a control-plane account with a source-controlled credential and broad current/future table DML privileges. Role credentials must be provisioned externally from environment/secrets, not baked into a migration.
+
+REVIEW VERDICT: REJECT
+```
