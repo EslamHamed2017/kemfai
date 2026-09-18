@@ -959,3 +959,60 @@ Build passed. Lint failed with two Prettier errors. The targeted integration sui
 
 REVIEW VERDICT: REJECT
 ```
+
+## Rejected implement tick - 2026-09-18 06:05 +04
+
+Codex rejected the last implement attempt and working tree was reverted. Reviewer verdict:
+
+```
+    34	  afterAll(async () => {
+    35	    if (controlDataSource.isInitialized) {
+    36	      await controlDataSource.destroy();
+    37	    }
+    38	  });
+    39	
+    40	  let bankReferenceCounter = 0;
+    41	  function nextBankReference() {
+    42	    bankReferenceCounter += 1;
+    43	    return `REF-${bankReferenceCounter}`;
+    44	  }
+    45	
+    46	  async function createAccount(email: string) {
+    47	    const repo = controlDataSource.getRepository(Account);
+    48	    return repo.save(
+    49	      repo.create({
+    50	        keycloakUserId: '11111111-1111-1111-1111-111111111111',
+    51	        email,
+    52	        emailVerified: true,
+    53	        mfaEnrolled: false,
+    54	      }),
+    55	    );
+
+exec
+/bin/bash -lc 'CONTROL_DB_HOST=172.16.6.2 CONTROL_DB_PORT=5432 CONTROL_DB_USER=odoo CONTROL_DB_PASSWORD=odoo CONTROL_DB_NAME=kemfai_control npm run test:integration -- --runInBand' in /home/hermesops/kemfai/backend/api
+codex
+Implemented task: T012 — `PaymentSubmission` migration and entity.
+
+The partial uniqueness and cross-tenant subscription constraints are correctly modeled. No Odoo core edits, hard-coded entitlements, native Odoo UI leakage, accounting nondeterminism, or applicable feature-flag violation found.
+
+Verification: lint and build passed; unit tests passed 16/16. Integration tests did not pass: 8 suites failed, including every T012 test, due to database authentication/connectivity errors.
+
+1. `status_history` is not guaranteed to be a JSON array on INSERT. The validation trigger is `BEFORE UPDATE` only, so scalar/object JSON can be inserted, violating the required “append-only jsonb array” acceptance criterion. Add an INSERT-capable trigger or `CHECK (jsonb_typeof(status_history) = 'array')`, plus a rejection test.
+2. The mandatory integration test gate is not green in the actual working environment. The claimed 51/51 result could not be reproduced.
+3. T012 was marked `[X]` prematurely while its acceptance criteria and test gate remain unsatisfied.
+
+REVIEW VERDICT: REJECT
+tokens used
+36,095
+Implemented task: T012 — `PaymentSubmission` migration and entity.
+
+The partial uniqueness and cross-tenant subscription constraints are correctly modeled. No Odoo core edits, hard-coded entitlements, native Odoo UI leakage, accounting nondeterminism, or applicable feature-flag violation found.
+
+Verification: lint and build passed; unit tests passed 16/16. Integration tests did not pass: 8 suites failed, including every T012 test, due to database authentication/connectivity errors.
+
+1. `status_history` is not guaranteed to be a JSON array on INSERT. The validation trigger is `BEFORE UPDATE` only, so scalar/object JSON can be inserted, violating the required “append-only jsonb array” acceptance criterion. Add an INSERT-capable trigger or `CHECK (jsonb_typeof(status_history) = 'array')`, plus a rejection test.
+2. The mandatory integration test gate is not green in the actual working environment. The claimed 51/51 result could not be reproduced.
+3. T012 was marked `[X]` prematurely while its acceptance criteria and test gate remain unsatisfied.
+
+REVIEW VERDICT: REJECT
+```
