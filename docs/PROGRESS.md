@@ -1698,3 +1698,60 @@ Unit tests pass 75/75; PostgreSQL integration tests pass 99/99; build and lint p
 
 REVIEW VERDICT: REJECT
 ```
+
+## Rejected implement tick - 2026-09-18 12:35 +04
+
+Codex rejected the last implement attempt and working tree was reverted. Reviewer verdict:
+
+```
+   203	    expect(counter.calls).toBe(2);
+   204	    expect(fromA.body.callNumber).not.toBe(fromB.body.callNumber);
+   205	  });
+   206	
+   207	  it('genuinely never runs the handler twice for two concurrent requests racing on the same key', async () => {
+   208	    const [first, second] = await Promise.all([
+   209	      request(app.getHttpServer())
+   210	        .post('/test-idempotency/public')
+   211	        .set('Idempotency-Key', 'key-race')
+   212	        .send({ email: 'race@example.com' }),
+   213	      request(app.getHttpServer())
+   214	        .post('/test-idempotency/public')
+   215	        .set('Idempotency-Key', 'key-race')
+   222	    `payload` (FR-008).
+   223	  - **Roles**: Primary: GLM · Backup: Claude · Reviewer: Codex
+   224	
+   225	- [X] T020 [P] Implement `IdempotencyKeyInterceptor` for mutating endpoints in
+   226	  `backend/api/src/common/interceptors/idempotency.interceptor.ts`
+   227	  - **Dependencies**: T017
+   228	  - **Acceptance Criteria**: Replaying an identical mutating request with the same idempotency key returns the
+   229	    original result rather than re-executing side effects (Constitution Principle VII).
+   230	  - **Roles**: Primary: GLM · Backup: Claude · Reviewer: Codex
+   231	
+   232	- [ ] T021 Wire BullMQ + Redis module and register the five queues (`tenant.provision`,
+
+codex
+Implemented task: T020, `IdempotencyKeyInterceptor`.
+
+The unit suite passed 75/75, integration suite passed 101/101, and build/lint passed. The tests prove basic replay, fingerprint conflict, actor/tenant separation, migration uniqueness, and concurrent replay for an in-memory counter. No Odoo core edit, hard-coded entitlement/trial value, native Odoo UI leak, accounting change, or missing feature gate was introduced.
+
+However, T020 was marked done prematurely.
+
+1. The interceptor opens and holds a dedicated control-database transaction while executing the endpoint handler ([idempotency.interceptor.ts](/home/hermesops/kemfai/backend/api/src/common/interceptors/idempotency.interceptor.ts:82)). Real handlers that access the same pool can deadlock under pool saturation: keyed requests consume every connection before their handlers request another connection. The integration probe only increments memory and never exercises this production behavior ([idempotency-interceptor.integration-spec.ts](/home/hermesops/kemfai/backend/api/test/integration/idempotency-interceptor.integration-spec.ts:22)).
+2. Side effects execute before the idempotency record is inserted and committed ([idempotency.interceptor.ts](/home/hermesops/kemfai/backend/api/src/common/interceptors/idempotency.interceptor.ts:102)). If insertion, commit, or the process fails after the handler commits its side effect, no replay record survives and a retry executes the side effect again. That directly fails T020’s “rather than re-executing side effects” criterion and Constitution Principle VII.
+3. Anonymous response ownership is keyed only by `req.ip` ([idempotency.interceptor.ts](/home/hermesops/kemfai/backend/api/src/common/interceptors/idempotency.interceptor.ts:77)). Users behind the same NAT/reverse proxy can therefore replay each other’s response when key, route, and body coincide. The tests cover different authenticated identities but omit this shared-IP leakage case.
+
+REVIEW VERDICT: REJECT
+tokens used
+44,404
+Implemented task: T020, `IdempotencyKeyInterceptor`.
+
+The unit suite passed 75/75, integration suite passed 101/101, and build/lint passed. The tests prove basic replay, fingerprint conflict, actor/tenant separation, migration uniqueness, and concurrent replay for an in-memory counter. No Odoo core edit, hard-coded entitlement/trial value, native Odoo UI leak, accounting change, or missing feature gate was introduced.
+
+However, T020 was marked done prematurely.
+
+1. The interceptor opens and holds a dedicated control-database transaction while executing the endpoint handler ([idempotency.interceptor.ts](/home/hermesops/kemfai/backend/api/src/common/interceptors/idempotency.interceptor.ts:82)). Real handlers that access the same pool can deadlock under pool saturation: keyed requests consume every connection before their handlers request another connection. The integration probe only increments memory and never exercises this production behavior ([idempotency-interceptor.integration-spec.ts](/home/hermesops/kemfai/backend/api/test/integration/idempotency-interceptor.integration-spec.ts:22)).
+2. Side effects execute before the idempotency record is inserted and committed ([idempotency.interceptor.ts](/home/hermesops/kemfai/backend/api/src/common/interceptors/idempotency.interceptor.ts:102)). If insertion, commit, or the process fails after the handler commits its side effect, no replay record survives and a retry executes the side effect again. That directly fails T020’s “rather than re-executing side effects” criterion and Constitution Principle VII.
+3. Anonymous response ownership is keyed only by `req.ip` ([idempotency.interceptor.ts](/home/hermesops/kemfai/backend/api/src/common/interceptors/idempotency.interceptor.ts:77)). Users behind the same NAT/reverse proxy can therefore replay each other’s response when key, route, and body coincide. The tests cover different authenticated identities but omit this shared-IP leakage case.
+
+REVIEW VERDICT: REJECT
+```
