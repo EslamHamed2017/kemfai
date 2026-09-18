@@ -2026,3 +2026,60 @@ restricted to `SELECT, INSERT` on `audit_event` and cannot self-grant) and `REDI
   verified, not just asserted).
 
 T031 marked `[X]` in tasks.md.
+
+## Rejected implement tick - 2026-09-19 00:37 +04
+
+Codex rejected the last implement attempt and working tree was reverted. Reviewer verdict:
+
+```
+   387	  - **Dependencies**: T023, T007
+   388	  - **Acceptance Criteria**: Matches FR-024's "persisted for their subsequent sessions"; explicitly distinct
+   389	    from T023's immediate re-render check and from T030's single-session RTL assertions.
+   390	  - **Roles**: Primary: Codex · Backup: Claude · Reviewer: Gemini
+   391	
+   392	### Implementation for User Story 1
+   393	
+   394	- [X] T031 [US1] Implement `GET /public/plans` returning published `PlanSummary` list sourced from
+   395	  `PlanFeatureEntitlement` (empty state per FR-011) in `backend/api/src/modules/plans/plans.controller.ts` and
+   396	  `plans.service.ts`
+   397	  - **Dependencies**: T009, T015
+   398	  - **Acceptance Criteria**: Unpublished plans never appear; response matches `PlanSummary` schema; empty
+   399	    array (not an error) when no plan is published.
+   400	  - **Roles**: Primary: GLM · Backup: Claude · Reviewer: Codex
+   401	
+   402	- [X] T032 [US1] Implement `POST /accounts/signup` (email format + weak-password rejection, Keycloak
+   403	  `kemfai-customers` user creation, carries `selected_plan_id`/`selected_billing_cycle`, enqueues
+   404	  `email.send_verification`, emits `account.created`) in
+   405	  `backend/api/src/modules/accounts/accounts.controller.ts` and `accounts.service.ts`
+   406	  - **Dependencies**: T007, T016, T021, T019
+   407	  - **Acceptance Criteria**: Matches Acceptance Scenarios 1.1/1.2; re-validates that the referenced plan is
+   408	    still published, prompting re-selection if not (Edge Cases).
+   409	  - **Roles**: Primary: GLM · Backup: Claude · Reviewer: Codex
+   410	
+   411	- [ ] T033 [US1] Implement `POST /accounts/verify-email` (consumes the Keycloak `VERIFY_EMAIL` token, sets
+   412	  `email_verified`, enqueues `tenant.provision`, emits `account.email_verified`) in
+
+codex
+Implemented tasks: T032 and T028.
+
+Unit tests passed: 164/164. Integration tests passed: 136/136, including the new signup suite. Lint and build also passed. No Odoo core edits, native Odoo UI leakage, accounting changes, tenant creation, or inappropriate feature-flag omission were found.
+
+T028 meets its explicit row-count acceptance criterion. T032 does not fully meet its criteria and was marked done prematurely.
+
+1. Plan revalidation is bypassed for every existing account. The early return at `accounts.service.ts:62-72` occurs before the published-plan check at `:77-84`. An unverified duplicate can therefore submit a missing/unpublished plan and receive 201 plus another verification job, contrary to T032’s explicit requirement to revalidate the referenced plan and prompt reselection. The tests only cover an unavailable plan for a new email, so they miss this failure.
+2. Signup is not failure-atomic or reliably auditable. Keycloak creation, Account persistence, queue publication, and `account.created` recording happen as separate irreversible operations at `accounts.service.ts:86-108`. Queue failure leaves a Keycloak user and Account without verification or audit; audit failure leaves state and a queued email despite returning an error. Concurrent same-email requests can also create an orphan Keycloak identity or surface an uncontrolled 500. This violates the mandatory auditability and consistency gates.
+
+REVIEW VERDICT: REJECT
+tokens used
+43,727
+Implemented tasks: T032 and T028.
+
+Unit tests passed: 164/164. Integration tests passed: 136/136, including the new signup suite. Lint and build also passed. No Odoo core edits, native Odoo UI leakage, accounting changes, tenant creation, or inappropriate feature-flag omission were found.
+
+T028 meets its explicit row-count acceptance criterion. T032 does not fully meet its criteria and was marked done prematurely.
+
+1. Plan revalidation is bypassed for every existing account. The early return at `accounts.service.ts:62-72` occurs before the published-plan check at `:77-84`. An unverified duplicate can therefore submit a missing/unpublished plan and receive 201 plus another verification job, contrary to T032’s explicit requirement to revalidate the referenced plan and prompt reselection. The tests only cover an unavailable plan for a new email, so they miss this failure.
+2. Signup is not failure-atomic or reliably auditable. Keycloak creation, Account persistence, queue publication, and `account.created` recording happen as separate irreversible operations at `accounts.service.ts:86-108`. Queue failure leaves a Keycloak user and Account without verification or audit; audit failure leaves state and a queued email despite returning an error. Concurrent same-email requests can also create an orphan Keycloak identity or surface an uncontrolled 500. This violates the mandatory auditability and consistency gates.
+
+REVIEW VERDICT: REJECT
+```
