@@ -7,21 +7,19 @@ import {
 } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { IS_PUBLIC_KEY } from '../decorators/public.decorator';
+import { INTERNAL_ROLES } from '../decorators/roles.decorator';
 import { AuditService } from '../../modules/audit/audit.service';
 import { AuditActorType } from '../../modules/audit/entities/audit-event.entity';
 import {
-  TENANT_OWNED_RESOURCES_KEY,
   AttemptedTenantReference,
-  TenantOwnedResourceRef,
   TenantScopedRequest,
 } from '../tenant-context/tenant-context.model';
+import { collectTenantReferences } from '../tenant-context/collect-tenant-references';
 import { TenantContextResolver } from '../tenant-context/tenant-context.resolver';
 import { TenantOwnershipRegistry } from '../tenant-context/tenant-ownership.registry';
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const NIL_UUID = '00000000-0000-4000-8000-000000000000';
-const TENANT_ID_KEYS = new Set(['tenantid', 'tenant_id']);
-const TENANT_ID_HEADER = 'x-tenant-id';
 
 /**
  * Global cross-tenant access denial (T017, FR-001, SC-004). Registered once via APP_GUARD
@@ -63,11 +61,25 @@ export class TenantScopeGuard implements CanActivate {
       return true;
     }
 
+    // Internal-realm identities are not customer-tenant-scoped (data-model.md "Cross-cutting:
+    // Roles & Scopes"): BillingAdmin/SuperAdmin/CustomerSuccess/TechnicalAdmin are cross-tenant
+    // by design, and Support's narrower per-tenant grant scope is RoleGuard's job (T018), not
+    // this guard's customer-isolation check (FR-001). Trusting the JWT's roles claim here is
+    // safe because BearerAuthGuard only accepts it after verifying the token's signature, and
+    // realm separation means a kemfai-customers Account can never hold one of these roles (FR-004).
+    const callerRoles = req.auth.roles ?? [];
+    if (callerRoles.some((role) => (INTERNAL_ROLES as readonly string[]).includes(role))) {
+      return true;
+    }
+
     const tenantContext = await this.tenantContextResolver.resolveForRequest(req);
 
-    const references: AttemptedTenantReference[] = [];
-    references.push(...this.collectExplicitTenantReferences(req));
-    references.push(...(await this.resolveDeclaredResourceReferences(context, req)));
+    const references: AttemptedTenantReference[] = await collectTenantReferences(
+      this.reflector,
+      this.ownershipRegistry,
+      context,
+      req,
+    );
 
     const violation = references.find(
       (ref) => ref.owningTenantId !== null && ref.owningTenantId !== tenantContext.callerTenantId,
@@ -79,88 +91,6 @@ export class TenantScopeGuard implements CanActivate {
 
     await this.recordDenialOrFailClosed(req, tenantContext, violation);
     throw new ForbiddenException('Request denied: tenant scope violation');
-  }
-
-  /**
-   * Explicit tenant identifiers a client put into the request. Any value that names a
-   * tenant other than the caller's is a spoof attempt regardless of how it was carried.
-   */
-  private collectExplicitTenantReferences(req: TenantScopedRequest): AttemptedTenantReference[] {
-    const references: AttemptedTenantReference[] = [];
-    const add = (
-      rawValue: unknown,
-      source: AttemptedTenantReference['source'],
-      attemptedId: string | null,
-    ) => {
-      if (typeof rawValue !== 'string' || rawValue.length === 0) {
-        return;
-      }
-      references.push({
-        resourceType: 'tenant',
-        attemptedId,
-        source,
-        owningTenantId: UUID_PATTERN.test(rawValue) ? rawValue : null,
-      });
-    };
-
-    for (const [key, value] of Object.entries(req.params ?? {})) {
-      if (TENANT_ID_KEYS.has(key.toLowerCase())) {
-        add(value, 'path', typeof value === 'string' ? value : null);
-      }
-    }
-    for (const [key, value] of Object.entries(req.query ?? {})) {
-      if (TENANT_ID_KEYS.has(key.toLowerCase())) {
-        add(value, 'query', typeof value === 'string' ? value : null);
-      }
-    }
-    const body = req.body;
-    if (body && typeof body === 'object' && !Array.isArray(body)) {
-      for (const key of ['tenantId', 'tenant_id']) {
-        if (key in body) {
-          const value = (body as Record<string, unknown>)[key];
-          add(value, 'body', typeof value === 'string' ? value : null);
-        }
-      }
-    }
-    const header = req.headers?.[TENANT_ID_HEADER];
-    if (typeof header === 'string') {
-      add(header, 'header', header);
-    }
-    return references;
-  }
-
-  /**
-   * Resources addressed by ordinary resource ID on @TenantOwnedResource-declared routes:
-   * the owning tenant is resolved from the database via the registry, so no request can
-   * sidestep tenant scoping by naming the resource instead of the tenant.
-   */
-  private async resolveDeclaredResourceReferences(
-    context: ExecutionContext,
-    req: TenantScopedRequest,
-  ): Promise<AttemptedTenantReference[]> {
-    const refs = this.reflector.getAllAndMerge<TenantOwnedResourceRef[]>(
-      TENANT_OWNED_RESOURCES_KEY,
-      [context.getHandler(), context.getClass()],
-    );
-    if (!refs?.length) {
-      return [];
-    }
-    const references: AttemptedTenantReference[] = [];
-    for (const ref of refs) {
-      const raw =
-        (req.params?.[ref.idParam] as string | undefined) ??
-        (req.query?.[ref.idParam] as string | undefined);
-      if (typeof raw !== 'string' || raw.length === 0) {
-        continue;
-      }
-      references.push({
-        resourceType: ref.resource,
-        attemptedId: raw,
-        source: 'resource',
-        owningTenantId: await this.ownershipRegistry.resolveOwningTenantId(ref.resource, raw),
-      });
-    }
-    return references;
   }
 
   /**

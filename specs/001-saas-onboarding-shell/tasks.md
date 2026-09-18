@@ -205,7 +205,7 @@ that every user story depends on.
     exits (FR-001, SC-004).
   - **Roles**: Primary: GLM · Backup: Claude · Reviewer: Codex
 
-- [ ] T018 [P] Implement `RoleGuard` enforcing the Roles & Scopes table (data-model.md) identically for
+- [X] T018 [P] Implement `RoleGuard` enforcing the Roles & Scopes table (data-model.md) identically for
   UI-driven and raw HTTP calls in `backend/api/src/common/guards/role.guard.ts`
   - **Dependencies**: T016
   - **Acceptance Criteria**: A single guard implementation is reused on every mutating endpoint; no

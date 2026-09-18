@@ -1581,3 +1581,63 @@ However, T018 does not satisfy the Roles & Scopes table. `RoleGuard` checks only
 
 REVIEW VERDICT: REJECT
 ```
+
+## T018 — RoleGuard (fixed re-attempt)
+
+Re-implemented `RoleGuard` to close both rejection points: it is no longer sufficient for a
+caller to hold the `Support` realm role — the guard now enforces the full Roles & Scopes table
+row for Support ("only tenants with an active, unexpired, unrevoked grant") and logs every
+attempt.
+
+`BearerAuthGuard` now propagates the verified JWT's `realm_access.roles` claim onto
+`req.auth.roles` (previously only `keycloakUserId` was exposed). `@Roles(...)` (new decorator,
+`common/decorators/roles.decorator.ts`) declares which roles may call a handler; a handler with
+none is unrestricted (FR-006 structural guarantee — matches `@Public()`'s opt-out shape).
+`RoleGuard` is registered as the third global `APP_GUARD`, after `BearerAuthGuard` and
+`TenantScopeGuard`:
+- Any required role other than `Support` that the caller holds authorizes unconditionally
+  (BillingAdmin/SuperAdmin/CustomerSuccess/TechnicalAdmin are cross-tenant by design per the
+  table; Workspace Owner's own-tenant confinement is already TenantScopeGuard's job).
+- `Support` additionally requires resolving the request's target tenant (via the same
+  reference collection TenantScopeGuard uses — extracted into a shared
+  `collectTenantReferences()` in `tenant-context/collect-tenant-references.ts` so the two
+  guards don't duplicate that logic, FR-006) and querying `SupportAccessGrant` for that
+  tenant. An active grant (not revoked, not expired) authorizes and writes a
+  `SupportAccessUsage` row with `was_denied=false`; anything else (expired, revoked, or no
+  grant at all) denies with 403. When a grant exists but doesn't qualify, the denial is logged
+  against it with `denial_reason` `expired`/`revoked` (FR-041); when no grant exists at all
+  there is nothing to attribute a usage row to (`grant_id` is `NOT NULL`), so the 403 is
+  unlogged. The usage write is awaited and never swallowed — write failure fails closed with
+  500, mirroring `TenantScopeGuard`'s audit fail-closed pattern.
+
+`TenantScopeGuard` gained one behavior change: internal-realm callers (any role in the new
+`INTERNAL_ROLES` list) now skip its customer-tenant-isolation check entirely and defer to
+`RoleGuard`. Without this, `TenantScopeGuard`'s existing "caller has no tenant → any
+tenant-owned reference is a violation" rule would 403 every internal-realm request before
+`RoleGuard` ever ran, since internal users have no `Account`/tenant of their own. Trusting the
+roles claim for this bypass is safe: it's only readable after `BearerAuthGuard` verifies the
+token's signature, and realm separation (T016) means a `kemfai-customers` Account can never
+carry an internal role (FR-004). This is an additive change — no existing `TenantScopeGuard`
+test sets `req.auth.roles`, so prior behavior is unchanged for every caller that doesn't carry
+one of these roles.
+
+Files: `common/decorators/roles.decorator.ts`, `common/guards/role.guard.ts` (+ spec),
+`common/tenant-context/collect-tenant-references.ts` (extracted from `tenant-scope.guard.ts`),
+modified `common/guards/bearer-auth.guard.ts` (+ spec), `common/guards/tenant-scope.guard.ts`,
+`test/support/fake-keycloak.ts` (roles claim support), `app.module.ts`.
+
+Tests: `role.guard.spec.ts` (11 unit tests: public/unrestricted pass-through, non-Support role
+match, active/expired/revoked/no-grant Support scenarios, unresolvable-target denial, usage
+write fail-closed, resource-ID-addressed Support target); `role-guard.integration-spec.ts` (8
+e2e tests against the real guard chain, real Postgres `support_access_grant`/`support_access_usage`
+rows, and real JWKS-verified tokens carrying `realm_access.roles` — including a grant-for-a-
+different-tenant case proving role membership alone never authorizes). Updated
+`bearer-auth.guard.spec.ts` and `tenant-scope.guard.spec.ts` assertions for the new `roles`
+field; all prior tenant-scope-guard tests pass unmodified otherwise.
+
+Verification (backend/api): `npm test` 42/42 pass; `npx eslint "src/**/*.ts" "test/**/*.ts"`
+clean; `npm run build` clean; `CONTROL_DB_HOST=172.16.6.2 CONTROL_DB_USER=odoo
+CONTROL_DB_PASSWORD=kemfai_dev_pg CONTROL_DB_NAME=kemfai_control npm run test:integration --
+--runInBand`: 13 suites, 93/93 pass.
+
+T018 marked `[X]` in tasks.md.
