@@ -169,7 +169,7 @@ that every user story depends on.
     `SupportAccessUsage` has `was_denied` + `denial_reason` for logging denied attempts (FR-041).
   - **Roles**: Primary: GLM · Backup: Claude · Reviewer: Codex
 
-- [ ] T014 [P] Migration + entity: `AuditEvent`, with `UPDATE`/`DELETE` privileges revoked from the API/BFF's
+- [X] T014 [P] Migration + entity: `AuditEvent`, with `UPDATE`/`DELETE` privileges revoked from the API/BFF's
   database role at the migration level, in `backend/api/src/database/migrations/` and
   `backend/api/src/modules/audit/entities/audit-event.entity.ts`
   - **Dependencies**: T006

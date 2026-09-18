@@ -1271,3 +1271,65 @@ Evidence:
 
 REVIEW VERDICT: REJECT
 ```
+
+## T014 — AuditEvent migration + entity (2026-09-18, 5th attempt)
+
+Root cause of all four prior rejections addressed directly, building on the infra groundwork
+already committed separately (`7c906c9`, "API connects as restricted kemfai_api DB role"):
+
+1. **The tested `kemfai_api` role was not the API/BFF's actual database role (rounds 1, 3, 4).**
+   Already fixed at the infra layer before this attempt started: `infra/docker/docker-compose.yml`'s
+   `api` service now sets `CONTROL_DB_USER: kemfai_api` (was `odoo`), and
+   `infra/docker/init-control-db.sh` provisions that role with `CONNECT`+schema `USAGE` on first
+   `kemfai-db` startup. This attempt's test connects a second, independent `DataSource` literally
+   authenticated *as* `kemfai_api` (not a differently-named test role) and asserts INSERT succeeds
+   while UPDATE/DELETE fail with real Postgres `permission denied` errors — proving the production
+   runtime identity itself is restricted, not a stand-in.
+2. **`CONTROL_DB_APP_ROLE` was interpolated into migration SQL without safe escaping (round 4).**
+   Removed all dynamic identifier interpolation from the migration: the role name `kemfai_api` is
+   now a hardcoded string literal in every `GRANT`/`REVOKE` statement (matching the same literal
+   already hardcoded in `docker-compose.yml`/`init-control-db.sh`), so there is no
+   configuration-driven identifier for anything to inject through.
+3. **A migration created a login-capable role with a baked-in password (round 4).** This
+   migration's `CREATE ROLE` (idempotent, `IF NOT EXISTS`) creates `kemfai_api` as `NOLOGIN` with
+   **no password at all** — it exists purely as a privilege container if the migration runs against
+   a database with no prior infra bootstrap (e.g. a throwaway test container). Enabling real
+   authentication (`LOGIN` + a password) is done exclusively by `init-control-db.sh` for real
+   environments, or, for this test's own verification purposes only, by an `ALTER ROLE ... LOGIN
+   PASSWORD` call inside the test file itself (never inside a migration, since migrations run in
+   every environment including production).
+4. **Stale schema from an earlier reverted attempt (same latent class of bug T012 hit).** Before
+   writing anything, found the `kemfai-db` data volume still held an `audit_event` table (different
+   enum name, different CHECK constraint) and a `migrations` bookkeeping row for
+   `CreateAuditEvent1789700000000` from a prior attempt whose source file had since been reverted by
+   git. Dropped the stale table/enum types and deleted the stale `migrations` row before running the
+   tracked migration file fresh, so final DB state is 100% derived from git-tracked files.
+
+Added `backend/api/src/database/migrations/1789700000000-CreateAuditEvent.ts` (creates
+`audit_actor_type_enum`, `audit_event` with a `CHECK` enforcing `actor_type='system' ⟺ actor_id IS
+NULL`, an FK to `tenant` with `ON DELETE RESTRICT`, then the idempotent `NOLOGIN` role bootstrap and
+`REVOKE ALL` / `GRANT SELECT, INSERT` against the literal `kemfai_api` name) and
+`backend/api/src/modules/audit/entities/audit-event.entity.ts`.
+
+New test `backend/api/test/integration/audit-event-migration.integration-spec.ts` (9 tests): full
+field round-trip, nullable `actor_id`/`tenant_id` for a system pre-tenant event, the CHECK
+constraint rejecting both directions (non-system with null actor, system with non-null actor), FK
+rejection of a nonexistent tenant, the enum's exact label set, and the three privilege-boundary
+tests described above using a real second connection authenticated as `kemfai_api`.
+
+**Verification performed** (against the running `kemfai-db` container, `172.16.6.2:5432`, after
+clearing the stale state described in point 4):
+- `npm run migration:run` → applies `CreateAuditEvent1789700000000` cleanly after the seven prior
+  migrations.
+- `npm run migration:revert` then `npm run migration:run` → clean down (drops table+enum) then up
+  round-trip.
+- `npm run test:integration -- --runInBand` → 10/10 suites, 72/72 tests passing, run **twice**
+  consecutively against the same already-migrated database with identical results (repeatability).
+- `npm test -- --runInBand` → 3/3 suites, 16/16 unit tests passing (unaffected).
+- `npm run lint` → clean. `npm run build` → clean.
+- `npm audit --omit=dev` → same 5 moderate `@nestjs/core`-family advisories already accepted as
+  residual risk since T001 (no dependency changed by this task).
+- No Odoo core edits, hard-coded plan/entitlement values, or Odoo UI leakage; control-plane-only
+  change, no tenant database touched.
+
+T014 marked `[X]` in tasks.md.
