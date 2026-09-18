@@ -1,4 +1,7 @@
 const path = require('node:path');
+const createNextIntlPlugin = require('next-intl/plugin');
+
+const withNextIntl = createNextIntlPlugin('./src/lib/i18n/request.ts');
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
@@ -6,4 +9,4 @@ const nextConfig = {
   outputFileTracingRoot: path.join(__dirname),
 };
 
-module.exports = nextConfig;
+module.exports = withNextIntl(nextConfig);

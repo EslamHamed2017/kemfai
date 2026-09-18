@@ -6,6 +6,7 @@ out/
 build/
 dist/
 *.log
+*.tsbuildinfo
 
 # Python / Odoo
 __pycache__/

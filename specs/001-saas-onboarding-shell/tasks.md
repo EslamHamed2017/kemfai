@@ -244,7 +244,7 @@ that every user story depends on.
     later contract tests can diff the live spec against the committed file with zero drift.
   - **Roles**: Primary: GLM · Backup: Claude · Reviewer: Codex
 
-- [ ] T023 [P] Setup `next-intl` locale routing, EN/AR message catalog skeleton, and dir-aware root layout
+- [X] T023 [P] Setup `next-intl` locale routing, EN/AR message catalog skeleton, and dir-aware root layout
   (`dir="rtl"|"ltr"` on `<html>`) in `frontend/src/lib/i18n/`, `frontend/src/locales/en/`,
   `frontend/src/locales/ar/`, and `frontend/src/app/layout.tsx`
   - **Dependencies**: T002
