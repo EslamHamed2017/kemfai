@@ -1641,3 +1641,60 @@ CONTROL_DB_PASSWORD=kemfai_dev_pg CONTROL_DB_NAME=kemfai_control npm run test:in
 --runInBand`: 13 suites, 93/93 pass.
 
 T018 marked `[X]` in tasks.md.
+
+## Rejected implement tick - 2026-09-18 12:25 +04
+
+Codex rejected the last implement attempt and working tree was reverted. Reviewer verdict:
+
+```
+
+ succeeded in 14969ms:
+
+> kemfai-api@0.1.0 test:integration
+> jest --config test/jest-integration.json --runInBand
+
+PASS test/integration/idempotency-interceptor.integration-spec.ts (9.143 s)
+PASS test/integration/role-guard.integration-spec.ts
+PASS test/integration/tenant-scope-guard.integration-spec.ts
+PASS test/integration/entitlements-http.integration-spec.ts
+PASS test/integration/payment-submission-migration.integration-spec.ts
+PASS test/integration/support-access-migration.integration-spec.ts
+PASS test/integration/entitlements-service.integration-spec.ts
+PASS test/integration/dev-quickstart-seed.integration-spec.ts
+PASS test/integration/subscription-migration.integration-spec.ts
+PASS test/integration/audit-event-migration.integration-spec.ts
+PASS test/integration/entitlements-migration.integration-spec.ts
+PASS test/integration/tenant-migration.integration-spec.ts
+PASS test/integration/account-migration.integration-spec.ts
+PASS test/integration/control-db-migration.integration-spec.ts
+
+Test Suites: 14 passed, 14 total
+Tests:       99 passed, 99 total
+Snapshots:   0 total
+Time:        14.257 s
+Ran all test suites.
+
+codex
+Implemented task: T020 — `IdempotencyKeyInterceptor`.
+
+Unit tests pass 75/75; PostgreSQL integration tests pass 99/99; build and lint pass. However, the acceptance criterion is not met in production.
+
+1. The interceptor is never registered in `AppModule` or used by any production endpoint. Only the test-only `ProbeController` applies it, so actual mutating requests receive no idempotency protection.
+2. The idempotency scope omits `tenantContext.callerTenantId`. Anonymous requests share the global `"anonymous"` scope, allowing one caller to receive another caller’s stored response when key, method, and path collide. This is a tenant/data-isolation risk.
+3. Request content is not fingerprinted or compared. Reusing a key with a different payload silently returns the earlier response, so the implementation cannot establish that the replayed request is “identical.”
+4. T020 was marked complete prematurely because the production wiring and isolation requirements remain unsatisfied.
+
+REVIEW VERDICT: REJECT
+tokens used
+42,820
+Implemented task: T020 — `IdempotencyKeyInterceptor`.
+
+Unit tests pass 75/75; PostgreSQL integration tests pass 99/99; build and lint pass. However, the acceptance criterion is not met in production.
+
+1. The interceptor is never registered in `AppModule` or used by any production endpoint. Only the test-only `ProbeController` applies it, so actual mutating requests receive no idempotency protection.
+2. The idempotency scope omits `tenantContext.callerTenantId`. Anonymous requests share the global `"anonymous"` scope, allowing one caller to receive another caller’s stored response when key, method, and path collide. This is a tenant/data-isolation risk.
+3. Request content is not fingerprinted or compared. Reusing a key with a different payload silently returns the earlier response, so the implementation cannot establish that the replayed request is “identical.”
+4. T020 was marked complete prematurely because the production wiring and isolation requirements remain unsatisfied.
+
+REVIEW VERDICT: REJECT
+```
