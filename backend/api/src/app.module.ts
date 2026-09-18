@@ -1,7 +1,9 @@
 import { Module } from '@nestjs/common';
-import { APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
+import { APP_GUARD, APP_INTERCEPTOR, APP_PIPE } from '@nestjs/core';
+import { ValidationPipe } from '@nestjs/common';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
+import { AccountsModule } from './modules/accounts/accounts.module';
 import { AuditModule } from './modules/audit/audit.module';
 import { EntitlementsModule } from './modules/entitlements/entitlements.module';
 import { IdempotencyModule } from './modules/idempotency/idempotency.module';
@@ -23,18 +25,28 @@ import { TrialExpirySweepModule } from './integrations/provisioning/trial-expiry
     EntitlementsModule,
     IdempotencyModule,
     PlansModule,
+    AccountsModule,
     QueuesModule,
     TrialExpirySweepModule,
   ],
   controllers: [AppController],
   providers: [
     AppService,
+    // Runtime DTO validation for every @Body() DTO — 422 (Unprocessable Entity) is the
+    // contract's documented code for malformed input (e.g. SignupRequest 422 "Malformed
+    // email or weak password"), NOT Nest's default 400 and never an uncontrolled 500
+    // (T032 review finding, 2026-09-19). Registered as APP_PIPE so test apps booted via
+    // Test.createTestingModule validate identically to production main.ts.
+    {
+      provide: APP_PIPE,
+      useValue: new ValidationPipe({ errorHttpStatusCode: 422, whitelist: true }),
+    },
     // Global guard chain: authentication (T017), then tenant scoping (T017), then role
     // enforcement (T018), then module-completeness gating (T100), then trial-window
     // enforcement (T101) — all APP_GUARD so no route can forget them (registration order =
-    // execution order). Public surfaces opt out explicitly via @Public(); FeatureFlagGuard only
-    // acts on handlers declaring @RequireFeatureFlag(); TrialWindowGuard only acts on handlers
-    // declaring @EnforceTrialWindow().
+    // execution order). Public surfaces opt out of AUTH explicitly via @Public();
+    // FeatureFlagGuard only acts on handlers declaring @RequireFeatureFlag();
+    // TrialWindowGuard only acts on handlers declaring @EnforceTrialWindow().
     { provide: APP_GUARD, useClass: BearerAuthGuard },
     { provide: APP_GUARD, useClass: TenantScopeGuard },
     { provide: APP_GUARD, useClass: RoleGuard },

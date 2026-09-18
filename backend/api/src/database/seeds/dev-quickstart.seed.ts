@@ -2,6 +2,7 @@ import { DataSource } from 'typeorm';
 import controlDataSource from '../data-source';
 import { EntitlementDefault } from '../../modules/entitlements/entities/entitlement-default.entity';
 import { Feature, FeatureKind } from '../../modules/entitlements/entities/feature.entity';
+import { FeatureFlag } from '../../modules/entitlements/entities/feature-flag.entity';
 import { Plan } from '../../modules/entitlements/entities/plan.entity';
 import { PlanFeatureEntitlement } from '../../modules/entitlements/entities/plan-feature-entitlement.entity';
 import { PlanSetting } from '../../modules/entitlements/entities/plan-setting.entity';
@@ -39,6 +40,11 @@ const SEED_FEATURES = [
     key: 'limit.users',
     displayName: 'User seats',
     kind: FeatureKind.LIMIT,
+  },
+  {
+    key: 'module.accounts',
+    displayName: 'Accounts & signup (US1)',
+    kind: FeatureKind.MODULE,
   },
 ] satisfies Array<{ key: string; displayName: string; kind: FeatureKind }>;
 
@@ -112,6 +118,26 @@ export async function runDevQuickstartSeed(dataSource: DataSource): Promise<void
     .values({ planId: SEED_PLAN_ID, trialWindowDays: null, autoRestrictUnpaid: null })
     .onConflict('("plan_id") DO NOTHING')
     .execute();
+
+  // 6. Feature flags (T032): dev/quickstart turns the accounts surface ON so the quickstart
+  //    walkthrough is exercisable locally. Production keeps the migration's default
+  //    (enabled=false — Constitution Principle VI) and flips the row only when US1 is
+  //    complete; this dev-only flip never reaches a production database. The upsert is
+  //    authoritative (DO UPDATE) so the seed is deterministic even when the row already
+  //    exists in either state (e.g. left disabled by the migration or a test suite).
+  await dataSource
+    .createQueryBuilder()
+    .insert()
+    .into(FeatureFlag)
+    .values({
+      featureKey: 'module.accounts',
+      enabled: true,
+      notes: 'Dev quickstart: accounts/signup enabled for local testing (T032).',
+    })
+    .onConflict(
+      '("feature_key") DO UPDATE SET "enabled" = EXCLUDED."enabled", "notes" = EXCLUDED."notes"',
+    )
+    .execute();
 }
 
 if (require.main === module) {
@@ -125,7 +151,7 @@ if (require.main === module) {
         `[seed:dev] kemfai_control seeded: EntitlementDefault singleton, published plan ` +
           `${SEED_PLAN_ID} (${SEED_PLAN.name}), ${SEED_FEATURES.length} features, ` +
           `${SEED_ENTITLEMENTS.length} entitlements, PlanSetting(trial_window_days=null, ` +
-          `auto_restrict_unpaid=null)`,
+          `auto_restrict_unpaid=null), feature_flag module.accounts=enabled(dev)`,
       );
     } finally {
       if (dataSource === controlDataSource) {

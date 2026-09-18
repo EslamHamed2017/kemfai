@@ -41,6 +41,11 @@ describe('BullMQ queue registration (T021)', () => {
         await queue.removeRepeatableByKey(repeatable.key);
       }
       await queue.drain();
+      // Sweep iterations that already FIRED (completed) during this suite's own runtime are
+      // the T102 processor doing its documented 30s job — not debris — but they must not
+      // accumulate across runs, so wipe them here (drain() only clears waiting jobs).
+      await queue.clean(0, 1000, 'completed');
+      await queue.clean(0, 1000, 'failed');
       await queue.close();
     }
   });
@@ -61,12 +66,18 @@ describe('BullMQ queue registration (T021)', () => {
       expect(counts).toBeDefined();
       if (sweepNames.has(queue.name)) {
         // A sweep queue may legitimately hold its single scheduled delayed job (BullMQ
-        // materializes the next iteration of a repeatable when it is registered), but
-        // nothing else: no per-entity jobs exist for a sweep by contract.
-        const total = Object.values(counts).reduce((sum, n) => sum + (n as number), 0);
-        expect(total).toBeLessThanOrEqual(1);
+        // materializes the next iteration of a repeatable when it is registered), plus
+        // already-fired completed iterations — since T102 every AppModule boot runs the
+        // trial sweep worker, so 30s ticks genuinely complete during long runs. The
+        // invariant this protects is: nothing LIVE beyond the one scheduled iteration —
+        // no waiting/active work and at most the single next-iteration delayed job.
+        expect(counts.waiting).toBe(0);
+        expect(counts.active).toBe(0);
+        expect(counts.delayed).toBeLessThanOrEqual(1);
       } else {
-        // No producer tasks exist yet, so the three per-entity queues must be empty.
+        // No producer tasks exist for these queues outside their owning tasks
+        // (T032's signup suite adds email jobs but removes every one it created), so
+        // the three per-entity queues must be empty in every state.
         expect(Object.values(counts).every((n) => n === 0)).toBe(true);
       }
     }

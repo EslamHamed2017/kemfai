@@ -2140,3 +2140,94 @@ Unit tests pass: 183/183. Targeted signup integration tests pass: 7/7. Lint and 
 
 REVIEW VERDICT: REJECT
 ```
+
+## T032 + T028 — POST /accounts/signup implementation + integration test (2026-09-19, 3rd attempt)
+
+Third attempt at the twice-rejected T032/T028 tick, addressing every reviewer finding from
+2026-09-19 00:37 and 00:57 directly:
+
+**00:57 finding 1 — runtime DTO validation (missing/null password → uncontrolled 500).**
+`SignupRequestDto` (`src/modules/accounts/dto/signup.request.dto.ts`) validated by a global
+`ValidationPipe` registered as `APP_PIPE` in AppModule with `errorHttpStatusCode: 422` (the
+contract's documented code, not Nest's default 400) — APP_PIPE so test apps boot identically to
+main.ts. FR-018's "documented minimum password standard" is now documented IN the contract
+(`SignupRequest.password`: minLength 10 / maxLength 128, length-only per NIST SP 800-63B) and
+enforced by the DTO. Covered by 9 HTTP-level cases (missing/null password, weak password, malformed
+email, non-uuid planId, bad cycle, acceptedTerms false/missing/empty body) — each asserting 422 AND
+zero side effects (no row, no Keycloak user, no audit, no job).
+
+**00:57 finding 2 — incomplete module publicly exposed without a feature-flag gate.**
+`AccountsController` carries class-level `@RequireFeatureFlag('module.accounts')`. This required
+fixing a latent design flaw in T100's guard: `FeatureFlagGuard` previously short-circuited
+`@Public()` routes entirely, making every pre-auth surface ungatable — the exact hole the reviewer
+flagged. The guard no longer treats @Public as a feature-flag bypass (publicness is an auth concern;
+module completeness applies to the surface itself); its unit spec now proves a @Public route with a
+disabled flag gets 404. Migration `SeedAccountsFeatureFlag1789770000000` seeds the `module.accounts`
+Feature + FeatureFlag with `enabled=false` in EVERY environment (Constitution Principle VI safe
+default: hidden); flipping is a pure data act (`UPDATE feature_flag ...`, no deploy) — the HTTP test
+proves 404-while-disabled → 201-after-flip against the SAME running app. The dev seed (T015) turns
+it on for the local quickstart only.
+
+**00:57 finding 3 — full integration suite green (queue-registration contamination).** Two root
+causes, both fixed structurally (no ad hoc Redis flushing, which is how prior ticks produced
+unreproducible "green"): (a) the signup suite removes every email.send_verification job it created
+(scoped by suite email prefix) so T021's per-entity-queues-empty assertion holds; (b) T021's
+"sweep total ≤ 1" assertion predated T102's sweep processor — every AppModule boot runs the
+trial-sweep worker, so 30s ticks legitimately COMPLETE during long runs and accumulate across runs;
+the assertion now checks the real invariant (waiting=0, active=0, delayed≤1) and afterAll cleans
+completed/failed iterations. Also made order-independent: the migration-seeded platform flag made
+T010's exact-equality `featureFlags: []` assertions flaky depending on suite order (other suites
+unscoped-delete features); they now tolerate exactly the platform-shipped disabled flag, and the dev
+seed's flag upsert is authoritative (DO UPDATE) so the seed suite is deterministic from any state.
+
+**00:37 finding 1 — plan revalidation bypassed for existing accounts.** The published-plan check is
+step 1 of the saga, BEFORE the account insert, so it covers the unverified-duplicate/resend path
+too: a duplicate signup referencing a missing/unpublished plan gets 422 (prompting re-selection),
+not 201 + another verification email. Covered by a dedicated HTTP test.
+
+**00:37 finding 2 — failure-atomicity/auditability.** The saga runs as ordered steps with explicit
+compensation (`src/modules/accounts/accounts.service.ts`): (1) plan revalidation; (2) Account-row
+insert FIRST — the unique email index is the idempotency anchor, so concurrent same-email requests
+collapse at the DB (tested with 3 parallel signups: all 201, same accountId, one row, one Keycloak
+user, one account.created audit row); a unique-violation loser re-sends verification for the
+existing unverified account (201, same id, second distinct job id) or returns the generic 409 for a
+verified one — never a second row/user, never an orphan; (3) Keycloak user created with the
+pre-allocated `Account.keycloakUserId` + VERIFY_EMAIL required action — on failure the row is
+compensated and a controlled 503 returns; (4) `account.created` audit (AuditService wrapper) is
+written BEFORE any success signal — on failure BOTH the Keycloak user and the row are compensated
+(best-effort, logged) and 503 returns, so a committed account can never lack its audit trail;
+(5) email.send_verification enqueued keyed `accountId.tokenVersion` (events.md) — enqueue failure
+never fails signup (events.md: "does not block signup response"; recoverable via T034), covered by
+a queue-failure test. All failure paths tested at HTTP level with side-effect assertions.
+
+**Keycloak user creation** (T032's "Keycloak kemfai-customers user creation"): real Admin REST
+client `AdminRestKeycloakUserProvisioner` (`src/integrations/keycloak/`) — service-client
+client_credentials (production posture) or dev bootstrap admin via admin-cli (committed
+infra/.env.example convention), token caching, 409→KeycloakUserConflictError, everything
+else→KeycloakUnavailableError; unit-tested against an in-process fake admin server (token request
+shape, exact create payload incl. id/username/requiredActions/credentials, 409/500 mapping, token
+cache, no-credentials guard). Integration tests substitute an in-memory fake provisioner
+(`test/support/fake-keycloak-users.ts`) via the `KEYCLOAK_USER_PROVISIONER` token.
+
+**Security gate:** `npm audit --omit=dev` → 9 moderate, 0 high/critical. No dependency was added or
+changed by this task (class-validator/class-transformer/jose were already declared). The delta vs
+the T001-accepted baseline (5 moderate @nestjs/core SSE advisories) is 4 newly published moderate
+advisories in already-locked transitive deps (minio→stream-json O(depth²) DoS — reachable only by
+parsing responses from our own configured MinIO endpoint, not customer input;
+query-string/decode-uri-component exponential-decode DoS via Nest platform packages — no patched
+release exists inside the locked Nest 10 / minio 8 majors). Recorded as residual risk per the T001
+precedent; no non-breaking fix exists to apply.
+
+**Verification performed** (kemfai-db @ 172.16.6.2, kemfai-redis @ 127.0.0.1:6379):
+- `npm run test:integration -- --runInBand` → **20/20 suites, 148/148 tests, run THREE consecutive
+  times** against the same already-migrated DB/Redis with no manual cleanup between runs — the
+  repeatability+contamination gate that rejected the last tick. Post-run DB/Redis state verified
+  empty of this slice's rows/jobs (account=0, audit_event=0, plan=0, email queue empty).
+- Migration round-trip: `SeedAccountsFeatureFlag1789770000000` (timestamp collision with
+  `AddTrialRestrictedAtToTenant1789760000000` avoided — the T010/T012 stale-migration lesson).
+- `npm test` → 24 suites, 185/185 (up from 164; +21 new unit tests). `npm run lint` → clean
+  (after eslint --fix on Prettier formatting). `npm run build` → clean.
+- contracts/openapi.yaml edit (password standard) keeps T022's zero-drift gate green by
+  construction (bootstrap serves the committed file verbatim; openapi-bootstrap suite passed).
+
+T032 and T028 marked `[X]` in tasks.md only after all of the above were green.

@@ -71,13 +71,19 @@ describe('EntitlementsService (T010)', () => {
 
     const result = await service.getEntitlementSet(plan.id);
 
-    expect(result).toEqual({
-      planId: plan.id,
-      features: [{ key: feature.key, enabled: true, limitValue: 250 }],
-      trialWindowDays: 30,
-      autoRestrictUnpaid: false,
-      featureFlags: [],
-    });
+    expect(result.planId).toBe(plan.id);
+    expect(result.features).toEqual([{ key: feature.key, enabled: true, limitValue: 250 }]);
+    expect(result.trialWindowDays).toBe(30);
+    expect(result.autoRestrictUnpaid).toBe(false);
+    // Feature flags are platform-wide (T099), and since T032 the platform permanently
+    // ships the `module.accounts` gate row via migration. This test creates no flags, so
+    // the only row that may legitimately appear is that shipped platform gate (in its
+    // shipped, disabled state) — never any test-created flag.
+    expect(result.featureFlags).toEqual(
+      result.featureFlags.filter(
+        (flag) => flag.key === 'module.accounts' && flag.enabled === false,
+      ),
+    );
   });
 
   it('falls back to EntitlementDefault.default_trial_window_days when PlanSetting.trial_window_days is null, independently of autoRestrictUnpaid', async () => {
@@ -136,7 +142,16 @@ describe('EntitlementsService (T010)', () => {
 
     const result = await service.getEntitlementSet(plan.id);
 
-    expect(result.featureFlags).toEqual([{ key: 'module.checklist-flag-test', enabled: false }]);
+    // This test's own flag must be exposed; the T032 platform-shipped `module.accounts`
+    // gate (migration-seeded, disabled) may also legitimately appear platform-wide.
+    expect(result.featureFlags).toEqual(
+      expect.arrayContaining([{ key: 'module.checklist-flag-test', enabled: false }]),
+    );
+    expect(
+      result.featureFlags.every((flag) =>
+        ['module.checklist-flag-test', 'module.accounts'].includes(flag.key),
+      ),
+    ).toBe(true);
   });
 
   it('isFeatureFlagEnabled reflects a real FeatureFlag row and defaults true when none exists', async () => {

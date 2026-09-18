@@ -357,7 +357,7 @@ tenant/workspace exists until the verification link is used, and the account can
     once and matches the declared schema.
   - **Roles**: Primary: Codex · Backup: GLM · Reviewer: Gemini
 
-- [ ] T028 [P] [US1] Integration test: signup against an already-verified email returns a generic rejection
+- [X] T028 [P] [US1] Integration test: signup against an already-verified email returns a generic rejection
   without leaking account existence; signup against an unverified email resends verification instead of
   creating a second `Account` row in `backend/api/test/integration/accounts-signup.integration-spec.ts`
   - **Dependencies**: T007
@@ -399,7 +399,7 @@ tenant/workspace exists until the verification link is used, and the account can
     array (not an error) when no plan is published.
   - **Roles**: Primary: GLM · Backup: Claude · Reviewer: Codex
 
-- [ ] T032 [US1] Implement `POST /accounts/signup` (email format + weak-password rejection, Keycloak
+- [X] T032 [US1] Implement `POST /accounts/signup` (email format + weak-password rejection, Keycloak
   `kemfai-customers` user creation, carries `selected_plan_id`/`selected_billing_cycle`, enqueues
   `email.send_verification`, emits `account.created`) in
   `backend/api/src/modules/accounts/accounts.controller.ts` and `accounts.service.ts`

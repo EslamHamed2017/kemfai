@@ -26,7 +26,7 @@ function makeEntitlements(isFeatureFlagEnabled: jest.Mock) {
 }
 
 describe('FeatureFlagGuard (T100)', () => {
-  it('passes @Public() routes without checking any feature flag', async () => {
+  it('passes a @Public() route with no @RequireFeatureFlag() declared', async () => {
     const isFeatureFlagEnabled = jest.fn();
     const guard = new FeatureFlagGuard(
       makeReflector({ isPublic: true }),
@@ -35,6 +35,31 @@ describe('FeatureFlagGuard (T100)', () => {
 
     await expect(guard.canActivate(makeContext())).resolves.toBe(true);
     expect(isFeatureFlagEnabled).not.toHaveBeenCalled();
+  });
+
+  it('still gates a @Public() route that declares @RequireFeatureFlag() when the flag is disabled (T032: public ≠ complete)', async () => {
+    // Module-completeness gating must not be bypassable by marking a route @Public() —
+    // authentication and completeness are orthogonal (Constitution Principle VI). An
+    // incomplete pre-auth surface like signup hides behind its flag exactly like an
+    // authenticated one.
+    const isFeatureFlagEnabled = jest.fn().mockResolvedValue(false);
+    const guard = new FeatureFlagGuard(
+      makeReflector({ isPublic: true, requiredFeatureFlag: 'module.accounts' }),
+      makeEntitlements(isFeatureFlagEnabled),
+    );
+
+    await expect(guard.canActivate(makeContext())).rejects.toThrow(NotFoundException);
+    expect(isFeatureFlagEnabled).toHaveBeenCalledWith('module.accounts');
+  });
+
+  it('allows a gated @Public() route when the flag is enabled', async () => {
+    const isFeatureFlagEnabled = jest.fn().mockResolvedValue(true);
+    const guard = new FeatureFlagGuard(
+      makeReflector({ isPublic: true, requiredFeatureFlag: 'module.accounts' }),
+      makeEntitlements(isFeatureFlagEnabled),
+    );
+
+    await expect(guard.canActivate(makeContext())).resolves.toBe(true);
   });
 
   it('passes a route with no @RequireFeatureFlag() declared', async () => {

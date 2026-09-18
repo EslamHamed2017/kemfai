@@ -63,10 +63,19 @@ describe('Dev/quickstart seed (T015)', () => {
     expect(settings[0].auto_restrict_unpaid).toBeNull();
 
     const features = await controlDataSource.query('SELECT * FROM "feature"');
-    expect(features).toHaveLength(3);
+    expect(features).toHaveLength(4);
     for (const feature of features) {
       expect(['module', 'limit']).toContain(feature.kind);
     }
+
+    // T032: the dev seed also flips the accounts module's feature flag ON so the dev
+    // quickstart walkthrough is exercisable locally (production keeps the migration's
+    // enabled=false default and flips the row by data when US1 is complete).
+    const flags = await controlDataSource.query(
+      'SELECT * FROM "feature_flag" WHERE "feature_key" = \'module.accounts\'',
+    );
+    expect(flags).toHaveLength(1);
+    expect(flags[0].enabled).toBe(true);
   });
 
   it('exercises the EntitlementDefault fallback end-to-end via EntitlementsService (both FR-030a fields)', async () => {
@@ -98,15 +107,17 @@ describe('Dev/quickstart seed (T015)', () => {
         (SELECT count(*) FROM "plan_setting") AS settings,
         (SELECT count(*) FROM "plan_feature_entitlement") AS entitlements,
         (SELECT count(*) FROM "feature") AS features,
-        (SELECT count(*) FROM "entitlement_default") AS defaults
+        (SELECT count(*) FROM "entitlement_default") AS defaults,
+        (SELECT count(*) FROM "feature_flag") AS flags
     `);
     expect(counts[0]).toEqual({
       plans: '1',
       published_plans: '1',
       settings: '1',
       entitlements: '3',
-      features: '3',
+      features: '4',
       defaults: '1',
+      flags: '1',
     });
   });
 

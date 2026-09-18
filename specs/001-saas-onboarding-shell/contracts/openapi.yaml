@@ -418,10 +418,20 @@ components:
       required: [email, password, planId, billingCycle, acceptedTerms]
       properties:
         email: { type: string, format: email }
-        password: { type: string, format: password }
+        password:
+          type: string
+          format: password
+          minLength: 10
+          maxLength: 128
+          description: >
+            FR-018's documented minimum password standard: a string of at least 10 and at
+            most 128 characters. Length is the gate (no composition rules), mirroring NIST
+            SP 800-63B guidance. Anything shorter/longer or non-string is rejected with 422.
         planId: { type: string, format: uuid }
         billingCycle: { type: string, enum: [monthly, annual] }
-        acceptedTerms: { type: boolean }
+        acceptedTerms:
+          type: boolean
+          description: Must be true — the legal terms must be accepted to sign up (Scenario 1.2).
 
     TenantStatus:
       type: object

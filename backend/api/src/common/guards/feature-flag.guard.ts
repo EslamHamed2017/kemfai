@@ -1,6 +1,5 @@
 import { CanActivate, ExecutionContext, Injectable, NotFoundException } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
-import { IS_PUBLIC_KEY } from '../decorators/public.decorator';
 import { FEATURE_FLAG_KEY } from '../decorators/feature-flag.decorator';
 import { EntitlementsService } from '../../modules/entitlements/entitlements.service';
 
@@ -17,6 +16,12 @@ import { EntitlementsService } from '../../modules/entitlements/entitlements.ser
  * TenantScopeGuard's "denial would leak existence" rule for unresolvable references. This is
  * independent of PlanFeatureEntitlement/PlanSetting/EntitlementDefault (T010): a feature can be
  * fully entitled by plan and still hidden while incomplete.
+ *
+ * Unlike the auth guards, this guard does NOT exempt `@Public()` routes: publicness is an
+ * authentication concern, while module completeness applies to the surface itself. An
+ * incomplete-but-public surface (e.g. signup before its user story is finished — T032 review
+ * finding, 2026-09-19) must stay hidden behind its flag exactly like an authenticated one,
+ * or the constitution's gating rule would be unenforceable for every pre-auth workflow.
  */
 @Injectable()
 export class FeatureFlagGuard implements CanActivate {
@@ -28,10 +33,6 @@ export class FeatureFlagGuard implements CanActivate {
   async canActivate(context: ExecutionContext): Promise<boolean> {
     const handler = context.getHandler();
     const controllerClass = context.getClass();
-
-    if (this.reflector.getAllAndOverride<boolean>(IS_PUBLIC_KEY, [handler, controllerClass])) {
-      return true;
-    }
 
     const featureKey = this.reflector.getAllAndOverride<string>(FEATURE_FLAG_KEY, [
       handler,
