@@ -196,7 +196,7 @@ that every user story depends on.
     Tracking, FR-004).
   - **Roles**: Primary: GLM · Backup: Claude · Reviewer: Codex
 
-- [ ] T017 Implement request-scoped `TenantContext` resolution and `TenantScopeGuard` (denies cross-tenant
+- [X] T017 Implement request-scoped `TenantContext` resolution and `TenantScopeGuard` (denies cross-tenant
   access, emits `tenant_access.denied_cross_tenant`) in `backend/api/src/common/tenant-context/` and
   `backend/api/src/common/guards/tenant-scope.guard.ts`
   - **Dependencies**: T007, T008

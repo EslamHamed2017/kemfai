@@ -1,6 +1,8 @@
 import { CanActivate, ExecutionContext, Injectable, UnauthorizedException } from '@nestjs/common';
+import { Reflector } from '@nestjs/core';
 import { Request } from 'express';
 import { createRemoteJWKSet, jwtVerify, type JWTVerifyGetKey } from 'jose';
+import { IS_PUBLIC_KEY } from '../decorators/public.decorator';
 
 /**
  * A request that has passed {@link BearerAuthGuard}. `auth.keycloakUserId` is the JWT `sub`
@@ -45,7 +47,21 @@ function resolveAuthConfig() {
  */
 @Injectable()
 export class BearerAuthGuard implements CanActivate {
+  constructor(private readonly reflector: Reflector) {}
+
   async canActivate(context: ExecutionContext): Promise<boolean> {
+    // Routes marked @Public() (plan list, signup, health…) are exempt from bearer auth;
+    // every other route is authenticated globally so that the equally global
+    // TenantScopeGuard (registered after this guard in AppModule) can rely on req.auth
+    // being populated when it runs.
+    const isPublic = this.reflector.getAllAndOverride<boolean>(IS_PUBLIC_KEY, [
+      context.getHandler(),
+      context.getClass(),
+    ]);
+    if (isPublic) {
+      return true;
+    }
+
     const req = context.switchToHttp().getRequest<AuthenticatedRequest>();
     const header = req.headers['authorization'];
     if (!header || !header.startsWith('Bearer ')) {

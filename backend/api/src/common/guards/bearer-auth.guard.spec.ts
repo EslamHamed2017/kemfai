@@ -1,4 +1,5 @@
 import { ExecutionContext, UnauthorizedException } from '@nestjs/common';
+import { Reflector } from '@nestjs/core';
 import { FakeKeycloak, startFakeKeycloak } from '../../../test/support/fake-keycloak';
 import { AuthenticatedRequest, BearerAuthGuard } from './bearer-auth.guard';
 
@@ -6,7 +7,17 @@ function contextWithHeader(header?: string): ExecutionContext {
   const req = { headers: header ? { authorization: header } : {} } as AuthenticatedRequest;
   return {
     switchToHttp: () => ({ getRequest: () => req }),
+    getHandler: () => jest.fn(),
+    getClass: () => jest.fn(),
   } as unknown as ExecutionContext;
+}
+
+/** Reflector stub: `isPublic` simulates @Public() metadata on the reflected route. */
+function makeGuard(isPublic = false): BearerAuthGuard {
+  const reflector = {
+    getAllAndOverride: jest.fn().mockReturnValue(isPublic),
+  } as unknown as Reflector;
+  return new BearerAuthGuard(reflector);
 }
 
 describe('BearerAuthGuard (T010)', () => {
@@ -29,19 +40,19 @@ describe('BearerAuthGuard (T010)', () => {
   });
 
   it('rejects a request with no Authorization header', async () => {
-    const guard = new BearerAuthGuard();
+    const guard = makeGuard();
     await expect(guard.canActivate(contextWithHeader())).rejects.toThrow(UnauthorizedException);
   });
 
   it('rejects a non-bearer Authorization header', async () => {
-    const guard = new BearerAuthGuard();
+    const guard = makeGuard();
     await expect(guard.canActivate(contextWithHeader('Basic dXNlcjpwYXNz'))).rejects.toThrow(
       UnauthorizedException,
     );
   });
 
   it('rejects a malformed token', async () => {
-    const guard = new BearerAuthGuard();
+    const guard = makeGuard();
     await expect(guard.canActivate(contextWithHeader('Bearer not-a-jwt'))).rejects.toThrow(
       UnauthorizedException,
     );
@@ -49,7 +60,7 @@ describe('BearerAuthGuard (T010)', () => {
 
   it('accepts a validly signed token with the expected issuer/audience and exposes sub', async () => {
     const token = await keycloak.signAccessToken({ sub: 'user-abc' });
-    const guard = new BearerAuthGuard();
+    const guard = makeGuard();
     const context = contextWithHeader(`Bearer ${token}`);
 
     await expect(guard.canActivate(context)).resolves.toBe(true);
@@ -63,7 +74,7 @@ describe('BearerAuthGuard (T010)', () => {
       sub: 'user-abc',
       issuer: 'http://attacker.example.com/realms/other',
     });
-    const guard = new BearerAuthGuard();
+    const guard = makeGuard();
     await expect(guard.canActivate(contextWithHeader(`Bearer ${token}`))).rejects.toThrow(
       UnauthorizedException,
     );
@@ -74,7 +85,7 @@ describe('BearerAuthGuard (T010)', () => {
       sub: 'user-abc',
       audience: 'some-other-client',
     });
-    const guard = new BearerAuthGuard();
+    const guard = makeGuard();
     await expect(guard.canActivate(contextWithHeader(`Bearer ${token}`))).rejects.toThrow(
       UnauthorizedException,
     );
@@ -82,9 +93,14 @@ describe('BearerAuthGuard (T010)', () => {
 
   it('rejects an expired token', async () => {
     const token = await keycloak.signAccessToken({ sub: 'user-abc', expiresIn: '-10s' });
-    const guard = new BearerAuthGuard();
+    const guard = makeGuard();
     await expect(guard.canActivate(contextWithHeader(`Bearer ${token}`))).rejects.toThrow(
       UnauthorizedException,
     );
+  });
+
+  it('passes a @Public() route without any Authorization header', async () => {
+    const guard = makeGuard(true);
+    await expect(guard.canActivate(contextWithHeader())).resolves.toBe(true);
   });
 });

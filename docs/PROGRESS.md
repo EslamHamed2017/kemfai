@@ -1477,3 +1477,50 @@ Implemented task: **T017**. Unit tests (30/30), integration tests (86/86), build
 
 REVIEW VERDICT: REJECT
 ```
+
+## Implement tick - 2026-09-18 (T017 rework after REJECT)
+
+Re-implemented T017 (request-scoped TenantContext + global TenantScopeGuard) from scratch,
+addressing both points of the 2026-09-18 09:47 +04 rejection verdict:
+
+1. Ordinary-resource-ID ownership checks (verdict point 1): new
+   `TenantOwnershipRegistry` (src/common/tenant-context/tenant-ownership.registry.ts) maps
+   resource types ('tenant', 'subscription', 'payment_submission', 'support_access_grant')
+   to DB-backed owning-tenant resolvers; routes declare their resource IDs via the new
+   `@TenantOwnedResource({ resource, idParam })` decorator, and the guard ownership-checks
+   those IDs before the handler runs. A Tenant A token addressing Tenant B's subscription
+   by plain id now gets 403 + audit (covered unit + end-to-end against real Postgres).
+2. Audit write is awaited and fail-closed (verdict point 2): `AuditService.append`
+   (minimal T019-forward writer, src/modules/audit/) never swallows insert failures;
+   the guard awaits the `tenant_access.denied_cross_tenant` write BEFORE exiting and, if
+   the audit insert fails, fails closed with 500 — an unaudited denial is never served as
+   403. Unit test covers the audit-DB-down path explicitly; ordering ("audit before exit")
+   is asserted via a call-order probe.
+
+Global application: both guards are now APP_GUARDs in AppModule (BearerAuthGuard first,
+TenantScopeGuard second — registration order = execution order), so the guard is applied
+globally, not per-endpoint. BearerAuthGuard gained a `@Public()` bypass (new
+common/decorators/public.decorator.ts) so genuinely public surfaces (root status, future
+plan list/signup) stay reachable; AppController's root route is marked @Public and
+EntitlementsController's now-redundant per-route @UseGuards was removed (route remains
+protected by the global chain; all existing entitlements HTTP tests still pass).
+
+Unknown/unresolvable resource IDs intentionally pass through so handlers answer 404
+without leaking existence; no denial is audited for them (tested). Per events.md, the
+audit event's tenant_id is the REQUESTING (caller) tenant and the payload carries
+target_tenant_id + resource path + attempted id + reference source.
+
+Files: src/common/decorators/public.decorator.ts, src/common/tenant-context/
+(model, resolver, registry, decorator, module), src/common/guards/tenant-scope.guard.ts,
+src/modules/audit/audit.{module,service}.ts (minimal, T019 extends), modified
+bearer-auth.guard(+spec), app.module.ts, app.controller.ts, entitlements.controller.ts;
+tests: src/common/guards/tenant-scope.guard.spec.ts (12 unit tests),
+test/integration/tenant-scope-guard.integration-spec.ts (8 e2e tests incl. audit-row
+assertions against real Postgres).
+
+Verification (backend/api): `npm test` 30/30 pass; `npm run lint` clean; `npm run build`
+clean; CONTROL_DB_HOST=172.16.6.2 CONTROL_DB_USER=odoo CONTROL_DB_PASSWORD=kemfai_dev_pg
+CONTROL_DB_NAME=kemfai_control npm run test:integration -- --runInBand: 12 suites, 85/85
+pass.
+
+T017 marked `[X]` in tasks.md.
