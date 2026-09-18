@@ -152,7 +152,7 @@ that every user story depends on.
     has exactly one Subscription row (unique on `tenant_id`) per data-model.md.
   - **Roles**: Primary: GLM · Backup: Claude · Reviewer: Codex
 
-- [ ] T012 [P] Migration + entity: `PaymentSubmission` including the DB-level unique partial index on
+- [X] T012 [P] Migration + entity: `PaymentSubmission` including the DB-level unique partial index on
   `(tenant_id, billing_period_start, billing_period_end) WHERE status IN ('PendingReview','MoreInfoRequested')`
   in `backend/api/src/database/migrations/` and
   `backend/api/src/modules/billing-customer/entities/payment-submission.entity.ts`

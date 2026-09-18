@@ -1016,3 +1016,46 @@ Verification: lint and build passed; unit tests passed 16/16. Integration tests 
 
 REVIEW VERDICT: REJECT
 ```
+
+## T012 — PaymentSubmission migration + entity (2026-09-18 06:18 +04, retry 2)
+
+Addressed all three points from the 06:05 rejection directly:
+
+1. **`status_history` not guaranteed to be a JSON array on INSERT.** The `BEFORE UPDATE` trigger
+   from the prior retry only guards updates. Added a table-level `CHECK
+   (jsonb_typeof(status_history) = 'array')` constraint
+   (`ck_payment_submission_status_history_is_array`), which Postgres evaluates on every INSERT and
+   UPDATE — a scalar or object payload is now rejected at row-creation time, not just on later
+   mutation. Covered by a new test (`rejects INSERT of a non-array status_history (object or
+   scalar) at the DB level`) that inserts raw SQL rows with `'{"status":"PendingReview"}'::jsonb`
+   and `'"PendingReview"'::jsonb` and asserts both are rejected.
+2. **Integration gate not reproducible — auth/connectivity errors.** Root cause: the failing run
+   used `CONTROL_DB_PASSWORD=odoo`, which doesn't match the `kemfai-db` container's actual
+   `POSTGRES_PASSWORD=kemfai_dev_pg` (confirmed via `docker inspect kemfai-db`). This retry used
+   `CONTROL_DB_HOST=172.16.6.2 CONTROL_DB_USER=odoo CONTROL_DB_PASSWORD=kemfai_dev_pg
+   CONTROL_DB_NAME=kemfai_control npm run test:integration -- --runInBand`, run twice
+   consecutively: **8/8 suites, 55/55 tests passing both times**, identical results. Also ran `npm
+   run lint` (clean), `npm run build` (clean), and `npm test` (3/3 suites, 16/16 unit tests,
+   clean).
+3. **T012 marked done prematurely.** `tasks.md` T012 is only flipped to `[X]` in this message,
+   after every gate above was re-verified green against the real container.
+
+Operational note carried over from the previous retry's write-up, re-confirmed present before this
+session started and cleaned up again: the `kemfai-db` data volume still held a `payment_submission`
+table and a `migrations` bookkeeping row for `CreatePaymentSubmission1789660000000` from an earlier
+attempt whose migration source file had since been reverted by git (untracked files aren't touched
+by a git revert). This caused `runMigrations()` to silently skip the new migration file (same
+timestamp) as "already applied," leaving stale schema in place under the new file's name. Verified
+via `docker exec kemfai-db psql ... \d payment_submission` before writing anything, then removed
+the stray table/function/type/constraint and the stale `migrations` row (`DROP TABLE
+payment_submission; DROP FUNCTION payment_submission_status_history_append_only(); DROP TYPE
+payment_submission_status_enum; ALTER TABLE subscription DROP CONSTRAINT
+uq_subscription_tenant_id_id; DELETE FROM migrations WHERE name =
+'CreatePaymentSubmission1789660000000'`) before running the tracked migration file fresh, so the
+final DB state is 100% derived from `git`-tracked migration files — not from ad hoc prior `psql`
+surgery. Also exercised `migration:revert` once (confirmed a clean down-then-up round-trip) before
+leaving the DB on the `up` state for the test gate.
+
+Files: `backend/api/src/database/migrations/1789660000000-CreatePaymentSubmission.ts`,
+`backend/api/src/modules/billing-customer/entities/payment-submission.entity.ts`,
+`backend/api/test/integration/payment-submission-migration.integration-spec.ts`.
