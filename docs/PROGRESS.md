@@ -1908,3 +1908,26 @@ Verification: `npx jest` → 20/20 suites, 145/145 tests passing (138 prior + 7 
 lint` clean. `npm run build` clean.
 
 T102 marked `[X]` in tasks.md.
+
+## T113 — PATCH /accounts/me/locale contract addition (2026-09-18, next unblocked task)
+
+T113 is contract-authoring only (no code, per its own Dependencies line). Found that the
+`/accounts/me/locale` path, `LocaleUpdateRequest` schema, and 200/422 responses required by
+T113's acceptance criteria already existed in `contracts/openapi.yaml`, committed earlier
+under the "round 2 remediation" commit (`5942b10`'s predecessor) but never checked off — T024
+and T104 both still correctly blocked on it since the checkbox, not the content, was missing.
+
+Verified the existing content matches T113's acceptance criteria exactly (path, method,
+`LocaleUpdateRequest` request schema with `locale` enum `[en, ar]`, 200/422 response codes).
+Since the live BFF (`backend/api/src/openapi/openapi-contract.ts`) serves the committed YAML
+verbatim rather than generating it from decorators, this addition needed a test of the
+document itself, not of any endpoint implementation (that's T104's job). Added one `it()` to
+the existing `openapi-contract.spec.ts` (T022's committed-contract-consistency suite) that
+asserts the exact shape: `patch` operation tagged `accounts`, required request body
+referencing `LocaleUpdateRequest`, exactly `{200, 422}` response codes, and the schema's
+`required: [locale]` / `enum: [en, ar]`.
+
+Verification: `npm test` → 20/20 suites, 146/146 tests passing (145 prior + 1 new). `npm run
+lint` clean.
+
+T113 marked `[X]` in tasks.md.

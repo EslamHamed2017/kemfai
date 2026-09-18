@@ -211,4 +211,42 @@ describe('committed contract internal consistency (T022)', () => {
       }
     }
   });
+
+  /**
+   * T113: PATCH /accounts/me/locale must exist as a committed contract entry — the T024
+   * generated frontend client and the T104 implementation both consume this, not a
+   * tasks.md-only prose description.
+   */
+  it('documents PATCH /accounts/me/locale with a LocaleUpdateRequest body and 200/422 responses', () => {
+    const paths = doc.paths as Record<
+      string,
+      Record<
+        string,
+        {
+          tags?: string[];
+          requestBody?: {
+            required?: boolean;
+            content?: Record<string, { schema?: { $ref?: string } }>;
+          };
+          responses?: Record<string, unknown>;
+        }
+      >
+    >;
+    const patch = paths['/accounts/me/locale']?.patch;
+    expect(patch).toBeDefined();
+    expect(patch?.tags).toContain('accounts');
+    expect(patch?.requestBody?.required).toBe(true);
+    expect(patch?.requestBody?.content?.['application/json']?.schema?.$ref).toBe(
+      '#/components/schemas/LocaleUpdateRequest',
+    );
+    expect(Object.keys(patch?.responses ?? {}).sort()).toEqual(['200', '422']);
+
+    const schemas = (doc.components as Record<string, unknown>).schemas as Record<
+      string,
+      { required?: string[]; properties?: Record<string, { enum?: string[] }> }
+    >;
+    const localeUpdateRequest = schemas.LocaleUpdateRequest;
+    expect(localeUpdateRequest.required).toEqual(['locale']);
+    expect(localeUpdateRequest.properties?.locale?.enum).toEqual(['en', 'ar']);
+  });
 });

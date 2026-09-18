@@ -320,7 +320,7 @@ that every user story depends on.
     `TrialWindowGuard` (T101), not by this job.
   - **Roles**: Primary: GLM · Backup: Claude · Reviewer: Codex
 
-- [ ] T113 [P] Contract-first addition: add `PATCH /accounts/me/locale` (path, `LocaleUpdateRequest` schema,
+- [X] T113 [P] Contract-first addition: add `PATCH /accounts/me/locale` (path, `LocaleUpdateRequest` schema,
   200/422 responses) to `contracts/openapi.yaml`, so the T024 generated frontend client and the T104
   implementation both consume a committed contract rather than an endpoint introduced only in tasks.md prose, in
   `contracts/openapi.yaml` (Round 2 remediation — see analysis.md; closes the contract gap left by U2's original
