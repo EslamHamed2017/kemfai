@@ -267,7 +267,7 @@ that every user story depends on.
     service credentials (research.md §5).
   - **Roles**: Primary: GLM · Backup: Claude · Reviewer: Codex
 
-- [ ] T026 [P] Implement Odoo JSON-RPC client integration module (one connection profile per tenant database)
+- [X] T026 [P] Implement Odoo JSON-RPC client integration module (one connection profile per tenant database)
   in `backend/api/src/integrations/odoo-rpc/`
   - **Dependencies**: T001, T003
   - **Acceptance Criteria**: Module can open a JSON-RPC session against an arbitrary `kemfai_tenant_<id>`
