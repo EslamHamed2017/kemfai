@@ -1,16 +1,18 @@
 import { Module } from '@nestjs/common';
-import { APP_GUARD } from '@nestjs/core';
+import { APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { AuditModule } from './modules/audit/audit.module';
 import { EntitlementsModule } from './modules/entitlements/entitlements.module';
+import { IdempotencyModule } from './modules/idempotency/idempotency.module';
 import { TenantContextModule } from './common/tenant-context/tenant-context.module';
 import { BearerAuthGuard } from './common/guards/bearer-auth.guard';
 import { TenantScopeGuard } from './common/guards/tenant-scope.guard';
 import { RoleGuard } from './common/guards/role.guard';
+import { IdempotencyKeyInterceptor } from './common/interceptors/idempotency.interceptor';
 
 @Module({
-  imports: [AuditModule, TenantContextModule, EntitlementsModule],
+  imports: [AuditModule, TenantContextModule, EntitlementsModule, IdempotencyModule],
   controllers: [AppController],
   providers: [
     AppService,
@@ -20,6 +22,10 @@ import { RoleGuard } from './common/guards/role.guard';
     { provide: APP_GUARD, useClass: BearerAuthGuard },
     { provide: APP_GUARD, useClass: TenantScopeGuard },
     { provide: APP_GUARD, useClass: RoleGuard },
+    // Global idempotency-key replay guard (T020) — applies to every mutating route, current
+    // and future, without each one opting in; it only activates when a caller actually
+    // sends an Idempotency-Key header.
+    { provide: APP_INTERCEPTOR, useClass: IdempotencyKeyInterceptor },
   ],
 })
 export class AppModule {}

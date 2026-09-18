@@ -222,7 +222,7 @@ that every user story depends on.
     `payload` (FR-008).
   - **Roles**: Primary: GLM · Backup: Claude · Reviewer: Codex
 
-- [ ] T020 [P] Implement `IdempotencyKeyInterceptor` for mutating endpoints in
+- [X] T020 [P] Implement `IdempotencyKeyInterceptor` for mutating endpoints in
   `backend/api/src/common/interceptors/idempotency.interceptor.ts`
   - **Dependencies**: T017
   - **Acceptance Criteria**: Replaying an identical mutating request with the same idempotency key returns the
