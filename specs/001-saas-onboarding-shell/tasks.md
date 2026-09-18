@@ -162,7 +162,7 @@ that every user story depends on.
     `status_history` as an append-only jsonb array.
   - **Roles**: Primary: GLM · Backup: Claude · Reviewer: Codex
 
-- [ ] T013 [P] Migration + entities: `SupportAccessGrant`, `SupportAccessUsage` in
+- [X] T013 [P] Migration + entities: `SupportAccessGrant`, `SupportAccessUsage` in
   `backend/api/src/database/migrations/` and `backend/api/src/modules/support-access/entities/`
   - **Dependencies**: T006, T008
   - **Acceptance Criteria**: `expires_at` is `NOT NULL` on `SupportAccessGrant` (mandatory expiry, FR-039);

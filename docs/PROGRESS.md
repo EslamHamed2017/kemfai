@@ -1059,3 +1059,44 @@ leaving the DB on the `up` state for the test gate.
 Files: `backend/api/src/database/migrations/1789660000000-CreatePaymentSubmission.ts`,
 `backend/api/src/modules/billing-customer/entities/payment-submission.entity.ts`,
 `backend/api/test/integration/payment-submission-migration.integration-spec.ts`.
+
+## T013 — SupportAccessGrant / SupportAccessUsage migration + entities (2026-09-18)
+
+Implemented the next unblocked task: `SupportAccessGrant` and `SupportAccessUsage` tables/entities
+(data-model.md, FR-039–FR-041), covering customer-authorized, time-bounded internal access.
+
+- Migration `1789680000000-CreateSupportAccess.ts` creates `support_access_grantee_role_enum`
+  (`BillingAdmin|Support|SuperAdmin|CustomerSuccess|TechnicalAdmin`, matching the internal roles
+  named in T016), `support_access_grant` (`expires_at` is `NOT NULL` — mandatory expiry enforced at
+  the DB level per FR-039, plus FKs to `tenant` and `account`), and `support_access_usage`
+  (`was_denied` + `denial_reason` for logging denied attempts per FR-041, FK to
+  `support_access_grant`). `used_by` is a bare uuid, not an FK, since internal staff identities live
+  in the `kemfai-internal` Keycloak realm (T016) rather than a local table — same convention as
+  `Account.keycloakUserId`.
+- Entities: `backend/api/src/modules/support-access/entities/support-access-grant.entity.ts` and
+  `support-access-usage.entity.ts`, following the existing TypeORM entity conventions (explicit
+  `@Column({ name: ... })` snake_case mapping, `ManyToOne`/`JoinColumn` for FKs).
+- Test: `backend/api/test/integration/support-access-migration.integration-spec.ts` (8 tests) —
+  asserts the DB-level `NOT NULL` on `expires_at`, FK constraints on both tables, the enum's exact
+  label set, full round-trip persistence of every documented field on both entities, revocation via
+  `revoked_at` without deletion, and a denied-attempt row with `was_denied=true` +
+  `denial_reason='expired'`.
+
+**Verification** (against the running `kemfai-db` container at `172.16.6.2:5432`, same
+`CONTROL_DB_USER=odoo CONTROL_DB_PASSWORD=kemfai_dev_pg CONTROL_DB_NAME=kemfai_control` convention
+as T007–T012, since `kemfai-db` doesn't publish a host port):
+
+- `npm run test:integration -- --runInBand` → 9/9 suites, 63/63 tests passing (8 new T013 tests),
+  run once before a migration revert/re-run round-trip and once again after — identical results
+  both times.
+- `npm run migration:revert` then `npm run migration:run` — confirmed a clean down (drops both
+  tables and the enum) then up (recreates them) round-trip with no manual DB intervention.
+- `npm run lint` — clean. `npm run build` — clean. `npm test` (unit) — 3/3 suites, 16/16 tests,
+  clean.
+
+`tasks.md` T013 flipped to `[X]` only after all of the above were green.
+
+Files: `backend/api/src/database/migrations/1789680000000-CreateSupportAccess.ts`,
+`backend/api/src/modules/support-access/entities/support-access-grant.entity.ts`,
+`backend/api/src/modules/support-access/entities/support-access-usage.entity.ts`,
+`backend/api/test/integration/support-access-migration.integration-spec.ts`.
