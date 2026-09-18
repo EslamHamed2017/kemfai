@@ -60,11 +60,18 @@ OUT=$(claude -p "$PROMPT" \
   --output-format text 2>&1)
 EC=$?
 if [ $EC -ne 0 ] && echo "$OUT" | grep -qiE "session limit|usage limit|rate limit|quota|429|overloaded"; then
-  echo "[$TS] Claude unavailable (usage/session limit) — falling back to GLM via opencode" | tee -a "$LOG"
+  echo "[$TS] Claude unavailable (usage/session limit) — trying GLM, then Gemini via opencode" | tee -a "$LOG"
+  set +e
   OUT=$(opencode run --auto -m zai-coding/glm-5.2 "$PROMPT" 2>&1 | grep -v "level=")
   EC=$?
   if [ $EC -ne 0 ]; then
-    echo "[$TS] GLM fallback also failed (exit $EC)" | tee -a "$LOG"
+    echo "[$TS] GLM fallback failed too (exit $EC) — trying Gemini (antigravity/gemini-pro-agent)" | tee -a "$LOG"
+    OUT=$(opencode run --auto -m omniroute/antigravity/gemini-pro-agent "$PROMPT" 2>&1 | grep -v "level=")
+    EC=$?
+  fi
+  set -e
+  if [ $EC -ne 0 ]; then
+    echo "[$TS] all executors failed this tick" | tee -a "$LOG"
   fi
 fi
 set -e
