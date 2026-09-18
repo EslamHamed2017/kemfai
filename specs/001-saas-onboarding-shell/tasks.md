@@ -297,7 +297,7 @@ that every user story depends on.
     implementation tasks (T076/T082/T088) each declare this guard as a required acceptance criterion.
   - **Roles**: Primary: GLM · Backup: Claude · Reviewer: Codex
 
-- [ ] T101 [P] Implement `TrialWindowGuard` — computes elapsed time since `Tenant.ready_at` against
+- [X] T101 [P] Implement `TrialWindowGuard` — computes elapsed time since `Tenant.ready_at` against
   `EntitlementsService`'s resolved `trialWindowDays`, and denies onboarding-scoped access (company setup, module
   selection, checklist) when elapsed exceeds the window, the resolved `autoRestrictUnpaid` is true, and the
   tenant's Subscription is not `Active`, in `backend/api/src/common/guards/trial-window.guard.ts` (F2
