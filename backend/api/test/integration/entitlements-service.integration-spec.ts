@@ -1,6 +1,7 @@
 import controlDataSource from '../../src/database/data-source';
 import { Account } from '../../src/modules/accounts/entities/account.entity';
 import { EntitlementsService } from '../../src/modules/entitlements/entitlements.service';
+import { FeatureFlag } from '../../src/modules/entitlements/entities/feature-flag.entity';
 import { Feature, FeatureKind } from '../../src/modules/entitlements/entities/feature.entity';
 import { PlanFeatureEntitlement } from '../../src/modules/entitlements/entities/plan-feature-entitlement.entity';
 import { PlanSetting } from '../../src/modules/entitlements/entities/plan-setting.entity';
@@ -26,6 +27,7 @@ describe('EntitlementsService (T010)', () => {
     await controlDataSource.query('DELETE FROM "account"');
     await controlDataSource.query('DELETE FROM "plan_feature_entitlement"');
     await controlDataSource.query('DELETE FROM "plan_setting"');
+    await controlDataSource.query('DELETE FROM "feature_flag"');
     await controlDataSource.query('DELETE FROM "feature"');
     await controlDataSource.query('DELETE FROM "plan"');
   });
@@ -74,6 +76,7 @@ describe('EntitlementsService (T010)', () => {
       features: [{ key: feature.key, enabled: true, limitValue: 250 }],
       trialWindowDays: 30,
       autoRestrictUnpaid: false,
+      featureFlags: [],
     });
   });
 
@@ -120,6 +123,31 @@ describe('EntitlementsService (T010)', () => {
     const result = await service.getEntitlementSet(plan.id);
 
     expect(result.features).toEqual([{ key: feature.key, enabled: true, limitValue: null }]);
+  });
+
+  it('exposes FeatureFlag rows platform-wide via getEntitlementSet, independent of the plan (T099)', async () => {
+    const plan = await createPlan('flag-exposure-plan');
+    await createFeature('module.checklist-flag-test');
+    await controlDataSource.getRepository(FeatureFlag).save({
+      featureKey: 'module.checklist-flag-test',
+      enabled: false,
+      notes: 'gated until Polish sweep',
+    });
+
+    const result = await service.getEntitlementSet(plan.id);
+
+    expect(result.featureFlags).toEqual([{ key: 'module.checklist-flag-test', enabled: false }]);
+  });
+
+  it('isFeatureFlagEnabled reflects a real FeatureFlag row and defaults true when none exists', async () => {
+    await createFeature('module.gated-flag-test');
+    await controlDataSource
+      .getRepository(FeatureFlag)
+      .save({ featureKey: 'module.gated-flag-test', enabled: false, notes: null });
+    await createFeature('module.ungated-flag-test');
+
+    await expect(service.isFeatureFlagEnabled('module.gated-flag-test')).resolves.toBe(false);
+    await expect(service.isFeatureFlagEnabled('module.ungated-flag-test')).resolves.toBe(true);
   });
 
   it('getEntitlementSetForAccount resolves the plan via the account linked to the JWT sub, not a client-supplied planId', async () => {

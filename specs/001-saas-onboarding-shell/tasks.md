@@ -275,7 +275,7 @@ that every user story depends on.
     between calls.
   - **Roles**: Primary: GLM · Backup: Claude · Reviewer: Codex
 
-- [ ] T099 [P] Migration + entity: `FeatureFlag` (feature_key PK/FK → Feature.key, enabled boolean default
+- [X] T099 [P] Migration + entity: `FeatureFlag` (feature_key PK/FK → Feature.key, enabled boolean default
   false, notes text nullable) and extend `EntitlementsService`/`GET /entitlements/me` to expose per-feature flag
   state, satisfying Constitution Principle VI ("incomplete modules MUST sit behind feature flags") via the same
   config-driven structure as FR-030a rather than a second ad-hoc mechanism, in

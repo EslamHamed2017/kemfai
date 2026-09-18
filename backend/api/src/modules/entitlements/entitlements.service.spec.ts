@@ -2,6 +2,7 @@ import { NotFoundException, UnauthorizedException } from '@nestjs/common';
 import controlDataSource from '../../database/data-source';
 import { Account } from '../accounts/entities/account.entity';
 import { EntitlementDefault } from './entities/entitlement-default.entity';
+import { FeatureFlag } from './entities/feature-flag.entity';
 import { PlanFeatureEntitlement } from './entities/plan-feature-entitlement.entity';
 import { PlanSetting } from './entities/plan-setting.entity';
 import { EntitlementsService } from './entitlements.service';
@@ -19,6 +20,7 @@ describe('EntitlementsService (T010, unit)', () => {
     setting?: Partial<PlanSetting> | null;
     defaults?: Partial<EntitlementDefault>;
     account?: Partial<Account> | null;
+    featureFlags?: Partial<FeatureFlag>[];
   }) {
     jest.spyOn(controlDataSource, 'getRepository').mockImplementation((target: any) => {
       if (target === PlanFeatureEntitlement) {
@@ -36,6 +38,18 @@ describe('EntitlementsService (T010, unit)', () => {
               defaultAutoRestrictUnpaid: true,
             },
           ),
+        } as any;
+      }
+      if (target === FeatureFlag) {
+        return {
+          find: jest.fn().mockResolvedValue(options.featureFlags ?? []),
+          findOne: jest
+            .fn()
+            .mockImplementation(({ where: { featureKey } }) =>
+              Promise.resolve(
+                (options.featureFlags ?? []).find((flag) => flag.featureKey === featureKey) ?? null,
+              ),
+            ),
         } as any;
       }
       if (target === Account) {
@@ -66,6 +80,7 @@ describe('EntitlementsService (T010, unit)', () => {
       features: [{ key: 'module.accounting', enabled: true, limitValue: 100 }],
       trialWindowDays: 30,
       autoRestrictUnpaid: false,
+      featureFlags: [],
     });
   });
 
@@ -114,6 +129,49 @@ describe('EntitlementsService (T010, unit)', () => {
     const result = await new EntitlementsService().getEntitlementSet(PLAN_ID);
 
     expect(result.features).toEqual([{ key: 'module.reports', enabled: true, limitValue: null }]);
+  });
+
+  it('exposes per-feature flag state on getEntitlementSet (T099)', async () => {
+    mockRepositories({
+      setting: { trialWindowDays: 14, autoRestrictUnpaid: true },
+      featureFlags: [
+        { featureKey: 'module.reports', enabled: true, notes: null },
+        { featureKey: 'module.checklist', enabled: false, notes: 'US7 — gate until Polish sweep' },
+      ],
+    });
+
+    const result = await new EntitlementsService().getEntitlementSet(PLAN_ID);
+
+    expect(result.featureFlags).toEqual([
+      { key: 'module.reports', enabled: true },
+      { key: 'module.checklist', enabled: false },
+    ]);
+  });
+
+  it('getFeatureFlags returns an empty array when no FeatureFlag rows exist', async () => {
+    mockRepositories({ featureFlags: [] });
+
+    const result = await new EntitlementsService().getFeatureFlags();
+
+    expect(result).toEqual([]);
+  });
+
+  it('isFeatureFlagEnabled reflects the stored enabled value for a gated feature', async () => {
+    mockRepositories({
+      featureFlags: [{ featureKey: 'module.checklist', enabled: false, notes: null }],
+    });
+
+    await expect(new EntitlementsService().isFeatureFlagEnabled('module.checklist')).resolves.toBe(
+      false,
+    );
+  });
+
+  it('isFeatureFlagEnabled treats a feature with no FeatureFlag row as not gated (defaults true)', async () => {
+    mockRepositories({ featureFlags: [] });
+
+    await expect(new EntitlementsService().isFeatureFlagEnabled('module.not-gated')).resolves.toBe(
+      true,
+    );
   });
 
   it('resolves the plan via the account linked to the given keycloakUserId, not any client-supplied value', async () => {

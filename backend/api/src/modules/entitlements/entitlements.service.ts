@@ -2,6 +2,7 @@ import { Injectable, NotFoundException, UnauthorizedException } from '@nestjs/co
 import controlDataSource from '../../database/data-source';
 import { Account } from '../accounts/entities/account.entity';
 import { EntitlementDefault } from './entities/entitlement-default.entity';
+import { FeatureFlag } from './entities/feature-flag.entity';
 import { PlanFeatureEntitlement } from './entities/plan-feature-entitlement.entity';
 import { PlanSetting } from './entities/plan-setting.entity';
 
@@ -13,17 +14,24 @@ export interface EntitlementSetFeature {
   limitValue: number | null;
 }
 
+export interface EntitlementSetFeatureFlag {
+  key: string;
+  enabled: boolean;
+}
+
 export interface EntitlementSet {
   planId: string;
   features: EntitlementSetFeature[];
   trialWindowDays: number;
   autoRestrictUnpaid: boolean;
+  featureFlags: EntitlementSetFeatureFlag[];
 }
 
 /**
  * The only service permitted to read PlanFeatureEntitlement/PlanSetting/EntitlementDefault
- * (T010 acceptance criteria, FR-030/FR-030a) — every later module-selection, checklist-gating,
- * or trial/auto-restriction check must call this instead of querying those tables directly.
+ * (T010 acceptance criteria, FR-030/FR-030a) and FeatureFlag (T099 acceptance criteria, Constitution
+ * Principle VI) — every later module-selection, checklist-gating, trial/auto-restriction, or
+ * module-completeness check must call this instead of querying those tables directly.
  */
 @Injectable()
 export class EntitlementsService {
@@ -32,10 +40,11 @@ export class EntitlementsService {
     const settingRepo = controlDataSource.getRepository(PlanSetting);
     const defaultRepo = controlDataSource.getRepository(EntitlementDefault);
 
-    const [entitlements, setting, defaults] = await Promise.all([
+    const [entitlements, setting, defaults, featureFlags] = await Promise.all([
       entitlementRepo.find({ where: { planId } }),
       settingRepo.findOne({ where: { planId } }),
       defaultRepo.findOneByOrFail({ id: 1 }),
+      this.getFeatureFlags(),
     ]);
 
     return {
@@ -47,7 +56,31 @@ export class EntitlementsService {
       })),
       trialWindowDays: setting?.trialWindowDays ?? defaults.defaultTrialWindowDays,
       autoRestrictUnpaid: setting?.autoRestrictUnpaid ?? defaults.defaultAutoRestrictUnpaid,
+      featureFlags,
     };
+  }
+
+  /**
+   * Feature flags gate module *completeness* platform-wide (Constitution Principle VI) and are
+   * independent of any plan's entitlements (data-model.md "FeatureFlag" Validation note) — a feature
+   * absent from `feature_flag` is not yet gated at all, so it is omitted rather than defaulted to
+   * enabled.
+   */
+  async getFeatureFlags(): Promise<EntitlementSetFeatureFlag[]> {
+    const flagRepo = controlDataSource.getRepository(FeatureFlag);
+    const flags = await flagRepo.find();
+    return flags.map((flag) => ({ key: flag.featureKey, enabled: flag.enabled }));
+  }
+
+  /**
+   * Used by FeatureFlagGuard (T100) to decide whether a not-yet-complete module's customer-facing
+   * surface is reachable. A feature with no `feature_flag` row is treated as not gated (unaffected),
+   * matching `getFeatureFlags`'s omission behavior.
+   */
+  async isFeatureFlagEnabled(featureKey: string): Promise<boolean> {
+    const flagRepo = controlDataSource.getRepository(FeatureFlag);
+    const flag = await flagRepo.findOne({ where: { featureKey } });
+    return flag?.enabled ?? true;
   }
 
   /**
