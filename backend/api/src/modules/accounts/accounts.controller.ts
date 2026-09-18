@@ -4,6 +4,7 @@ import { RequireFeatureFlag } from '../../common/decorators/feature-flag.decorat
 import { AccountsService, SignupResult, VerifyEmailResult } from './accounts.service';
 import { SignupRequestDto } from './dto/signup.request.dto';
 import { VerifyEmailRequestDto } from './dto/verify-email.request.dto';
+import { ResendVerificationRequestDto } from './dto/resend-verification.request.dto';
 
 /**
  * The accounts surface of the onboarding shell (T032+). `module.accounts` is the
@@ -42,5 +43,20 @@ export class AccountsController {
   @HttpCode(HttpStatus.OK)
   verifyEmail(@Body() dto: VerifyEmailRequestDto): Promise<VerifyEmailResult> {
     return this.accounts.verifyEmail(dto.token);
+  }
+
+  /**
+   * T034 — request a fresh verification link (FR-021, Acceptance Scenario 1.5). Public
+   * like verify-email: an unverified account cannot authenticate, which is exactly the
+   * caller this endpoint exists for. ALWAYS 202 with an empty body whether the email is
+   * unknown, unverified, or verified — zero account-existence information (contracts/
+   * openapi.yaml). A malformed email is the contract-wide 422, stopped by the global
+   * ValidationPipe before service code.
+   */
+  @Public()
+  @Post('resend-verification')
+  @HttpCode(HttpStatus.ACCEPTED)
+  resendVerification(@Body() dto: ResendVerificationRequestDto): Promise<void> {
+    return this.accounts.resendVerification(dto.email);
   }
 }

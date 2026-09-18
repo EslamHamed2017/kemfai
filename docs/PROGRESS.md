@@ -2292,6 +2292,54 @@ Token-issuance/enqueue failures during signup never fail the 201 (resend-verific
 
 T033 and T029 marked `[X]` in tasks.md only after all of the above were green.
 
+## T034 — POST /accounts/resend-verification implementation (2026-09-19, 2nd attempt — fixes the 02:18 +04 rejection)
+
+Executed by GLM (T034 Primary). The 1st attempt was rejected for three findings, all addressed:
+
+**Finding 1 — integration gate not reproducible (11/11 failed on "PostgreSQL authentication failed").**
+Root cause: `src/database/data-source.ts` defaulted to user `kemfai`, a role that has NEVER existed on the
+dev `kemfai-db` (its superuser is `odoo`/`kemfai_dev_pg` per infra/docker/docker-compose.yml). Any env-less
+host-side run of `npm run test:integration` therefore failed auth for every suite that touches Postgres.
+Fixed by correcting the dev-only defaults to the actual credentials (`odoo`/`kemfai_dev_pg`@localhost:5432/
+kemfai_control — the same convention this log has documented since the T008 era). Real deployments are
+unaffected: the docker-compose `api` service (and CI) set `CONTROL_DB_*` explicitly. The new suite also has a
+fail-fast preflight that names the exact unreachable host:port/user/db plus the env convention instead of 13
+opaque per-test auth errors.
+
+**Finding 2 — broken failure cleanup masked setup failures with a TypeError.**
+The new suite's afterAll is now crash-proof: every teardown step is guarded (`app`/queue handles may be
+undefined after a failed beforeAll; queue ops wrapped; DB cleanup only when initialized). Verified
+deliberately: pointed at a dead port (CONTROL_DB_PORT=5433), the suite fails 13/13 with the clear preflight
+message and **zero** secondary TypeErrors.
+
+**Finding 3 — premature `[X]`.**
+T034 marked `[X]` only after everything below was green, in this same commit.
+
+**Implementation** (same shape the reviewer already accepted as correct):
+- `dto/resend-verification.request.dto.ts` — `@IsEmail` body; malformed email = contract-wide 422 at the
+  global ValidationPipe (space-padded input is rejected there too, identical to signup).
+- `AccountsService.resendVerification(email)` — normalizes (trim+lowercase, signup parity), looks up the
+  Account, and for unknown OR already-verified emails returns silently (202, zero side effects — the
+  no-leak contract); for a known unverified account re-uses `enqueueVerificationEmail`, whose new
+  globally-higher `issuance_sequence` IS the prior-link invalidation (FR-021 latest-wins). No audit event
+  (events.md defines none for resend), no Keycloak/tenant-provision touch; token-issuance/enqueue failures
+  stay non-fatal (recoverable by retrying resend).
+- `AccountsController` — `@Public()` `POST /accounts/resend-verification`, `@HttpCode(202)`, empty body.
+
+**Verification performed (NO CONTROL_DB_* env vars — proving finding 1's fix; kemfai-db via
+127.0.0.1:5432 proxy, kemfai-redis @ 127.0.0.1:6379):**
+- `npm run test:integration -- --runInBand test/integration/accounts-resend-verification.integration-spec.ts`
+  → 13/13 (Scenario 1.5 happy path incl. old link 410-superseded + new link 200; 3-resend chain keeps only
+  the last link alive; no new audit events; unknown/verified zero side effects; byte-identical 202 responses
+  across unknown/unverified/verified; mixed-case normalization; five malformed-body 422s; feature-flag 404).
+- Full integration gate: `npm run test:integration -- --runInBand` → **22/22 suites, 174/174 tests, run
+  THREE consecutive times** with no cleanup between runs; post-run DB/Redis verified empty of this suite's
+  rows/jobs (account rows with the t034- prefix = 0; email/tenant queues contain only structural keys).
+- `npm test -- --runInBand` → 24/24 suites, 208/208 tests (7 new T034 unit tests).
+- `npm run lint` → clean (after eslint --fix). `npm run build` → clean.
+
+T034 marked `[X]` in tasks.md.
+
 ## Rejected implement tick - 2026-09-19 02:18 +04
 
 Codex rejected the last implement attempt and working tree was reverted. Reviewer verdict:

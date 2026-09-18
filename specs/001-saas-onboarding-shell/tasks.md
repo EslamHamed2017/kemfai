@@ -416,7 +416,7 @@ tenant/workspace exists until the verification link is used, and the account can
     (Edge Cases).
   - **Roles**: Primary: GLM · Backup: Claude · Reviewer: Codex
 
-- [ ] T034 [US1] Implement `POST /accounts/resend-verification` (invalidates the prior link, issues a new one,
+- [X] T034 [US1] Implement `POST /accounts/resend-verification` (invalidates the prior link, issues a new one,
   no account-existence leak) in `backend/api/src/modules/accounts/accounts.controller.ts`
   - **Dependencies**: T032
   - **Acceptance Criteria**: Matches Acceptance Scenario 1.5; always returns 202 regardless of whether the

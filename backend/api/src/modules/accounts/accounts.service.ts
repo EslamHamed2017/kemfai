@@ -313,6 +313,32 @@ export class AccountsService {
     return { accountId: account.id };
   }
 
+  /**
+   * T034 — `POST /accounts/resend-verification` (FR-021, Acceptance Scenario 1.5).
+   *
+   * Deliberately silent: ALWAYS resolves (202 with an empty body at the HTTP layer)
+   * whether the email is unknown, unverified, or already verified — the response is
+   * the no-account-existence-leak contract itself, so there is no error path keyed to
+   * account state and no observable difference (no extra writes, no jobs) between the
+   * three outcomes beyond the one documented side effect: for a KNOWN UNVERIFIED
+   * account, a fresh link is issued via `enqueueVerificationEmail`, whose new
+   * globally-higher `issuance_sequence` is precisely what invalidates every earlier
+   * link (latest-wins consumption, FR-021). A verified account gets nothing — its
+   * links are stale by definition (one-way state) and re-issuing one would resurrect
+   * a dead flow. Token-registry/enqueue failures stay non-fatal for the same reason
+   * as in signup: the customer simply retries resend.
+   */
+  async resendVerification(email: string): Promise<void> {
+    const normalized = email.trim().toLowerCase();
+    const account = await controlDataSource.getRepository(Account).findOne({
+      where: { email: normalized },
+    });
+    if (!account || account.emailVerified) {
+      return;
+    }
+    await this.enqueueVerificationEmail(account.id, account.email);
+  }
+
   /** Compensation: undo the flag flip and the token consumption. Best effort, logged. */
   private async bestEffortCompensateVerification(
     accountId: string,

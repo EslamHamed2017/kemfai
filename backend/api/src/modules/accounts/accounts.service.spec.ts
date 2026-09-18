@@ -536,3 +536,127 @@ describe('AccountsService.verifyEmail (T033, unit)', () => {
     expect(tenantQueueAdd).not.toHaveBeenCalled();
   });
 });
+
+describe('AccountsService.resendVerification (T034, unit)', () => {
+  let accountRepo: { findOne: jest.Mock; update: jest.Mock };
+  let tokenInsert: jest.Mock;
+  let emailQueueAdd: jest.Mock;
+  let markEmailVerified: jest.Mock;
+  let existingAccount: Account | null;
+
+  function makeAccount(overrides: Partial<Account> = {}): Account {
+    return {
+      id: 'existing-account-id',
+      keycloakUserId: 'existing-kc-user-id',
+      email: 'owner@example.com',
+      emailVerified: false,
+      mfaEnrolled: false,
+      selectedPlanId: PLAN_ID,
+      selectedBillingCycle: BillingCycle.MONTHLY,
+      preferredLocale: null,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      ...overrides,
+    } as Account;
+  }
+
+  beforeEach(() => {
+    existingAccount = makeAccount();
+    tokenInsert = jest.fn().mockResolvedValue(undefined);
+    emailQueueAdd = jest.fn().mockResolvedValue(undefined);
+    markEmailVerified = jest.fn().mockResolvedValue(undefined);
+    accountRepo = {
+      findOne: jest.fn().mockImplementation(async () => existingAccount),
+      update: jest.fn().mockResolvedValue(undefined),
+    };
+    const planRepo = { findOne: jest.fn() };
+
+    jest.spyOn(controlDataSource, 'getRepository').mockImplementation((target: any) => {
+      if (target === Plan) {
+        return planRepo as any;
+      }
+      if (target === Account) {
+        return accountRepo as any;
+      }
+      if (target === EmailVerificationToken) {
+        return { insert: tokenInsert, findOne: jest.fn() } as any;
+      }
+      throw new Error(`Unexpected repository requested for ${String(target)}`);
+    });
+  });
+
+  afterEach(() => {
+    jest.restoreAllMocks();
+  });
+
+  function makeService(): AccountsService {
+    const audit = {
+      recordAccountCreated: jest.fn(),
+      recordAccountEmailVerified: jest.fn(),
+    } as unknown as AuditService;
+    const emailQueue = { add: emailQueueAdd } as unknown as Queue;
+    const tenantQueue = { add: jest.fn() } as unknown as Queue;
+    const provisioner = { createUser: jest.fn(), deleteUser: jest.fn(), markEmailVerified };
+    return new AccountsService(audit, emailQueue, tenantQueue, provisioner as never);
+  }
+
+  it('known unverified account: issues a fresh link (new token row + email job) and resolves silently', async () => {
+    await makeService().resendVerification('Owner@Example.com');
+
+    // Lookup is normalized exactly like signup's stored form.
+    expect(accountRepo.findOne).toHaveBeenCalledWith({ where: { email: 'owner@example.com' } });
+    expect(tokenInsert).toHaveBeenCalledTimes(1);
+    expect(tokenInsert.mock.calls[0][0].accountId).toBe('existing-account-id');
+    expect(tokenInsert.mock.calls[0][0].tokenHash).toMatch(/^[0-9a-f]{64}$/); // hash, never the raw token
+
+    expect(emailQueueAdd).toHaveBeenCalledTimes(1);
+    const [jobName, payload, options] = emailQueueAdd.mock.calls[0] as [
+      string,
+      { accountId: string; email: string; tokenVersion: string; token: string },
+      { jobId: string },
+    ];
+    expect(jobName).toBe('send');
+    expect(payload.accountId).toBe('existing-account-id');
+    expect(payload.email).toBe('owner@example.com'); // the STORED email, not the raw input
+    expect(options.jobId).toBe(`${payload.accountId}.${payload.tokenVersion}`);
+  });
+
+  it('unknown email: resolves with ZERO side effects — no token row, no email job (no existence leak)', async () => {
+    existingAccount = null;
+    await makeService().resendVerification('stranger@example.com');
+    expect(tokenInsert).not.toHaveBeenCalled();
+    expect(emailQueueAdd).not.toHaveBeenCalled();
+    expect(markEmailVerified).not.toHaveBeenCalled();
+  });
+
+  it('already-verified account: resolves with ZERO side effects — a dead flow is never resurrected', async () => {
+    existingAccount = makeAccount({ emailVerified: true });
+    await makeService().resendVerification('owner@example.com');
+    expect(tokenInsert).not.toHaveBeenCalled();
+    expect(emailQueueAdd).not.toHaveBeenCalled();
+  });
+
+  it('email input is trimmed + lowercased before the lookup (parity with signup normalization)', async () => {
+    await makeService().resendVerification('  OWNER@Example.COM  ');
+    expect(accountRepo.findOne).toHaveBeenCalledWith({ where: { email: 'owner@example.com' } });
+  });
+
+  it('token-issuance failure: still resolves (non-fatal, recoverable by retrying resend)', async () => {
+    tokenInsert.mockRejectedValue(new Error('token insert failed'));
+    await expect(makeService().resendVerification('owner@example.com')).resolves.toBeUndefined();
+    expect(emailQueueAdd).not.toHaveBeenCalled(); // no consumable link exists — no email
+  });
+
+  it('email enqueue failure: still resolves (events.md: never blocks the response)', async () => {
+    emailQueueAdd.mockRejectedValue(new Error('redis down'));
+    await expect(makeService().resendVerification('owner@example.com')).resolves.toBeUndefined();
+    expect(tokenInsert).toHaveBeenCalledTimes(1); // the fresh link exists regardless
+  });
+
+  it('never touches Keycloak, audit, or tenant provisioning — resend is link-issuance only', async () => {
+    const service = makeService();
+    await service.resendVerification('owner@example.com');
+    expect(markEmailVerified).not.toHaveBeenCalled();
+    expect(accountRepo.update).not.toHaveBeenCalled();
+  });
+});

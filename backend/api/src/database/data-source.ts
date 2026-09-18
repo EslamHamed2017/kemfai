@@ -14,7 +14,13 @@ export const controlDataSourceOptions: DataSourceOptions = {
   type: 'postgres',
   host: process.env.CONTROL_DB_HOST ?? 'localhost',
   port: Number(process.env.CONTROL_DB_PORT ?? 5432),
-  username: process.env.CONTROL_DB_USER ?? 'kemfai',
+  // Defaults MUST be credentials that actually exist on the dev kemfai-db (T034 review
+  // finding, 2026-09-19 02:18): the superuser is `odoo`/`kemfai_dev_pg` per
+  // infra/docker/docker-compose.yml — a `kemfai` role has never existed, so the old
+  // default made every env-less host-side run (npm run test:integration) fail with
+  // "password authentication failed for user kemfai". Dev-only defaults; every real
+  // deployment (docker-compose `api` service, CI, prod) sets CONTROL_DB_* explicitly.
+  username: process.env.CONTROL_DB_USER ?? 'odoo',
   password: process.env.CONTROL_DB_PASSWORD ?? 'kemfai_dev_pg',
   database: process.env.CONTROL_DB_NAME ?? 'kemfai_control',
   entities: [join(__dirname, '..', 'modules', '**', 'entities', '*.entity.{ts,js}')],
