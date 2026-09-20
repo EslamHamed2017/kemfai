@@ -11,7 +11,7 @@ cd "$REPO"
 DIFF_SUMMARY="$(git status --short; echo '----- unstaged diff-stat -----'; git --no-pager diff --stat; echo '----- staged diff-stat -----'; git --no-pager diff --cached --stat; echo; echo '----- unstaged diff (first 400 lines) -----'; git --no-pager diff | sed -n '1,400p'; echo; echo '----- staged diff (first 400 lines) -----'; git --no-pager diff --cached | sed -n '1,400p')"
 
 PROMPT=$(cat <<'END_PROMPT'
-You are the independent REVIEWER for KEMFAI (no model approves its own work). Claude just implemented one task from specs/001-saas-onboarding-shell/tasks.md and may have marked it done.
+You are the independent REVIEWER for KEMFAI (no model approves its own work). An independent executor just implemented one task from specs/001-saas-onboarding-shell/tasks.md and may have marked it done.
 
 Binding rules: .specify/memory/constitution.md and AGENTS.md. Constraints: Odoo 18 Community with kemfai_* modules and NO core edits; database-per-tenant; customer never sees native Odoo UI; EN+AR with full RTL; deterministic accounting and assistive-only AI; entitlement/trial/feature-flag values admin-configurable never hard-coded; feature flags gate incomplete modules; mandatory quality gates.
 

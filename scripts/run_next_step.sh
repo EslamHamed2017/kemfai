@@ -197,6 +197,12 @@ if ! git diff --quiet || ! git diff --cached --quiet || [ -n "$(git ls-files --o
   fi
 fi
 
+# --- an implement tick is successful only when a reviewed commit exists ---
+if [ "$next" = "implement" ] && [ -z "$CHANGED" ]; then
+  echo "STATUS: FAILED (no reviewed commit produced)" | tee -a "$LOG"
+  exit 4
+fi
+
 # --- final brief printed to stdout (delivered by cron) ---
 TAIL=$(echo "$OUT" | tail -8)
 {
