@@ -30,6 +30,11 @@ if ! git diff --quiet || ! git diff --cached --quiet; then
   exit 0
 fi
 
+# Snapshot the clean reviewed baseline. Executors are never allowed to make
+# durable commits themselves; any such commit is converted back to a working-tree
+# diff before independent review.
+BASE_HEAD=$(git rev-parse HEAD)
+
 # --- pick command per stage ---
 case "$next" in
   tasks)
@@ -69,7 +74,7 @@ provider_failed_in_output() {
 
 rollback_partial_executor_work() {
   if ! git diff --quiet || ! git diff --cached --quiet || [ -n "$(git ls-files --others --exclude-standard)" ]; then
-    git reset --hard HEAD >/dev/null 2>&1
+    git reset --hard "$BASE_HEAD" >/dev/null 2>&1
     git clean -fd >/dev/null 2>&1
   fi
 }
@@ -121,6 +126,13 @@ done
 
 if [ -z "$EXECUTOR" ]; then
   echo "[$TS] all executors failed this tick" | tee -a "$LOG"
+fi
+
+# Some coding agents obey repository-level instructions to commit. Undo only the
+# commit boundary (keep every file change) so independent review still happens.
+if [ -n "$EXECUTOR" ] && [ "$(git rev-parse HEAD)" != "$BASE_HEAD" ]; then
+  echo "[$TS] executor created commit(s); converting them back to uncommitted changes for review" | tee -a "$LOG"
+  git reset --mixed "$BASE_HEAD" >/dev/null
 fi
 
 echo "$OUT" | tee -a "$LOG" >/dev/null
