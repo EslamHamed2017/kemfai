@@ -2396,3 +2396,60 @@ Verification:
 
 REVIEW VERDICT: REJECT
 ```
+
+## Rejected implement tick - 2026-09-20 19:55 +04
+
+Codex rejected the last implement attempt and working tree was reverted. Reviewer verdict:
+
+```
+backend/api/src/modules/accounts/accounts.controller.ts:70:    return this.accounts.mfaEnroll(req.auth.keycloakUserId);
+backend/api/src/modules/accounts/accounts.controller.ts:78:  mfaConfirm(@Req() req: AuthenticatedRequest): Promise<void> {
+backend/api/src/modules/accounts/accounts.controller.ts:79:    return this.accounts.mfaConfirm(req.auth.keycloakUserId);
+backend/api/src/modules/accounts/entities/account.entity.ts:39:  mfaEnrolled: boolean;
+backend/api/src/modules/accounts/accounts.service.spec.ts:132:      mfaEnrolled: false,
+backend/api/src/modules/accounts/accounts.service.spec.ts:151:        mfaEnrolled: false,
+backend/api/src/modules/accounts/accounts.service.spec.ts:353:      mfaEnrolled: false,
+backend/api/src/modules/accounts/accounts.service.spec.ts:553:      mfaEnrolled: false,
+
+codex
+Implemented IDs: T027 and T035. Both were marked complete prematurely.
+
+Test evidence:
+
+- `npm run test:contract -- --runInBand`: 8/8 passed.
+- `npm test -- --runInBand`: 208/208 passed.
+- `npm run build`: passed.
+- `npm run lint`: passed.
+- No tests exercise the real MFA service or Keycloak integration methods.
+
+No Odoo core edits, hard-coded entitlement/trial values, native Odoo UI leakage, accounting changes, or obvious cross-tenant database leak were introduced. The accounts feature-flag gate remains active.
+
+1. T035 violates its verified-account requirement: both MFA methods accept any authenticated account without checking `account.emailVerified`.
+2. T035 does not reliably emit `account.mfa_enrolled`. It updates `mfaEnrolled` first, invokes the audit method through `any`, supplies no required `tenantId`, and swallows audit failures. A retry then skips auditing permanently because the flag is already true.
+3. T035 has no genuine behavioral tests. The new contract tests mock `mfaEnroll` and `mfaConfirm`; neither service behavior, verification enforcement, audit emission, failure handling, nor the real Keycloak calls is exercised.
+4. T027 is not a genuine OpenAPI contract test. It only asserts HTTP statuses against a mocked service and never loads or validates against `contracts/openapi.yaml` or declared response schemas.
+5. `tasks.md` marks both T027 and T035 complete despite these unmet acceptance criteria.
+
+REVIEW VERDICT: REJECT
+tokens used
+46,528
+Implemented IDs: T027 and T035. Both were marked complete prematurely.
+
+Test evidence:
+
+- `npm run test:contract -- --runInBand`: 8/8 passed.
+- `npm test -- --runInBand`: 208/208 passed.
+- `npm run build`: passed.
+- `npm run lint`: passed.
+- No tests exercise the real MFA service or Keycloak integration methods.
+
+No Odoo core edits, hard-coded entitlement/trial values, native Odoo UI leakage, accounting changes, or obvious cross-tenant database leak were introduced. The accounts feature-flag gate remains active.
+
+1. T035 violates its verified-account requirement: both MFA methods accept any authenticated account without checking `account.emailVerified`.
+2. T035 does not reliably emit `account.mfa_enrolled`. It updates `mfaEnrolled` first, invokes the audit method through `any`, supplies no required `tenantId`, and swallows audit failures. A retry then skips auditing permanently because the flag is already true.
+3. T035 has no genuine behavioral tests. The new contract tests mock `mfaEnroll` and `mfaConfirm`; neither service behavior, verification enforcement, audit emission, failure handling, nor the real Keycloak calls is exercised.
+4. T027 is not a genuine OpenAPI contract test. It only asserts HTTP statuses against a mocked service and never loads or validates against `contracts/openapi.yaml` or declared response schemas.
+5. `tasks.md` marks both T027 and T035 complete despite these unmet acceptance criteria.
+
+REVIEW VERDICT: REJECT
+```
