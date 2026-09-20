@@ -2624,3 +2624,60 @@ No Odoo core edits, hard-coded entitlement/trial values, accounting changes, or 
 
 REVIEW VERDICT: REJECT
 ```
+
+## Rejected implement tick - 2026-09-20 22:11 +04
+
+Codex rejected the last implement attempt and working tree was reverted. Reviewer verdict:
+
+```
+PASS src/common/guards/role.guard.spec.ts
+PASS src/common/guards/bearer-auth.guard.spec.ts
+PASS src/integrations/provisioning/trial-expiry-sweep.processor.spec.ts
+PASS src/common/guards/trial-window.guard.spec.ts
+PASS src/common/queues/queue-scheduling.service.spec.ts
+PASS src/modules/accounts/dto/signup.request.dto.spec.ts
+PASS src/common/guards/feature-flag.guard.spec.ts
+PASS src/modules/audit/audit.service.spec.ts
+PASS src/common/interceptors/audit-event.interceptor.spec.ts
+PASS src/modules/plans/plans.service.spec.ts
+PASS src/integrations/minio/minio-client.spec.ts
+PASS src/app.controller.spec.ts
+PASS src/modules/entitlements/entitlements.service.spec.ts
+PASS src/integrations/odoo-rpc/odoo-rpc.service.spec.ts
+PASS src/integrations/minio/minio-storage.service.spec.ts
+PASS src/integrations/minio/tenant-bucket-naming.spec.ts
+PASS src/integrations/odoo-rpc/odoo-rpc-client.spec.ts
+PASS src/common/queues/queue-names.spec.ts
+
+Test Suites: 24 passed, 24 total
+Tests:       208 passed, 208 total
+Snapshots:   0 total
+Time:        8.396 s, estimated 11 s
+Ran all test suites.
+
+codex
+Implemented IDs: T027 and T035. Both were marked complete prematurely.
+
+Tests: `npm test -- --runInBand` passed 208/208; contract suite passed 7/7; build passed. However, lint failed with 22 errors.
+
+1. T035 is insecure: `/accounts/mfa/confirm` never verifies TOTP activation with Keycloak. Any authenticated user can set `mfa_enrolled=true` and emit `account.mfa_enrolled`.
+2. T035 does not enforce the required verified-account condition; an authenticated but unverified account can call both MFA endpoints.
+3. The new MFA controller lacks the accounts feature-flag gate, violating the mandatory incomplete-module gating requirement.
+4. T027 is not a genuine OpenAPI contract test: it never loads `contracts/openapi.yaml` or validates responses against declared schemas; it only asserts status codes and one property.
+5. The quality gate is red: `npm run lint` reports 22 errors in the submitted files.
+
+REVIEW VERDICT: REJECT
+tokens used
+38,977
+Implemented IDs: T027 and T035. Both were marked complete prematurely.
+
+Tests: `npm test -- --runInBand` passed 208/208; contract suite passed 7/7; build passed. However, lint failed with 22 errors.
+
+1. T035 is insecure: `/accounts/mfa/confirm` never verifies TOTP activation with Keycloak. Any authenticated user can set `mfa_enrolled=true` and emit `account.mfa_enrolled`.
+2. T035 does not enforce the required verified-account condition; an authenticated but unverified account can call both MFA endpoints.
+3. The new MFA controller lacks the accounts feature-flag gate, violating the mandatory incomplete-module gating requirement.
+4. T027 is not a genuine OpenAPI contract test: it never loads `contracts/openapi.yaml` or validates responses against declared schemas; it only asserts status codes and one property.
+5. The quality gate is red: `npm run lint` reports 22 errors in the submitted files.
+
+REVIEW VERDICT: REJECT
+```
