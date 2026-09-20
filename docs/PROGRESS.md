@@ -2738,3 +2738,60 @@ However, T027’s acceptance criteria are not satisfied:
 
 REVIEW VERDICT: REJECT
 ```
+
+## Rejected implement tick - 2026-09-21 00:11 +04
+
+Codex rejected the last implement attempt and working tree was reverted. Reviewer verdict:
+
+```
+PASS src/integrations/minio/minio-client.spec.ts
+PASS src/modules/plans/plans.service.spec.ts
+PASS src/app.controller.spec.ts
+PASS src/integrations/odoo-rpc/odoo-rpc.service.spec.ts
+PASS src/integrations/minio/minio-storage.service.spec.ts
+PASS src/integrations/odoo-rpc/odoo-rpc-client.spec.ts
+PASS src/common/queues/queue-names.spec.ts
+PASS src/integrations/minio/tenant-bucket-naming.spec.ts
+
+Test Suites: 24 passed, 24 total
+Tests:       208 passed, 208 total
+Snapshots:   0 total
+Time:        11.055 s, estimated 17 s
+Ran all test suites.
+
+codex
+Implemented task: **T027**.
+
+Test evidence:
+
+- `npm run test:contract -- --runInBand`: 9/9 passed.
+- `npm test -- --runInBand`: 208/208 passed, but the default configuration does **not** include the contract test.
+- `npm run build`: passed.
+- No Odoo core edits, accounting changes, hard-coded entitlement/trial values, or native Odoo UI leakage found.
+
+The T027 checkbox was marked done prematurely.
+
+1. The test is not genuinely “against `contracts/openapi.yaml`”: it never loads the contract or validates responses against it. Status codes are duplicated as hard-coded assertions, so contract drift would remain green.
+2. The change improperly implements part of pending T035 with fake production endpoints. Both MFA handlers return `200 {}` without performing Keycloak enrollment/confirmation, checking verified-account state, or emitting `account.mfa_enrolled`.
+3. `MfaController` bypasses the mandatory `module.accounts` feature-flag gate because it is a separate controller without `@RequireFeatureFlag`. This exposes an incomplete customer-facing module and violates the constitution.
+
+REVIEW VERDICT: REJECT
+tokens used
+31,884
+Implemented task: **T027**.
+
+Test evidence:
+
+- `npm run test:contract -- --runInBand`: 9/9 passed.
+- `npm test -- --runInBand`: 208/208 passed, but the default configuration does **not** include the contract test.
+- `npm run build`: passed.
+- No Odoo core edits, accounting changes, hard-coded entitlement/trial values, or native Odoo UI leakage found.
+
+The T027 checkbox was marked done prematurely.
+
+1. The test is not genuinely “against `contracts/openapi.yaml`”: it never loads the contract or validates responses against it. Status codes are duplicated as hard-coded assertions, so contract drift would remain green.
+2. The change improperly implements part of pending T035 with fake production endpoints. Both MFA handlers return `200 {}` without performing Keycloak enrollment/confirmation, checking verified-account state, or emitting `account.mfa_enrolled`.
+3. `MfaController` bypasses the mandatory `module.accounts` feature-flag gate because it is a separate controller without `@RequireFeatureFlag`. This exposes an incomplete customer-facing module and violates the constitution.
+
+REVIEW VERDICT: REJECT
+```
