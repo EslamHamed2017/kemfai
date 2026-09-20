@@ -35,7 +35,15 @@ FULL_PROMPT="${PROMPT}
 
 ${DIFF_SUMMARY}"
 
-OUT=$(codex exec --dangerously-bypass-approvals-and-sandbox "$FULL_PROMPT" 2>&1 | sed -n '/^codex$/,$p') || true
+set +e
+RAW=$(timeout --signal=TERM --kill-after=30s "${KEMFAI_REVIEW_TIMEOUT:-1200}s" codex exec --dangerously-bypass-approvals-and-sandbox "$FULL_PROMPT" 2>&1)
+CODEX_EC=$?
+set -e
+OUT=$(printf '%s\n' "$RAW" | sed -n '/^codex$/,$p')
+if [ $CODEX_EC -ne 0 ]; then
+  printf '%s\n' "$RAW"
+  exit 3
+fi
 echo "$OUT"
 
 VERDICT=$(echo "$OUT" | grep -oE 'REVIEW VERDICT: (ACCEPT|REJECT)' | tail -1)

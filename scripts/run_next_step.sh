@@ -52,31 +52,79 @@ if [ -n "${KEMFAI_FIX_NOTE:-}" ]; then
   PROMPT="IMPORTANT: The previous attempt at this task was REJECTED by independent review. Fix the issues below and complete the SAME task properly (do not skip to another task). Reviewer verdict to address:\n\n${KEMFAI_FIX_NOTE}\n\n---\n${PROMPT}"
 fi
 
-# --- run executor: Claude first, GLM (opencode) fallback on usage/session limits ---
-set +e
-OUT=$(claude -p "$PROMPT" \
-  --permission-mode acceptEdits \
-  --allowedTools 'Read,Write,Edit,Glob,Grep,Bash' \
-  --output-format text 2>&1)
-EC=$?
-if [ $EC -ne 0 ] && echo "$OUT" | grep -qiE "session limit|usage limit|rate limit|quota|429|overloaded"; then
-  echo "[$TS] Claude unavailable (usage/session limit) — trying GLM, then Gemini via opencode" | tee -a "$LOG"
+# --- run executor with bounded time + real provider fallback ---
+# OpenCode may return exit 0 even when the provider reports a quota/stream error,
+# so both the exit code AND output text are checked. Every failed executor is
+# rolled back before the next provider starts, preventing mixed partial edits.
+EXECUTOR_TIMEOUT=${KEMFAI_EXECUTOR_TIMEOUT:-1800}
+EXECUTOR_ORDER=${KEMFAI_EXECUTOR_ORDER:-"gemini glm claude"}
+EXECUTOR=""
+OUT=""
+EC=1
+
+provider_failed_in_output() {
+  printf '%s' "$1" | grep -qiE \
+    "you.ve hit your .*limit|weekly/monthly limit exhausted|session limit .*resets|ai_apicallerror|oauth session expired|failed to authenticate|unexpected server error|selected model is at capacity|status.?429|stream error"
+}
+
+rollback_partial_executor_work() {
+  if ! git diff --quiet || ! git diff --cached --quiet || [ -n "$(git ls-files --others --exclude-standard)" ]; then
+    git reset --hard HEAD >/dev/null 2>&1
+    git clean -fd >/dev/null 2>&1
+  fi
+}
+
+for candidate in $EXECUTOR_ORDER; do
+  echo "[$TS] trying executor: $candidate (timeout ${EXECUTOR_TIMEOUT}s)" | tee -a "$LOG"
   set +e
-  OUT=$(opencode run --auto -m zai-coding/glm-5.2 "$PROMPT" 2>&1 | grep -v "level=")
-  EC=$?
-  if [ $EC -ne 0 ]; then
-    echo "[$TS] GLM fallback failed too (exit $EC) — trying Gemini (antigravity/gemini-pro-agent)" | tee -a "$LOG"
-    OUT=$(opencode run --auto -m omniroute/antigravity/gemini-pro-agent "$PROMPT" 2>&1 | grep -v "level=")
-    EC=$?
-  fi
+  case "$candidate" in
+    gemini)
+      OUT=$(timeout --signal=TERM --kill-after=30s "${EXECUTOR_TIMEOUT}s" \
+        opencode run --auto -m omniroute/antigravity/gemini-pro-agent "$PROMPT" 2>&1)
+      EC=$?
+      ;;
+    glm)
+      OUT=$(timeout --signal=TERM --kill-after=30s "${EXECUTOR_TIMEOUT}s" \
+        opencode run --auto -m zai-coding/glm-5.2 "$PROMPT" 2>&1)
+      EC=$?
+      ;;
+    claude)
+      OUT=$(timeout --signal=TERM --kill-after=30s "${EXECUTOR_TIMEOUT}s" \
+        claude -p "$PROMPT" \
+          --permission-mode acceptEdits \
+          --allowedTools 'Read,Write,Edit,Glob,Grep,Bash' \
+          --output-format text 2>&1)
+      EC=$?
+      ;;
+    *)
+      OUT="unknown executor: $candidate"
+      EC=64
+      ;;
+  esac
   set -e
-  if [ $EC -ne 0 ]; then
-    echo "[$TS] all executors failed this tick" | tee -a "$LOG"
+
+  if [ $EC -eq 0 ] && ! provider_failed_in_output "$OUT"; then
+    EXECUTOR="$candidate"
+    export KEMFAI_EXECUTOR="$EXECUTOR"
+    echo "[$TS] executor succeeded: $EXECUTOR" | tee -a "$LOG"
+    break
   fi
+
+  if [ $EC -eq 124 ] || [ $EC -eq 137 ]; then
+    echo "[$TS] executor $candidate timed out after ${EXECUTOR_TIMEOUT}s" | tee -a "$LOG"
+  else
+    echo "[$TS] executor $candidate unavailable/failed (exit $EC)" | tee -a "$LOG"
+  fi
+  EC=75
+  rollback_partial_executor_work
+done
+
+if [ -z "$EXECUTOR" ]; then
+  echo "[$TS] all executors failed this tick" | tee -a "$LOG"
 fi
-set -e
+
 echo "$OUT" | tee -a "$LOG" >/dev/null
-echo "[$TS] claude exit: $EC" | tee -a "$LOG"
+echo "[$TS] executor: ${EXECUTOR:-none}; exit: $EC" | tee -a "$LOG"
 
 # --- safety: never let a stage repeat forever silently ---
 if [ "$next" = "analyze" ] && [ ! -f "$FEATURE_DIR/analysis.md" ]; then
@@ -130,6 +178,11 @@ if [ "${REVIEW:-0}" = "1" ] && [ $EC -eq 0 ]; then
         commit -m "docs: record rejected implement tick ($TS)" >/dev/null 2>&1 || true
       echo "[$TS] Exiting after rejection" | tee -a "$LOG"
       exit 0
+    elif [ $REVIEW_EXIT -ne 0 ]; then
+      echo "[$TS] independent review unavailable (exit $REVIEW_EXIT) — reverting; no unreviewed commit allowed" | tee -a "$LOG"
+      git reset --hard HEAD >/dev/null 2>&1
+      git clean -fd >/dev/null 2>&1
+      exit $REVIEW_EXIT
     fi
   fi
 fi
@@ -156,7 +209,7 @@ TAIL=$(echo "$OUT" | tail -8)
     echo "Commit: (no changes)"
   fi
   echo "---"
-  echo "Claude output (tail):"
+  echo "Executor output (tail):"
   echo "$TAIL"
   echo "---"
   echo "Log: $LOG"

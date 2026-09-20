@@ -7,8 +7,8 @@
 #   after ATTEMPTS tries, or on skip/runner failure.
 set -uo pipefail
 
-TASKS=${TASKS:-2}
-ATTEMPTS=${ATTEMPTS:-3}
+TASKS=${TASKS:-1}
+ATTEMPTS=${ATTEMPTS:-2}
 LOCK=/tmp/kemfai_loop.lock
 REPO=/home/hermesops/kemfai
 KEMFAI_FIX_NOTE=""
