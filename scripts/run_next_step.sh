@@ -143,7 +143,7 @@ fi
 
 # --- commit only reviewed work: on failed implement, revert partial changes ---
 if [ "$next" = "implement" ] && [ $EC -ne 0 ]; then
-  if ! git diff --quiet || [ -n "$(git ls-files --others --exclude-standard)" ]; then
+  if ! git diff --quiet || ! git diff --cached --quiet || [ -n "$(git ls-files --others --exclude-standard)" ]; then
     echo "[$TS] implement stage failed (exit $EC) — reverting uncommitted/partial changes" | tee -a "$LOG"
     git reset --hard HEAD >/dev/null 2>&1
     git clean -fd >/dev/null 2>&1
@@ -152,7 +152,7 @@ fi
 
 # --- independent review by Codex (no model approves its own work) ---
 if [ "${REVIEW:-0}" = "1" ] && [ $EC -eq 0 ]; then
-  if ! git diff --quiet || [ -n "$(git ls-files --others --exclude-standard)" ]; then
+  if ! git diff --quiet || ! git diff --cached --quiet || [ -n "$(git ls-files --others --exclude-standard)" ]; then
     echo "[$TS] running independent Codex review of implement tick" | tee -a "$LOG"
     set +e
     REVIEW_OUT=$(bash scripts/codex_review.sh 2>&1)
@@ -189,7 +189,7 @@ fi
 
 
 CHANGED=""
-if ! git diff --quiet || [ -n "$(git ls-files --others --exclude-standard)" ]; then
+if ! git diff --quiet || ! git diff --cached --quiet || [ -n "$(git ls-files --others --exclude-standard)" ]; then
   git add -A
   if git -c user.email='eslam.berkawy@gmail.com' -c user.name='Eslam El Berkawy' \
        commit -m "$MSG" >/dev/null 2>&1; then

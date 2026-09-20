@@ -8,7 +8,7 @@ set -euo pipefail
 REPO=/home/hermesops/kemfai
 cd "$REPO"
 
-DIFF_SUMMARY="$(git status --short; echo '----- diff-stat -----'; git --no-pager diff --stat; echo; echo '----- diff (first 400 lines) -----'; git --no-pager diff | head -400)"
+DIFF_SUMMARY="$(git status --short; echo '----- unstaged diff-stat -----'; git --no-pager diff --stat; echo '----- staged diff-stat -----'; git --no-pager diff --cached --stat; echo; echo '----- unstaged diff (first 400 lines) -----'; git --no-pager diff | sed -n '1,400p'; echo; echo '----- staged diff (first 400 lines) -----'; git --no-pager diff --cached | sed -n '1,400p')"
 
 PROMPT=$(cat <<'END_PROMPT'
 You are the independent REVIEWER for KEMFAI (no model approves its own work). Claude just implemented one task from specs/001-saas-onboarding-shell/tasks.md and may have marked it done.
