@@ -2567,3 +2567,60 @@ Evidence:
 
 REVIEW VERDICT: REJECT
 ```
+
+## Rejected implement tick - 2026-09-20 22:01 +04
+
+Codex rejected the last implement attempt and working tree was reverted. Reviewer verdict:
+
+```
+        server.putStatus = 204;
+      }
+    });
+  });
+});
+backend/api/src/modules/accounts/accounts.controller.ts:23:   * Signup is genuinely public (FR-016/FR-017 — there is no identity yet): @Public()
+backend/api/src/modules/accounts/accounts.controller.ts:25:   * FeatureFlagGuard no longer short-circuits @Public() routes (T032 review finding,
+backend/api/src/modules/accounts/accounts.controller.ts:28:  @Public()
+backend/api/src/modules/accounts/accounts.controller.ts:41:  @Public()
+backend/api/src/modules/accounts/accounts.controller.ts:56:  @Public()
+
+codex
+Implemented tasks: T027 and T035. Both were marked complete prematurely.
+
+Test results:
+
+- `npm run test:contract -- --runInBand`: 8/8 passed.
+- `npm test -- --runInBand`: 208/208 passed.
+- `npm run build`: passed.
+- No meaningful T035 service/controller tests exist. The passing contract tests mock `MfaService`, never load `openapi.yaml`, and never validate response schemas.
+
+No Odoo core edits, hard-coded entitlement/trial values, accounting changes, or native Odoo UI leakage were introduced. The accounts feature-flag decorator is present.
+
+1. T035 confirmation is insecure and false: any authenticated account—including an unverified account—can call `/accounts/mfa/confirm`; the service never checks Keycloak for completed TOTP enrollment, yet emits `account.mfa_enrolled`.
+2. T035 never updates `Account.mfaEnrolled`, contradicting the data model requirement that this field mirror Keycloak MFA completion. Subsequent authorization/state checks will see MFA as disabled.
+3. T035 always audits with `tenantId: null`, even when the account already has an assigned tenant, contrary to the defined `account.mfa_enrolled` event scope and auditability requirements.
+4. T027 does not satisfy its acceptance criteria. It only asserts HTTP status codes against mocked services; it neither reads the committed OpenAPI contract nor validates any response against its declared schema.
+5. T035 has no genuine behavioral tests for verified-account enforcement, Keycloak completion verification, database persistence, audit correctness, tenant association, or failure handling. Existing green tests do not exercise the implementation defects above.
+
+REVIEW VERDICT: REJECT
+tokens used
+43,870
+Implemented tasks: T027 and T035. Both were marked complete prematurely.
+
+Test results:
+
+- `npm run test:contract -- --runInBand`: 8/8 passed.
+- `npm test -- --runInBand`: 208/208 passed.
+- `npm run build`: passed.
+- No meaningful T035 service/controller tests exist. The passing contract tests mock `MfaService`, never load `openapi.yaml`, and never validate response schemas.
+
+No Odoo core edits, hard-coded entitlement/trial values, accounting changes, or native Odoo UI leakage were introduced. The accounts feature-flag decorator is present.
+
+1. T035 confirmation is insecure and false: any authenticated account—including an unverified account—can call `/accounts/mfa/confirm`; the service never checks Keycloak for completed TOTP enrollment, yet emits `account.mfa_enrolled`.
+2. T035 never updates `Account.mfaEnrolled`, contradicting the data model requirement that this field mirror Keycloak MFA completion. Subsequent authorization/state checks will see MFA as disabled.
+3. T035 always audits with `tenantId: null`, even when the account already has an assigned tenant, contrary to the defined `account.mfa_enrolled` event scope and auditability requirements.
+4. T027 does not satisfy its acceptance criteria. It only asserts HTTP status codes against mocked services; it neither reads the committed OpenAPI contract nor validates any response against its declared schema.
+5. T035 has no genuine behavioral tests for verified-account enforcement, Keycloak completion verification, database persistence, audit correctness, tenant association, or failure handling. Existing green tests do not exercise the implementation defects above.
+
+REVIEW VERDICT: REJECT
+```
