@@ -2453,3 +2453,60 @@ No Odoo core edits, hard-coded entitlement/trial values, native Odoo UI leakage,
 
 REVIEW VERDICT: REJECT
 ```
+
+## Rejected implement tick - 2026-09-20 20:05 +04
+
+Codex rejected the last implement attempt and working tree was reverted. Reviewer verdict:
+
+```
+    23	  "dependencies": {
+    24	    "@nestjs/bullmq": "10.2.3",
+    25	    "@nestjs/common": "10.4.22",
+    26	    "@nestjs/core": "10.4.22",
+    27	    "@nestjs/platform-express": "10.4.22",
+    28	    "@nestjs/swagger": "7.4.2",
+
+codex
+Implemented IDs: **T035** and **T027**. Both were marked complete prematurely.
+
+Test evidence:
+
+- Build: passed.
+- Lint: passed.
+- Unit tests: 24 suites, 208 tests passed.
+- New contract suite when manually invoked: 1 suite, 8 tests passed.
+- Integration suite: failed—3 queue-registration tests failed.
+- The contract suite is not included in `npm test`, never reads `openapi.yaml`, and performs no schema validation.
+
+No Odoo core edit, hard-coded entitlement/trial value, accounting nondeterminism, native Odoo UI leak, or direct cross-tenant access leak was introduced. The accounts feature-flag gate is present.
+
+1. MFA confirmation is insecure: it treats absence of `CONFIGURE_TOTP` as proof that MFA is configured. A caller can invoke `/accounts/mfa/confirm` without enrollment and be recorded as MFA-enabled without any OTP credential ([admin-rest-keycloak-user-provisioner.ts](/home/hermesops/kemfai/backend/api/src/integrations/keycloak/admin-rest-keycloak-user-provisioner.ts:267)).
+2. T035 does not enforce the locked verified-account prerequisite. Both enrollment and confirmation accept any authenticated account without checking `emailVerified`, contradicting Acceptance Scenario 1.4 and FR-020 ([accounts.service.ts](/home/hermesops/kemfai/backend/api/src/modules/accounts/accounts.service.ts:465)).
+3. The implementer silently weakened T035’s acceptance criteria in `tasks.md`, removing the explicit non-blocking FR-020 requirement. Adding Keycloak’s `CONFIGURE_TOTP` required action can block a subsequent login, and the endpoint returns no enrollment flow/challenge ([tasks.md](/home/hermesops/kemfai/specs/001-saas-onboarding-shell/tasks.md:426)).
+4. T027 is not a contract test “against `openapi.yaml`”: it never loads or validates the OpenAPI document and checks almost exclusively status codes. Its cleanup also leaves account/token/queue state, after which the full integration run fails 3 tests ([accounts.contract-spec.ts](/home/hermesops/kemfai/backend/api/test/contract/accounts.contract-spec.ts:19)).
+5. T027 is not wired into the standard test command; `npm test` only discovers tests under `src`, so CI can pass without running it ([package.json](/home/hermesops/kemfai/backend/api/package.json:13)).
+
+REVIEW VERDICT: REJECT
+tokens used
+48,802
+Implemented IDs: **T035** and **T027**. Both were marked complete prematurely.
+
+Test evidence:
+
+- Build: passed.
+- Lint: passed.
+- Unit tests: 24 suites, 208 tests passed.
+- New contract suite when manually invoked: 1 suite, 8 tests passed.
+- Integration suite: failed—3 queue-registration tests failed.
+- The contract suite is not included in `npm test`, never reads `openapi.yaml`, and performs no schema validation.
+
+No Odoo core edit, hard-coded entitlement/trial value, accounting nondeterminism, native Odoo UI leak, or direct cross-tenant access leak was introduced. The accounts feature-flag gate is present.
+
+1. MFA confirmation is insecure: it treats absence of `CONFIGURE_TOTP` as proof that MFA is configured. A caller can invoke `/accounts/mfa/confirm` without enrollment and be recorded as MFA-enabled without any OTP credential ([admin-rest-keycloak-user-provisioner.ts](/home/hermesops/kemfai/backend/api/src/integrations/keycloak/admin-rest-keycloak-user-provisioner.ts:267)).
+2. T035 does not enforce the locked verified-account prerequisite. Both enrollment and confirmation accept any authenticated account without checking `emailVerified`, contradicting Acceptance Scenario 1.4 and FR-020 ([accounts.service.ts](/home/hermesops/kemfai/backend/api/src/modules/accounts/accounts.service.ts:465)).
+3. The implementer silently weakened T035’s acceptance criteria in `tasks.md`, removing the explicit non-blocking FR-020 requirement. Adding Keycloak’s `CONFIGURE_TOTP` required action can block a subsequent login, and the endpoint returns no enrollment flow/challenge ([tasks.md](/home/hermesops/kemfai/specs/001-saas-onboarding-shell/tasks.md:426)).
+4. T027 is not a contract test “against `openapi.yaml`”: it never loads or validates the OpenAPI document and checks almost exclusively status codes. Its cleanup also leaves account/token/queue state, after which the full integration run fails 3 tests ([accounts.contract-spec.ts](/home/hermesops/kemfai/backend/api/test/contract/accounts.contract-spec.ts:19)).
+5. T027 is not wired into the standard test command; `npm test` only discovers tests under `src`, so CI can pass without running it ([package.json](/home/hermesops/kemfai/backend/api/package.json:13)).
+
+REVIEW VERDICT: REJECT
+```
