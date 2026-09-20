@@ -24,8 +24,8 @@ fi
 echo "[$TS] next stage: $next" | tee -a "$LOG"
 
 # --- guard: keep main runnable / clean tree required for a fresh commit ---
-if ! git diff --quiet || ! git diff --cached --quiet; then
-  echo "[$TS] working tree dirty; skipping this tick" | tee -a "$LOG"
+if ! git diff --quiet || ! git diff --cached --quiet || [ -n "$(git ls-files --others --exclude-standard)" ]; then
+  echo "[$TS] working tree dirty (tracked or untracked); skipping this tick" | tee -a "$LOG"
   echo "STATUS: SKIPPED (dirty tree)"
   exit 0
 fi
@@ -62,7 +62,7 @@ fi
 # so both the exit code AND output text are checked. Every failed executor is
 # rolled back before the next provider starts, preventing mixed partial edits.
 EXECUTOR_TIMEOUT=${KEMFAI_EXECUTOR_TIMEOUT:-1800}
-EXECUTOR_ORDER=${KEMFAI_EXECUTOR_ORDER:-"gemini glm claude"}
+EXECUTOR_ORDER=${KEMFAI_EXECUTOR_ORDER:-"gemini claude glm"}
 EXECUTOR=""
 OUT=""
 EC=1
@@ -72,14 +72,53 @@ provider_failed_in_output() {
     "you.ve hit your .*limit|weekly/monthly limit exhausted|session limit .*resets|ai_apicallerror|oauth session expired|failed to authenticate|unexpected server error|selected model is at capacity|status.?429|stream error"
 }
 
+# Persist short circuit-breakers across cron ticks. Subscription limits are not
+# helped by retrying every two hours, and repeated failures waste both time and
+# quota on the remaining providers.
+COOLDOWN_DIR="$REPO/scripts/.state/provider-cooldowns"
+mkdir -p "$COOLDOWN_DIR"
+
+provider_cooldown_remaining() {
+  local candidate="$1" file="$COOLDOWN_DIR/$candidate.until" now until
+  [ -f "$file" ] || return 1
+  now=$(date +%s)
+  until=$(tr -cd '0-9' < "$file")
+  [ -n "$until" ] || return 1
+  if [ "$until" -gt "$now" ]; then
+    echo $((until - now))
+    return 0
+  fi
+  rm -f "$file"
+  return 1
+}
+
+mark_provider_cooldown() {
+  local candidate="$1" output="$2" seconds=1800
+  if printf '%s' "$output" | grep -qiE 'weekly/monthly limit exhausted|weekly .*limit'; then
+    seconds=43200
+  elif printf '%s' "$output" | grep -qiE 'oauth session expired|failed to authenticate'; then
+    seconds=21600
+  elif printf '%s' "$output" | grep -qiE 'session limit .*resets|you.ve hit your .*limit'; then
+    seconds=7200
+  fi
+  printf '%s\n' "$(( $(date +%s) + seconds ))" > "$COOLDOWN_DIR/$candidate.until"
+  echo "$seconds"
+}
+
 rollback_partial_executor_work() {
-  if ! git diff --quiet || ! git diff --cached --quiet || [ -n "$(git ls-files --others --exclude-standard)" ]; then
+  # The initial guard guarantees there were no pre-existing untracked files.
+  # Always restore BASE_HEAD as an executor may have committed and left a clean tree.
+  if [ "$(git rev-parse HEAD)" != "$BASE_HEAD" ] || ! git diff --quiet || ! git diff --cached --quiet || [ -n "$(git ls-files --others --exclude-standard)" ]; then
     git reset --hard "$BASE_HEAD" >/dev/null 2>&1
     git clean -fd >/dev/null 2>&1
   fi
 }
 
 for candidate in $EXECUTOR_ORDER; do
+  if remaining=$(provider_cooldown_remaining "$candidate"); then
+    echo "[$TS] skipping executor $candidate: circuit breaker active for ${remaining}s" | tee -a "$LOG"
+    continue
+  fi
   echo "[$TS] trying executor: $candidate (timeout ${EXECUTOR_TIMEOUT}s)" | tee -a "$LOG"
   set +e
   case "$candidate" in
@@ -111,6 +150,7 @@ for candidate in $EXECUTOR_ORDER; do
   if [ $EC -eq 0 ] && ! provider_failed_in_output "$OUT"; then
     EXECUTOR="$candidate"
     export KEMFAI_EXECUTOR="$EXECUTOR"
+    rm -f "$COOLDOWN_DIR/$candidate.until"
     echo "[$TS] executor succeeded: $EXECUTOR" | tee -a "$LOG"
     break
   fi
@@ -119,6 +159,10 @@ for candidate in $EXECUTOR_ORDER; do
     echo "[$TS] executor $candidate timed out after ${EXECUTOR_TIMEOUT}s" | tee -a "$LOG"
   else
     echo "[$TS] executor $candidate unavailable/failed (exit $EC)" | tee -a "$LOG"
+  fi
+  if provider_failed_in_output "$OUT"; then
+    cooldown=$(mark_provider_cooldown "$candidate" "$OUT")
+    echo "[$TS] circuit breaker set for $candidate (${cooldown}s)" | tee -a "$LOG"
   fi
   EC=75
   rollback_partial_executor_work
@@ -155,9 +199,9 @@ fi
 
 # --- commit only reviewed work: on failed implement, revert partial changes ---
 if [ "$next" = "implement" ] && [ $EC -ne 0 ]; then
-  if ! git diff --quiet || ! git diff --cached --quiet || [ -n "$(git ls-files --others --exclude-standard)" ]; then
-    echo "[$TS] implement stage failed (exit $EC) — reverting uncommitted/partial changes" | tee -a "$LOG"
-    git reset --hard HEAD >/dev/null 2>&1
+  if [ "$(git rev-parse HEAD)" != "$BASE_HEAD" ] || ! git diff --quiet || ! git diff --cached --quiet || [ -n "$(git ls-files --others --exclude-standard)" ]; then
+    echo "[$TS] implement stage failed (exit $EC) — restoring reviewed baseline" | tee -a "$LOG"
+    git reset --hard "$BASE_HEAD" >/dev/null 2>&1
     git clean -fd >/dev/null 2>&1
   fi
 fi

@@ -42,3 +42,6 @@ coverage/
 /tenants/
 /uploads/
 /tmp/
+
+# Autonomous runner circuit-breaker state
+/scripts/.state/
