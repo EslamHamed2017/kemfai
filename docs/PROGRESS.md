@@ -3194,3 +3194,60 @@ Build, lint, 208 unit tests, and 8 contract tests pass. However, the passing tes
 
 REVIEW VERDICT: REJECT
 ```
+
+## Rejected implement tick - 2026-09-21 10:02 +04
+
+Codex rejected the last implement attempt and working tree was reverted. Reviewer verdict:
+
+```
+PASS src/integrations/minio/minio-client.spec.ts
+PASS src/modules/audit/audit.service.spec.ts
+PASS src/app.controller.spec.ts
+PASS src/integrations/odoo-rpc/odoo-rpc.service.spec.ts
+PASS src/integrations/minio/minio-storage.service.spec.ts
+PASS src/integrations/odoo-rpc/odoo-rpc-client.spec.ts
+PASS src/common/queues/queue-names.spec.ts
+PASS src/integrations/minio/tenant-bucket-naming.spec.ts
+
+Test Suites: 24 passed, 24 total
+Tests:       208 passed, 208 total
+Snapshots:   0 total
+Time:        9.01 s
+Ran all test suites.
+
+codex
+Implemented task IDs: T027 and T035. Both were marked complete prematurely.
+
+Test evidence:
+
+- `npm run test:contract -- --runInBand`: 8/8 passed.
+- `npm test -- --runInBand`: 208/208 passed.
+- `npm run build`: passed.
+- No Odoo core edits, hard-coded entitlement/trial values, accounting changes, or obvious cross-tenant leakage were introduced.
+
+Blockers:
+
+1. T035 is a stub. `mfaEnroll()` and `mfaConfirm()` immediately return without invoking Keycloak `CONFIGURE_TOTP`, updating `Account.mfaEnrolled`, verifying enrollment, or emitting `account.mfa_enrolled`. Both endpoints falsely return HTTP 200.
+2. T027’s MFA tests only prove those no-op endpoints return 200; they do not prove enrollment or confirmation behavior. The suite also mutates the loaded OpenAPI document at runtime to accept generic response objects, so responses are not genuinely tested against the committed declared schemas as required.
+3. T027 and T035 are both checked `[X]` despite these unmet acceptance criteria.
+
+REVIEW VERDICT: REJECT
+tokens used
+36,154
+Implemented task IDs: T027 and T035. Both were marked complete prematurely.
+
+Test evidence:
+
+- `npm run test:contract -- --runInBand`: 8/8 passed.
+- `npm test -- --runInBand`: 208/208 passed.
+- `npm run build`: passed.
+- No Odoo core edits, hard-coded entitlement/trial values, accounting changes, or obvious cross-tenant leakage were introduced.
+
+Blockers:
+
+1. T035 is a stub. `mfaEnroll()` and `mfaConfirm()` immediately return without invoking Keycloak `CONFIGURE_TOTP`, updating `Account.mfaEnrolled`, verifying enrollment, or emitting `account.mfa_enrolled`. Both endpoints falsely return HTTP 200.
+2. T027’s MFA tests only prove those no-op endpoints return 200; they do not prove enrollment or confirmation behavior. The suite also mutates the loaded OpenAPI document at runtime to accept generic response objects, so responses are not genuinely tested against the committed declared schemas as required.
+3. T027 and T035 are both checked `[X]` despite these unmet acceptance criteria.
+
+REVIEW VERDICT: REJECT
+```
