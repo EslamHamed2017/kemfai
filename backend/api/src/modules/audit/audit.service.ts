@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { EntityManager } from 'typeorm';
 import { QueryDeepPartialEntity } from 'typeorm/query-builder/QueryPartialEntity';
 import controlDataSource from '../../database/data-source';
 import { AuditActorType, AuditEvent } from './entities/audit-event.entity';
@@ -178,8 +179,14 @@ export interface TenantAccessDeniedCrossTenantInput {
  */
 @Injectable()
 export class AuditService {
-  async append(event: AuditEventInput): Promise<void> {
-    const repo = controlDataSource.getRepository(AuditEvent);
+  /**
+   * `manager` lets a caller enlist this write in an already-open DB transaction (T035:
+   * MFA confirmation's state flip and its mandatory audit event must commit or roll back
+   * together — see mfa.service.ts) instead of always opening its own connection via
+   * `controlDataSource`. Every other call site omits it and behaves exactly as before.
+   */
+  async append(event: AuditEventInput, manager?: EntityManager): Promise<void> {
+    const repo = (manager ?? controlDataSource).getRepository(AuditEvent);
     await repo.insert({
       actorType: event.actorType,
       actorId: event.actorId,
@@ -219,8 +226,11 @@ export class AuditService {
     });
   }
 
-  async recordAccountMfaEnrolled(input: AccountMfaEnrolledInput): Promise<void> {
-    await this.append({
+  async recordAccountMfaEnrolled(
+    input: AccountMfaEnrolledInput,
+    manager?: EntityManager,
+  ): Promise<void> {
+    const event: AuditEventInput = {
       actorType: AuditActorType.ACCOUNT,
       actorId: input.accountId,
       tenantId: input.tenantId,
@@ -229,7 +239,16 @@ export class AuditService {
       subjectId: input.accountId,
       occurredAt: input.occurredAt ?? new Date(),
       payload: {},
-    });
+    };
+    // Only forward a second argument when a caller actually supplies a transaction
+    // manager (T035) — an explicit `undefined` second arg would still show up in a
+    // `toHaveBeenCalledWith(oneArgMatcher)` assertion's call-arity check, breaking every
+    // OTHER record* method's existing single-argument `append` expectation.
+    if (manager) {
+      await this.append(event, manager);
+    } else {
+      await this.append(event);
+    }
   }
 
   async recordTenantProvisioningAttempted(input: TenantProvisioningAttemptedInput): Promise<void> {

@@ -10,6 +10,7 @@ export interface FakeKeycloakUser {
   email: string;
   emailVerified: boolean;
   requiredActions: string[];
+  hasOtpCredential: boolean;
 }
 
 /**
@@ -25,6 +26,8 @@ export class FakeKeycloakUsers implements KeycloakUserProvisioner {
   readonly deletedUserIds: string[] = [];
   failNextCreate: Error | null = null;
   failNextMarkVerified: Error | null = null;
+  failNextBeginTotpEnrollment: Error | null = null;
+  failNextHasActiveTotpCredential: Error | null = null;
 
   async createUser(input: CreateKeycloakUserInput): Promise<void> {
     if (this.failNextCreate) {
@@ -42,6 +45,7 @@ export class FakeKeycloakUsers implements KeycloakUserProvisioner {
       email: input.email,
       emailVerified: false,
       requiredActions: [...input.requiredActions],
+      hasOtpCredential: false,
     });
   }
 
@@ -64,6 +68,49 @@ export class FakeKeycloakUsers implements KeycloakUserProvisioner {
     user.requiredActions = user.requiredActions.filter((action) => action !== 'VERIFY_EMAIL');
   }
 
+  async beginTotpEnrollment(id: string): Promise<void> {
+    if (this.failNextBeginTotpEnrollment) {
+      const error = this.failNextBeginTotpEnrollment;
+      this.failNextBeginTotpEnrollment = null;
+      throw error;
+    }
+    const user = this.users.get(id);
+    if (!user) {
+      throw new KeycloakUnavailableError(`fake keycloak holds no user ${id}`);
+    }
+    if (!user.requiredActions.includes('CONFIGURE_TOTP')) {
+      user.requiredActions = [...user.requiredActions, 'CONFIGURE_TOTP'];
+    }
+  }
+
+  async hasActiveTotpCredential(id: string): Promise<boolean> {
+    if (this.failNextHasActiveTotpCredential) {
+      const error = this.failNextHasActiveTotpCredential;
+      this.failNextHasActiveTotpCredential = null;
+      throw error;
+    }
+    const user = this.users.get(id);
+    if (!user) {
+      throw new KeycloakUnavailableError(`fake keycloak holds no user ${id}`);
+    }
+    return user.hasOtpCredential;
+  }
+
+  /**
+   * Test-only helper simulating the customer completing Keycloak's own hosted
+   * `CONFIGURE_TOTP` flow (a browser-driven Keycloak screen, never re-implemented by KEMFAI
+   * per research.md) — the precondition every confirm test sets up before calling
+   * `POST /accounts/mfa/confirm`.
+   */
+  completeTotpSetup(id: string): void {
+    const user = this.users.get(id);
+    if (!user) {
+      throw new Error(`fake keycloak holds no user ${id}`);
+    }
+    user.hasOtpCredential = true;
+    user.requiredActions = user.requiredActions.filter((action) => action !== 'CONFIGURE_TOTP');
+  }
+
   survivingUsers(): FakeKeycloakUser[] {
     return [...this.users.values()];
   }
@@ -82,5 +129,7 @@ export class FakeKeycloakUsers implements KeycloakUserProvisioner {
     this.deletedUserIds.length = 0;
     this.failNextCreate = null;
     this.failNextMarkVerified = null;
+    this.failNextBeginTotpEnrollment = null;
+    this.failNextHasActiveTotpCredential = null;
   }
 }

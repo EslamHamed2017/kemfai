@@ -423,7 +423,7 @@ tenant/workspace exists until the verification link is used, and the account can
     email exists.
   - **Roles**: Primary: GLM · Backup: Claude · Reviewer: Codex
 
-- [ ] T035 [US1] Implement `POST /accounts/mfa/enroll` and `POST /accounts/mfa/confirm` via Keycloak
+- [X] T035 [US1] Implement `POST /accounts/mfa/enroll` and `POST /accounts/mfa/confirm` via Keycloak
   `CONFIGURE_TOTP` required action, emits `account.mfa_enrolled` in
   `backend/api/src/modules/accounts/mfa.controller.ts`
   - **Dependencies**: T032

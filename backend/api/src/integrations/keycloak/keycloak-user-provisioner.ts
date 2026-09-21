@@ -39,6 +39,23 @@ export interface KeycloakUserProvisioner {
    * failure so callers answer a controlled 503 and the verification link stays usable.
    */
   markEmailVerified(id: string): Promise<void>;
+
+  /**
+   * T035 — begins MFA enrollment by adding Keycloak's native `CONFIGURE_TOTP` required
+   * action (research.md decision: reuse Keycloak's own TOTP primitive rather than
+   * re-implementing it). Preserves every other required action. Idempotent — re-invoking
+   * while the action is already pending is a no-op. Rejects with
+   * {@link KeycloakUnavailableError} on every failure.
+   */
+  beginTotpEnrollment(id: string): Promise<void>;
+
+  /**
+   * T035 — read-only check of whether Keycloak now holds an active OTP credential for
+   * this user, i.e. whether the user has actually completed the `CONFIGURE_TOTP` flow.
+   * Confirmation NEVER trusts a client-supplied code; it only trusts this signal from
+   * Keycloak itself. Rejects with {@link KeycloakUnavailableError} on every failure.
+   */
+  hasActiveTotpCredential(id: string): Promise<boolean>;
 }
 
 /** Injection token — bind the real Admin REST client in KeycloakModule, fakes in tests. */

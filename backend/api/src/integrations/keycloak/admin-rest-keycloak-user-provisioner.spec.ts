@@ -26,8 +26,11 @@ interface FakeAdminServer {
   tokenResponses: number;
   /** Current per-user state served by GET .../users/{id} (requiredActions preserved across PUTs). */
   users: Map<string, { emailVerified: boolean; requiredActions: string[] }>;
+  /** Per-user OTP credential list served by GET .../users/{id}/credentials. */
+  credentials: Map<string, Array<{ type: string }>>;
   getStatus: number;
   putStatus: number;
+  credentialsStatus: number;
   close(): Promise<void>;
 }
 
@@ -40,8 +43,10 @@ async function startFakeAdminServer(): Promise<FakeAdminServer> {
     createStatus: 201,
     tokenResponses: 0,
     users: new Map(),
+    credentials: new Map(),
     getStatus: 200,
     putStatus: 204,
+    credentialsStatus: 200,
     close: () => Promise.resolve(),
   };
 
@@ -70,6 +75,20 @@ async function startFakeAdminServer(): Promise<FakeAdminServer> {
         res.end();
         return;
       }
+      const credentialsMatch =
+        /\/admin\/realms\/kemfai-customers\/users\/([^/]+)\/credentials$/.exec(req.url ?? '');
+      if (req.method === 'GET' && credentialsMatch) {
+        if (state.credentialsStatus !== 200) {
+          res.statusCode = state.credentialsStatus;
+          res.end();
+          return;
+        }
+        res.statusCode = 200;
+        res.setHeader('content-type', 'application/json');
+        res.end(JSON.stringify(state.credentials.get(credentialsMatch[1]) ?? []));
+        return;
+      }
+
       const userMatch = /\/admin\/realms\/kemfai-customers\/users\/([^/]+)$/.exec(req.url ?? '');
       if (req.method === 'GET' && userMatch) {
         const user = state.users.get(userMatch[1]);
@@ -388,6 +407,131 @@ describe('AdminRestKeycloakUserProvisioner (T032, unit)', () => {
       } finally {
         restore();
         server.putStatus = 204;
+      }
+    });
+  });
+
+  describe('beginTotpEnrollment (T035)', () => {
+    const env = () =>
+      envWith({
+        KEYCLOAK_URL: server.baseUrl,
+        KEYCLOAK_USERS_CLIENT_ID: 'kemfai-api-admin',
+        KEYCLOAK_USERS_CLIENT_SECRET: 'service-secret',
+        KEYCLOAK_ADMIN: undefined,
+        KEYCLOAK_ADMIN_PASSWORD: undefined,
+      });
+
+    it('adds CONFIGURE_TOTP while preserving every other required action', async () => {
+      server.users.set(USER_INPUT.id, { emailVerified: true, requiredActions: ['SOME_OTHER'] });
+      const restore = env();
+      try {
+        const provisioner = new AdminRestKeycloakUserProvisioner();
+        await provisioner.beginTotpEnrollment(USER_INPUT.id);
+
+        const putRequest = server.requests.find(
+          (r) => r.method === 'PUT' && r.url.endsWith(`/users/${USER_INPUT.id}`),
+        );
+        expect(JSON.parse(putRequest?.body ?? '{}')).toEqual({
+          requiredActions: ['SOME_OTHER', 'CONFIGURE_TOTP'],
+        });
+        expect(server.users.get(USER_INPUT.id)?.requiredActions).toEqual([
+          'SOME_OTHER',
+          'CONFIGURE_TOTP',
+        ]);
+      } finally {
+        restore();
+      }
+    });
+
+    it('is idempotent — no PUT when CONFIGURE_TOTP is already pending', async () => {
+      server.users.set(USER_INPUT.id, {
+        emailVerified: true,
+        requiredActions: ['CONFIGURE_TOTP'],
+      });
+      const restore = env();
+      try {
+        const provisioner = new AdminRestKeycloakUserProvisioner();
+        await provisioner.beginTotpEnrollment(USER_INPUT.id);
+        expect(server.requests.some((r) => r.method === 'PUT')).toBe(false);
+      } finally {
+        restore();
+      }
+    });
+
+    it('maps a GET failure to KeycloakUnavailableError without a PUT', async () => {
+      server.getStatus = 500;
+      const restore = env();
+      try {
+        const provisioner = new AdminRestKeycloakUserProvisioner();
+        await expect(provisioner.beginTotpEnrollment(USER_INPUT.id)).rejects.toThrow(
+          KeycloakUnavailableError,
+        );
+        expect(server.requests.some((r) => r.method === 'PUT')).toBe(false);
+      } finally {
+        restore();
+        server.getStatus = 200;
+      }
+    });
+
+    it('maps a PUT failure to KeycloakUnavailableError', async () => {
+      server.users.set(USER_INPUT.id, { emailVerified: true, requiredActions: [] });
+      server.putStatus = 500;
+      const restore = env();
+      try {
+        const provisioner = new AdminRestKeycloakUserProvisioner();
+        await expect(provisioner.beginTotpEnrollment(USER_INPUT.id)).rejects.toThrow(
+          KeycloakUnavailableError,
+        );
+      } finally {
+        restore();
+        server.putStatus = 204;
+      }
+    });
+  });
+
+  describe('hasActiveTotpCredential (T035)', () => {
+    const env = () =>
+      envWith({
+        KEYCLOAK_URL: server.baseUrl,
+        KEYCLOAK_USERS_CLIENT_ID: 'kemfai-api-admin',
+        KEYCLOAK_USERS_CLIENT_SECRET: 'service-secret',
+        KEYCLOAK_ADMIN: undefined,
+        KEYCLOAK_ADMIN_PASSWORD: undefined,
+      });
+
+    it('true once Keycloak holds an otp credential', async () => {
+      server.credentials.set(USER_INPUT.id, [{ type: 'password' }, { type: 'otp' }]);
+      const restore = env();
+      try {
+        const provisioner = new AdminRestKeycloakUserProvisioner();
+        await expect(provisioner.hasActiveTotpCredential(USER_INPUT.id)).resolves.toBe(true);
+      } finally {
+        restore();
+      }
+    });
+
+    it('false when no otp credential exists yet', async () => {
+      server.credentials.set(USER_INPUT.id, [{ type: 'password' }]);
+      const restore = env();
+      try {
+        const provisioner = new AdminRestKeycloakUserProvisioner();
+        await expect(provisioner.hasActiveTotpCredential(USER_INPUT.id)).resolves.toBe(false);
+      } finally {
+        restore();
+      }
+    });
+
+    it('maps a fetch failure to KeycloakUnavailableError', async () => {
+      server.credentialsStatus = 500;
+      const restore = env();
+      try {
+        const provisioner = new AdminRestKeycloakUserProvisioner();
+        await expect(provisioner.hasActiveTotpCredential(USER_INPUT.id)).rejects.toThrow(
+          KeycloakUnavailableError,
+        );
+      } finally {
+        restore();
+        server.credentialsStatus = 200;
       }
     });
   });

@@ -217,4 +217,72 @@ export class AdminRestKeycloakUserProvisioner implements KeycloakUserProvisioner
       throw new KeycloakUnavailableError(`Keycloak user update returned ${response.status}`);
     }
   }
+
+  async beginTotpEnrollment(id: string): Promise<void> {
+    const token = await this.adminToken();
+    const userUrl = `${this.baseUrl()}/admin/realms/${this.realm()}/users/${id}`;
+
+    let user: { requiredActions?: string[] };
+    try {
+      const response = await fetch(userUrl, {
+        headers: { authorization: `Bearer ${token}` },
+        signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+      });
+      if (!response.ok) {
+        throw new KeycloakUnavailableError(`Keycloak user fetch returned ${response.status}`);
+      }
+      user = (await response.json()) as { requiredActions?: string[] };
+    } catch (error) {
+      if (error instanceof KeycloakUnavailableError) {
+        throw error;
+      }
+      throw new KeycloakUnavailableError('Keycloak user fetch is unreachable', error);
+    }
+
+    const existingActions = user.requiredActions ?? [];
+    if (existingActions.includes('CONFIGURE_TOTP')) {
+      return; // already pending — idempotent no-op, no PUT needed.
+    }
+
+    let response: Response;
+    try {
+      response = await fetch(userUrl, {
+        method: 'PUT',
+        headers: {
+          authorization: `Bearer ${token}`,
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({
+          requiredActions: [...existingActions, 'CONFIGURE_TOTP'],
+        }),
+        signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+      });
+    } catch (error) {
+      throw new KeycloakUnavailableError('Keycloak user update is unreachable', error);
+    }
+    if (!response.ok) {
+      throw new KeycloakUnavailableError(`Keycloak user update returned ${response.status}`);
+    }
+  }
+
+  async hasActiveTotpCredential(id: string): Promise<boolean> {
+    const token = await this.adminToken();
+    let response: Response;
+    try {
+      response = await fetch(
+        `${this.baseUrl()}/admin/realms/${this.realm()}/users/${id}/credentials`,
+        {
+          headers: { authorization: `Bearer ${token}` },
+          signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+        },
+      );
+    } catch (error) {
+      throw new KeycloakUnavailableError('Keycloak credentials fetch is unreachable', error);
+    }
+    if (!response.ok) {
+      throw new KeycloakUnavailableError(`Keycloak credentials fetch returned ${response.status}`);
+    }
+    const credentials = (await response.json()) as Array<{ type?: string }>;
+    return credentials.some((credential) => credential.type === 'otp');
+  }
 }
