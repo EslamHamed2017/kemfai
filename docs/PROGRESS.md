@@ -3080,3 +3080,60 @@ Implemented task: **T027**. The dedicated contract suite passed 8/8; build, lint
 
 REVIEW VERDICT: REJECT
 ```
+
+## Rejected implement tick - 2026-09-21 06:11 +04
+
+Codex rejected the last implement attempt and working tree was reverted. Reviewer verdict:
+
+```
+  no account-existence leak) in `backend/api/src/modules/accounts/accounts.controller.ts`
+  - **Dependencies**: T032
+  - **Acceptance Criteria**: Matches Acceptance Scenario 1.5; always returns 202 regardless of whether the
+    email exists.
+  - **Roles**: Primary: GLM · Backup: Claude · Reviewer: Codex
+
+- [ ] T035 [US1] Implement `POST /accounts/mfa/enroll` and `POST /accounts/mfa/confirm` via Keycloak
+  `CONFIGURE_TOTP` required action, emits `account.mfa_enrolled` in
+  `backend/api/src/modules/accounts/mfa.controller.ts`
+  - **Dependencies**: T032
+  - **Acceptance Criteria**: Matches Acceptance Scenario 1.4; MFA enrollment is never a blocking precondition
+    to continue onboarding (FR-020).
+  - **Roles**: Primary: GLM · Backup: Claude · Reviewer: Codex
+
+- [ ] T036 [P] [US1] Build the public plan-selection page (pricing, feature summary, EN/AR/RTL) carrying
+  plan+cycle choice into signup without re-entry in `frontend/src/app/(public)/plans/page.tsx`
+  - **Dependencies**: T024, T031
+  - **Acceptance Criteria**: Matches Acceptance Scenario 1.1; empty state renders when no plan is published
+    (FR-011); fully keyboard-operable (FR-013).
+  - **Roles**: Primary: Claude · Backup: Gemini · Reviewer: Codex
+
+316	0	backend/api/package-lock.json
+2	0	backend/api/package.json
+2	1	backend/api/src/modules/accounts/accounts.module.ts
+86	30	specs/001-saas-onboarding-shell/contracts/openapi.yaml
+1	1	specs/001-saas-onboarding-shell/tasks.md
+
+codex
+Implemented task: T027.
+
+The contract suite passes 8/8; the full API suite passes 208/208. Build and lint also pass. No Odoo core edits, hard-coded entitlement values, accounting changes, or direct tenant leakage were found.
+
+However, T027 was marked complete prematurely.
+
+1. `mfa.controller.ts` adds fake production endpoints that return HTTP 200 without calling Keycloak, verifying the account, enrolling MFA, confirming TOTP, updating `mfa_enrolled`, or emitting `account.mfa_enrolled`. That is explicitly unfinished T035 behavior exposed as success.
+2. The MFA contract tests only validate those unconditional 200 responses. Because the OpenAPI MFA responses declare no body schemas, they cannot verify an enrollment challenge or confirmation result. A valid JWT for an unknown or unverified account would also receive success, so the tests provide false assurance and expose an authentication-state flaw.
+
+REVIEW VERDICT: REJECT
+tokens used
+49,114
+Implemented task: T027.
+
+The contract suite passes 8/8; the full API suite passes 208/208. Build and lint also pass. No Odoo core edits, hard-coded entitlement values, accounting changes, or direct tenant leakage were found.
+
+However, T027 was marked complete prematurely.
+
+1. `mfa.controller.ts` adds fake production endpoints that return HTTP 200 without calling Keycloak, verifying the account, enrolling MFA, confirming TOTP, updating `mfa_enrolled`, or emitting `account.mfa_enrolled`. That is explicitly unfinished T035 behavior exposed as success.
+2. The MFA contract tests only validate those unconditional 200 responses. Because the OpenAPI MFA responses declare no body schemas, they cannot verify an enrollment challenge or confirmation result. A valid JWT for an unknown or unverified account would also receive success, so the tests provide false assurance and expose an authentication-state flaw.
+
+REVIEW VERDICT: REJECT
+```
