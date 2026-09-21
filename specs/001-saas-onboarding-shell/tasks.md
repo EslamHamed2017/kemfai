@@ -349,7 +349,7 @@ tenant/workspace exists until the verification link is used, and the account can
 
 ### Tests for User Story 1
 
-- [ ] T027 [P] [US1] Contract test: `POST /accounts/signup`, `POST /accounts/verify-email`,
+- [X] T027 [P] [US1] Contract test: `POST /accounts/signup`, `POST /accounts/verify-email`,
   `POST /accounts/resend-verification`, `POST /accounts/mfa/enroll`, `POST /accounts/mfa/confirm` against
   `contracts/openapi.yaml` in `backend/api/test/contract/accounts.contract-spec.ts`
   - **Dependencies**: T022
