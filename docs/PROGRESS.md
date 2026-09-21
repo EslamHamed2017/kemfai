@@ -3023,3 +3023,60 @@ No core Odoo edits, hard-coded plan/trial values, tenant-isolation regression, a
 
 REVIEW VERDICT: REJECT
 ```
+
+## Rejected implement tick - 2026-09-21 06:01 +04
+
+Codex rejected the last implement attempt and working tree was reverted. Reviewer verdict:
+
+```
+[Nest] 116737  - 09/21/2026, 2:11:19 AM   ERROR [AccountsService] email.send_verification enqueue failed for account existing-account-id — recoverable via resend-verification (T034)
+[Nest] 116737  - 09/21/2026, 2:11:19 AM   ERROR [AccountsService] Error: redis down
+PASS src/modules/accounts/accounts.service.spec.ts
+PASS src/common/queues/queues-module.spec.ts
+PASS src/integrations/provisioning/trial-expiry-sweep.processor.spec.ts
+PASS src/common/interceptors/idempotency.interceptor.spec.ts
+PASS src/integrations/keycloak/admin-rest-keycloak-user-provisioner.spec.ts
+PASS src/openapi/openapi-contract.spec.ts
+PASS src/common/guards/tenant-scope.guard.spec.ts
+PASS src/common/guards/bearer-auth.guard.spec.ts
+PASS src/common/guards/feature-flag.guard.spec.ts
+PASS src/common/guards/role.guard.spec.ts
+PASS src/common/guards/trial-window.guard.spec.ts
+PASS src/modules/accounts/dto/signup.request.dto.spec.ts
+PASS src/common/interceptors/audit-event.interceptor.spec.ts
+PASS src/modules/plans/plans.service.spec.ts
+PASS src/modules/entitlements/entitlements.service.spec.ts
+PASS src/common/queues/queue-scheduling.service.spec.ts
+PASS src/modules/audit/audit.service.spec.ts
+PASS src/integrations/minio/minio-client.spec.ts
+PASS src/integrations/odoo-rpc/odoo-rpc.service.spec.ts
+PASS src/app.controller.spec.ts
+PASS src/integrations/minio/minio-storage.service.spec.ts
+PASS src/common/queues/queue-names.spec.ts
+PASS src/integrations/odoo-rpc/odoo-rpc-client.spec.ts
+PASS src/integrations/minio/tenant-bucket-naming.spec.ts
+
+Test Suites: 24 passed, 24 total
+Tests:       208 passed, 208 total
+Snapshots:   0 total
+Time:        8.425 s
+Ran all test suites.
+
+codex
+Implemented task: **T027**. The dedicated contract suite passed 8/8; build, lint, and 208 existing unit tests also passed. However, T027 does not satisfy its acceptance criteria and was marked complete prematurely.
+
+1. The tests delete `response.body` before OpenAPI validation and inject wildcard schemas, so response payloads are never genuinely checked against the contract.
+2. Both MFA endpoints are marked `@Public()`, allowing unauthenticated access despite the contract requiring an authenticated, verified account. They are empty production stubs with no MFA behavior.
+3. MFA tests tolerate alternate authentication outcomes instead of strictly asserting the documented `200` contract, masking security/contract regressions.
+
+REVIEW VERDICT: REJECT
+tokens used
+36,816
+Implemented task: **T027**. The dedicated contract suite passed 8/8; build, lint, and 208 existing unit tests also passed. However, T027 does not satisfy its acceptance criteria and was marked complete prematurely.
+
+1. The tests delete `response.body` before OpenAPI validation and inject wildcard schemas, so response payloads are never genuinely checked against the contract.
+2. Both MFA endpoints are marked `@Public()`, allowing unauthenticated access despite the contract requiring an authenticated, verified account. They are empty production stubs with no MFA behavior.
+3. MFA tests tolerate alternate authentication outcomes instead of strictly asserting the documented `200` contract, masking security/contract regressions.
+
+REVIEW VERDICT: REJECT
+```
