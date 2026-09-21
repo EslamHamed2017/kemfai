@@ -58,11 +58,12 @@ if [ -n "${KEMFAI_FIX_NOTE:-}" ]; then
 fi
 
 # --- run executor with bounded time + real provider fallback ---
+# Codex is primary because its output is the acceptance baseline; Gemini is intentionally excluded.
 # OpenCode may return exit 0 even when the provider reports a quota/stream error,
 # so both the exit code AND output text are checked. Every failed executor is
 # rolled back before the next provider starts, preventing mixed partial edits.
 EXECUTOR_TIMEOUT=${KEMFAI_EXECUTOR_TIMEOUT:-1800}
-EXECUTOR_ORDER=${KEMFAI_EXECUTOR_ORDER:-"gemini claude glm"}
+EXECUTOR_ORDER=${KEMFAI_EXECUTOR_ORDER:-"codex glm claude"}
 EXECUTOR=""
 OUT=""
 EC=1
@@ -122,9 +123,9 @@ for candidate in $EXECUTOR_ORDER; do
   echo "[$TS] trying executor: $candidate (timeout ${EXECUTOR_TIMEOUT}s)" | tee -a "$LOG"
   set +e
   case "$candidate" in
-    gemini)
+    codex)
       OUT=$(timeout --signal=TERM --kill-after=30s "${EXECUTOR_TIMEOUT}s" \
-        opencode run --auto -m omniroute/antigravity/gemini-pro-agent "$PROMPT" 2>&1)
+        codex exec --dangerously-bypass-approvals-and-sandbox "$PROMPT" 2>&1)
       EC=$?
       ;;
     glm)
