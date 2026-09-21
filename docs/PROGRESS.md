@@ -3479,3 +3479,60 @@ Implemented task: **T027**.
 
 REVIEW VERDICT: REJECT
 ```
+
+## Rejected implement tick - 2026-09-21 15:10 +04
+
+Codex rejected the last implement attempt and working tree was reverted. Reviewer verdict:
+
+```
+ M backend/api/src/integrations/keycloak/admin-rest-keycloak-user-provisioner.ts
+ M backend/api/src/integrations/keycloak/keycloak-user-provisioner.ts
+ M backend/api/src/modules/accounts/accounts.module.ts
+ M backend/api/src/modules/accounts/accounts.service.spec.ts
+ M backend/api/src/modules/accounts/accounts.service.ts
+ M backend/api/test/support/fake-keycloak-users.ts
+?? backend/api/src/modules/accounts/mfa.controller.ts
+?? backend/api/test/integration/accounts-mfa.integration-spec.ts
+
+codex
+Implemented task: **T035**.
+
+Evidence:
+
+- Unit tests: **224/224 passed**
+- Build: **passed**
+- Integration test assertions: 6 passed, but suite **failed during teardown**
+- Lint: **failed**
+- `tasks.md`: T035 remains unchecked; it was **not marked done prematurely**
+- No Odoo core edits, hard-coded entitlements, native Odoo UI leakage, accounting changes, or obvious tenant-isolation breach found
+- Feature-flag gating exists and is tested
+
+Blockers:
+
+1. Unverified linked accounts can enroll and confirm MFA. [`requireAccountByKeycloakUserId()`](/home/hermesops/kemfai/backend/api/src/modules/accounts/accounts.service.ts:443) never checks `account.emailVerified`, violating Acceptance Scenario 1.4 and the OpenAPI requirement that the account be verified.
+2. The new integration suite does not pass: teardown deletes the tenant before its referencing audit event, causing `fk_audit_event_tenant` failure at [`accounts-mfa.integration-spec.ts:86`](/home/hermesops/kemfai/backend/api/test/integration/accounts-mfa.integration-spec.ts:86).
+3. The mandatory lint gate fails with two Prettier errors in [`accounts.service.ts:372`](/home/hermesops/kemfai/backend/api/src/modules/accounts/accounts.service.ts:372) and [`accounts.service.ts:434`](/home/hermesops/kemfai/backend/api/src/modules/accounts/accounts.service.ts:434).
+
+REVIEW VERDICT: REJECT
+tokens used
+66,794
+Implemented task: **T035**.
+
+Evidence:
+
+- Unit tests: **224/224 passed**
+- Build: **passed**
+- Integration test assertions: 6 passed, but suite **failed during teardown**
+- Lint: **failed**
+- `tasks.md`: T035 remains unchecked; it was **not marked done prematurely**
+- No Odoo core edits, hard-coded entitlements, native Odoo UI leakage, accounting changes, or obvious tenant-isolation breach found
+- Feature-flag gating exists and is tested
+
+Blockers:
+
+1. Unverified linked accounts can enroll and confirm MFA. [`requireAccountByKeycloakUserId()`](/home/hermesops/kemfai/backend/api/src/modules/accounts/accounts.service.ts:443) never checks `account.emailVerified`, violating Acceptance Scenario 1.4 and the OpenAPI requirement that the account be verified.
+2. The new integration suite does not pass: teardown deletes the tenant before its referencing audit event, causing `fk_audit_event_tenant` failure at [`accounts-mfa.integration-spec.ts:86`](/home/hermesops/kemfai/backend/api/test/integration/accounts-mfa.integration-spec.ts:86).
+3. The mandatory lint gate fails with two Prettier errors in [`accounts.service.ts:372`](/home/hermesops/kemfai/backend/api/src/modules/accounts/accounts.service.ts:372) and [`accounts.service.ts:434`](/home/hermesops/kemfai/backend/api/src/modules/accounts/accounts.service.ts:434).
+
+REVIEW VERDICT: REJECT
+```
