@@ -3251,3 +3251,60 @@ Blockers:
 
 REVIEW VERDICT: REJECT
 ```
+
+## Rejected implement tick - 2026-09-21 10:13 +04
+
+Codex rejected the last implement attempt and working tree was reverted. Reviewer verdict:
+
+```
+test/integration/account-migration.integration-spec.ts:82:        mfaEnrolled: true,
+test/integration/account-migration.integration-spec.ts:93:    expect(reloaded.mfaEnrolled).toBe(true);
+test/integration/account-migration.integration-spec.ts:118:        mfaEnrolled: false,
+test/support/fake-keycloak-users.ts:80:  async requireMfaSetup(id: string): Promise<void> {
+test/support/fake-keycloak-users.ts:82:    if (user && !user.requiredActions.includes("CONFIGURE_TOTP")) {
+test/support/fake-keycloak-users.ts:83:      user.requiredActions.push("CONFIGURE_TOTP");
+test/integration/accounts-signup.integration-spec.ts:300:        mfaEnrolled: false,
+test/integration/audit-event-migration.integration-spec.ts:69:        mfaEnrolled: false,
+src/modules/accounts/accounts.service.ts
+src/modules/accounts/accounts.controller.ts
+src/modules/accounts/entities/account.entity.ts
+src/modules/accounts/accounts.module.ts
+
+codex
+Implemented tasks: T027 and T035.
+
+T027’s contract suite passes: 8/8 tests. The general unit suite passes: 208/208. Build passes. However, T035 does not satisfy Acceptance Scenario 1.4, and the working tree is not quality-gate clean.
+
+No Odoo core edits, hard-coded entitlement/trial values, native Odoo UI leakage, accounting changes, or cross-tenant database leakage were found.
+
+1. `POST /accounts/mfa/confirm` never verifies that TOTP is configured in Keycloak. Any authenticated caller—including an unverified account—can invoke it and set `Account.mfaEnrolled=true`, producing a false security state and fraudulent `account.mfa_enrolled` audit event.
+
+2. T035 has no behavioral tests for verified-account enforcement, actual Keycloak MFA activation, failure handling, or audit persistence. The passing contract test mocks `AccountsService`, so it cannot detect the broken implementation.
+
+3. T035 was marked complete prematurely. The endpoint does not “confirm MFA enrollment is active” as required by Acceptance Scenario 1.4; enrollment merely adds `CONFIGURE_TOTP`, while confirmation blindly trusts the caller.
+
+4. The mandatory test gate is red: `npm run lint` reports 20 errors in the changed files. `npm run test:integration -- --runInBand` also reports 3 failures, so the complete API test suite is not green.
+
+5. MFA state persistence and audit emission are not atomic. The account is saved before the audit write; an audit failure leaves MFA marked active without the mandatory audit record, and concurrent confirmations can emit duplicate events.
+
+REVIEW VERDICT: REJECT
+tokens used
+49,144
+Implemented tasks: T027 and T035.
+
+T027’s contract suite passes: 8/8 tests. The general unit suite passes: 208/208. Build passes. However, T035 does not satisfy Acceptance Scenario 1.4, and the working tree is not quality-gate clean.
+
+No Odoo core edits, hard-coded entitlement/trial values, native Odoo UI leakage, accounting changes, or cross-tenant database leakage were found.
+
+1. `POST /accounts/mfa/confirm` never verifies that TOTP is configured in Keycloak. Any authenticated caller—including an unverified account—can invoke it and set `Account.mfaEnrolled=true`, producing a false security state and fraudulent `account.mfa_enrolled` audit event.
+
+2. T035 has no behavioral tests for verified-account enforcement, actual Keycloak MFA activation, failure handling, or audit persistence. The passing contract test mocks `AccountsService`, so it cannot detect the broken implementation.
+
+3. T035 was marked complete prematurely. The endpoint does not “confirm MFA enrollment is active” as required by Acceptance Scenario 1.4; enrollment merely adds `CONFIGURE_TOTP`, while confirmation blindly trusts the caller.
+
+4. The mandatory test gate is red: `npm run lint` reports 20 errors in the changed files. `npm run test:integration -- --runInBand` also reports 3 failures, so the complete API test suite is not green.
+
+5. MFA state persistence and audit emission are not atomic. The account is saved before the audit write; an audit failure leaves MFA marked active without the mandatory audit record, and concurrent confirmations can emit duplicate events.
+
+REVIEW VERDICT: REJECT
+```
