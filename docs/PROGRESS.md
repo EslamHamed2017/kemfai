@@ -2909,3 +2909,60 @@ Implemented task: **T027**. Both `npm run test:contract -- --runInBand` (8/8) an
 
 REVIEW VERDICT: REJECT
 ```
+
+## Rejected implement tick - 2026-09-21 04:01 +04
+
+Codex rejected the last implement attempt and working tree was reverted. Reviewer verdict:
+
+```
+PASS src/common/guards/tenant-scope.guard.spec.ts
+PASS src/integrations/provisioning/trial-expiry-sweep.processor.spec.ts
+PASS src/common/interceptors/idempotency.interceptor.spec.ts
+PASS src/common/guards/trial-window.guard.spec.ts
+PASS src/openapi/openapi-contract.spec.ts
+PASS src/common/interceptors/audit-event.interceptor.spec.ts
+PASS src/common/guards/role.guard.spec.ts
+PASS src/common/guards/bearer-auth.guard.spec.ts
+PASS src/common/guards/feature-flag.guard.spec.ts
+PASS src/integrations/keycloak/admin-rest-keycloak-user-provisioner.spec.ts
+PASS src/modules/entitlements/entitlements.service.spec.ts
+PASS src/modules/accounts/dto/signup.request.dto.spec.ts
+PASS src/modules/audit/audit.service.spec.ts
+PASS src/common/queues/queue-scheduling.service.spec.ts
+PASS src/modules/plans/plans.service.spec.ts
+PASS src/app.controller.spec.ts
+PASS src/integrations/odoo-rpc/odoo-rpc.service.spec.ts
+PASS src/integrations/minio/minio-client.spec.ts
+PASS src/integrations/minio/minio-storage.service.spec.ts
+PASS src/integrations/odoo-rpc/odoo-rpc-client.spec.ts
+PASS src/common/queues/queue-names.spec.ts
+PASS src/integrations/minio/tenant-bucket-naming.spec.ts
+
+Test Suites: 24 passed, 24 total
+Tests:       208 passed, 208 total
+Snapshots:   0 total
+Time:        9.054 s
+Ran all test suites.
+
+codex
+Implemented task: T027.
+
+The contract suite passes (8/8), the full API unit suite passes (208/208), and build/lint pass. However, T027’s acceptance criteria are not satisfied, so marking it complete was premature.
+
+1. The tests only assert HTTP status codes. They never load `contracts/openapi.yaml` or call `toSatisfyApiSpec()`, so response-schema conformance is completely untested. The added `jest-openapi` dependency is unused.
+2. The new MFA production stubs falsely return `200` without enrollment, confirmation, verified-account enforcement, or response-contract validation. Because they share the accounts feature flag needed by completed signup endpoints, enabling that module exposes this unfinished workflow even though T035 remains incomplete.
+3. `tasks.md` marks T027 done despite the missing OpenAPI validation required explicitly by its acceptance criteria.
+
+REVIEW VERDICT: REJECT
+tokens used
+30,038
+Implemented task: T027.
+
+The contract suite passes (8/8), the full API unit suite passes (208/208), and build/lint pass. However, T027’s acceptance criteria are not satisfied, so marking it complete was premature.
+
+1. The tests only assert HTTP status codes. They never load `contracts/openapi.yaml` or call `toSatisfyApiSpec()`, so response-schema conformance is completely untested. The added `jest-openapi` dependency is unused.
+2. The new MFA production stubs falsely return `200` without enrollment, confirmation, verified-account enforcement, or response-contract validation. Because they share the accounts feature flag needed by completed signup endpoints, enabling that module exposes this unfinished workflow even though T035 remains incomplete.
+3. `tasks.md` marks T027 done despite the missing OpenAPI validation required explicitly by its acceptance criteria.
+
+REVIEW VERDICT: REJECT
+```
