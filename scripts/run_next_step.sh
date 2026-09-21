@@ -63,7 +63,7 @@ fi
 # so both the exit code AND output text are checked. Every failed executor is
 # rolled back before the next provider starts, preventing mixed partial edits.
 EXECUTOR_TIMEOUT=${KEMFAI_EXECUTOR_TIMEOUT:-1800}
-EXECUTOR_ORDER=${KEMFAI_EXECUTOR_ORDER:-"codex glm claude"}
+EXECUTOR_ORDER="codex glm claude" # fixed policy: ignore stale cron overrides
 EXECUTOR=""
 OUT=""
 EC=1
