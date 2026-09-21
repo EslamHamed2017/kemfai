@@ -3422,3 +3422,60 @@ No Odoo-core, tenant-isolation, accounting, entitlement, UI-leakage, or feature-
 
 REVIEW VERDICT: REJECT
 ```
+
+## Rejected implement tick - 2026-09-21 14:03 +04
+
+Codex rejected the last implement attempt and working tree was reverted. Reviewer verdict:
+
+```
+    ✓ exercises POST /accounts/resend-verification 202 against its declared response
+    ✓ exercises POST /accounts/mfa/enroll 200 against its declared response
+    ✓ exercises POST /accounts/mfa/confirm 200 against its declared response (1 ms)
+    ✓ covers exactly every status documented for the five account operations
+    ✓ fails for an undocumented status or a body not declared by the response contract
+
+Test Suites: 1 passed, 1 total
+Tests:       10 passed, 10 total
+Snapshots:   0 total
+Time:        3.504 s, estimated 4 s
+Ran all test suites.
+
+exec
+/bin/bash -lc "rg -n -A28 '"'^  /accounts/(signup|verify-email|resend-verification|mfa/enroll|mfa/confirm):'"' specs/001-saas-onboarding-shell/contracts/openapi.yaml; rg -n -A12 -B3 'T022|T027' specs/001-saas-onboarding-shell/tasks.md; npm run lint -- --no-fix" in /home/hermesops/kemfai
+ exited 1 in 141ms:
+npm error Missing script: "lint"
+npm error
+npm error Did you mean this?
+npm error   npm link # Symlink a package folder
+npm error
+npm error To see a list of scripts, run:
+npm error   npm run
+npm error A complete log of this run can be found in: /home/hermesops/.npm/_logs/2026-09-21T10_06_34_015Z-debug-0.log
+
+exec
+/bin/bash -lc 'rg --files backend/api/test/contract backend/api/test | sort; npm run lint -- --no-fix' in /home/hermesops/kemfai/backend/api
+ succeeded in 8547ms:
+codex
+Implemented task: **T027**.
+
+- `npm run test:contract -- --runInBand`: **PASS** — 10/10 tests.
+- `npm run lint -- --no-fix`: **PASS**.
+- No Odoo core edits, hard-coded entitlements/trials, UI leakage, accounting changes, feature-flag violations, or tenant-isolation changes found.
+- `tasks.md` was marked complete prematurely.
+
+1. The test never calls the API or validates an actual/fixture HTTP response. It merely passes hard-coded status numbers into a helper that rereads the same OpenAPI document. Because these operations declare no response schemas, every “schema match” succeeds with `undefined`. Thus the required response codes are not genuinely exercised and schema conformance is not proved.
+
+REVIEW VERDICT: REJECT
+tokens used
+29,676
+Implemented task: **T027**.
+
+- `npm run test:contract -- --runInBand`: **PASS** — 10/10 tests.
+- `npm run lint -- --no-fix`: **PASS**.
+- No Odoo core edits, hard-coded entitlements/trials, UI leakage, accounting changes, feature-flag violations, or tenant-isolation changes found.
+- `tasks.md` was marked complete prematurely.
+
+1. The test never calls the API or validates an actual/fixture HTTP response. It merely passes hard-coded status numbers into a helper that rereads the same OpenAPI document. Because these operations declare no response schemas, every “schema match” succeeds with `undefined`. Thus the required response codes are not genuinely exercised and schema conformance is not proved.
+
+REVIEW VERDICT: REJECT
+```
