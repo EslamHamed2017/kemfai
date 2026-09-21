@@ -3137,3 +3137,60 @@ However, T027 was marked complete prematurely.
 
 REVIEW VERDICT: REJECT
 ```
+
+## Rejected implement tick - 2026-09-21 08:01 +04
+
+Codex rejected the last implement attempt and working tree was reverted. Reviewer verdict:
+
+```
+   352	- [X] T027 [P] [US1] Contract test: `POST /accounts/signup`, `POST /accounts/verify-email`,
+   353	  `POST /accounts/resend-verification`, `POST /accounts/mfa/enroll`, `POST /accounts/mfa/confirm` against
+   354	  `contracts/openapi.yaml` in `backend/api/test/contract/accounts.contract-spec.ts`
+   355	  - **Dependencies**: T022
+   356	  - **Acceptance Criteria**: Every documented response code (201/409/422/200/410/202) is exercised at least
+   357	    once and matches the declared schema.
+   358	  - **Roles**: Primary: Codex · Backup: GLM · Reviewer: Gemini
+   359	
+   360	- [X] T028 [P] [US1] Integration test: signup against an already-verified email returns a generic rejection
+   423	    email exists.
+   424	  - **Roles**: Primary: GLM · Backup: Claude · Reviewer: Codex
+   425	
+   426	- [X] T035 [US1] Implement `POST /accounts/mfa/enroll` and `POST /accounts/mfa/confirm` via Keycloak
+   427	  `CONFIGURE_TOTP` required action, emits `account.mfa_enrolled` in
+   428	  `backend/api/src/modules/accounts/mfa.controller.ts`
+   429	  - **Dependencies**: T032
+   430	  - **Acceptance Criteria**: Matches Acceptance Scenario 1.4; MFA enrollment is never a blocking precondition
+   431	    to continue onboarding (FR-020).
+   432	  - **Roles**: Primary: GLM · Backup: Claude · Reviewer: Codex
+   433	
+
+codex
+Implemented task claims: T035, plus T027. Both were marked complete prematurely.
+
+Build, lint, 208 unit tests, and 8 contract tests pass. However, the passing tests do not prove the required behavior.
+
+1. T035 bypasses the mandatory `module.accounts` feature flag: [mfa.controller.ts](/home/hermesops/kemfai/backend/api/src/modules/accounts/mfa.controller.ts:6) lacks `@RequireFeatureFlag`, so incomplete MFA endpoints remain accessible when the accounts module is disabled.
+
+2. T035 does not enforce the specified verified-account precondition. Both endpoints trust any valid JWT and never check `Account.emailVerified`: [accounts.service.ts](/home/hermesops/kemfai/backend/api/src/modules/accounts/accounts.service.ts:347).
+
+3. The MFA confirmation test is false assurance. `FakeKeycloakUsers.checkMfaEnrollment()` unconditionally returns true—even while `CONFIGURE_TOTP` remains outstanding—so the test marks MFA enrolled without simulating completed TOTP enrollment: [fake-keycloak-users.ts](/home/hermesops/kemfai/backend/api/test/support/fake-keycloak-users.ts:77).
+
+4. T027 does not satisfy its acceptance criterion. The alleged contract tests only assert HTTP status codes; they perform no response-schema validation against OpenAPI. Merely loading the contract once is not validation: [accounts.contract-spec.ts](/home/hermesops/kemfai/backend/api/test/contract/accounts.contract-spec.ts:40). T027 must be returned to incomplete.
+
+REVIEW VERDICT: REJECT
+tokens used
+49,681
+Implemented task claims: T035, plus T027. Both were marked complete prematurely.
+
+Build, lint, 208 unit tests, and 8 contract tests pass. However, the passing tests do not prove the required behavior.
+
+1. T035 bypasses the mandatory `module.accounts` feature flag: [mfa.controller.ts](/home/hermesops/kemfai/backend/api/src/modules/accounts/mfa.controller.ts:6) lacks `@RequireFeatureFlag`, so incomplete MFA endpoints remain accessible when the accounts module is disabled.
+
+2. T035 does not enforce the specified verified-account precondition. Both endpoints trust any valid JWT and never check `Account.emailVerified`: [accounts.service.ts](/home/hermesops/kemfai/backend/api/src/modules/accounts/accounts.service.ts:347).
+
+3. The MFA confirmation test is false assurance. `FakeKeycloakUsers.checkMfaEnrollment()` unconditionally returns true—even while `CONFIGURE_TOTP` remains outstanding—so the test marks MFA enrolled without simulating completed TOTP enrollment: [fake-keycloak-users.ts](/home/hermesops/kemfai/backend/api/test/support/fake-keycloak-users.ts:77).
+
+4. T027 does not satisfy its acceptance criterion. The alleged contract tests only assert HTTP status codes; they perform no response-schema validation against OpenAPI. Merely loading the contract once is not validation: [accounts.contract-spec.ts](/home/hermesops/kemfai/backend/api/test/contract/accounts.contract-spec.ts:40). T027 must be returned to incomplete.
+
+REVIEW VERDICT: REJECT
+```
