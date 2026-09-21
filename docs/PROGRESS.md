@@ -3707,3 +3707,60 @@ The suite passes only when invoked with a custom ad hoc Jest configuration: 17/1
 
 REVIEW VERDICT: REJECT
 ```
+
+## Rejected implement tick - 2026-09-22 00:18 +04
+
+Codex rejected the last implement attempt and working tree was reverted. Reviewer verdict:
+
+```
+jobs:
+  lint-frontend:
+    runs-on: ubuntu-latest
+    if: hashFiles('frontend/package.json') != ''
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: cd frontend && npm ci && npm run lint --if-present && npm run build --if-present
+
+  test-backend:
+    runs-on: ubuntu-latest
+    if: hashFiles('backend/**/*.py') != ''
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: |
+          pip install -r backend/requirements.txt || true
+          python -m pytest tests/ -q || true
+
+  accounting-invariants:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: echo "Placeholder - accounting invariant tests (debits=credits, tenant isolation, idempotency) run here."
+./scripts/codex_review.sh:20:2. Whether its tests exist AND genuinely pass. Run them (npm test / pytest / odoo-bin test) if a runner is present. Do not accept "tests were added" without proof they pass.
+./backend/api/package.json:17:    "test:contract": "jest --config test/jest-contract.json",
+./backend/api/src/database/data-source.ts:20:  // default made every env-less host-side run (npm run test:integration) fail with
+./specs/001-saas-onboarding-shell/quickstart.md:93:- `npm run test:contract` in `backend/api` — validates the live BFF against `contracts/openapi.yaml`.
+./specs/001-saas-onboarding-shell/quickstart.md:94:- `npm run test:integration` in `backend/api` — tenant isolation, idempotency, authorization, source-linkage
+./specs/001-saas-onboarding-shell/tasks.md:1113:    points (`test:contract`, `test:integration`, `playwright test`, Odoo addon tests), as wired into CI by T108,
+./specs/001-saas-onboarding-shell/tasks.md:1120:- [ ] T108 [P] Wire the NestJS Jest contract/integration suites (`npm run test:contract`,
+./specs/001-saas-onboarding-shell/tasks.md:1121:  `npm run test:integration` in `backend/api`), the Playwright e2e/a11y suites (`npx playwright test` in
+
+codex
+Implemented task: **T027**. The contract suite exercises all documented response codes and validates every schema actually declared in `openapi.yaml`. Test results: contract 13/13, unit 227/227, integration 185/185; lint, build, and `git diff --check` pass. No Odoo-core, tenant-isolation, accounting, UI-leakage, hard-coded entitlement, or missing feature-gate violation was found.
+
+1. The contract test corrupts pre-existing feature-flag state during teardown. It always sets `accounts` to disabled instead of restoring its original value; if the feature existed without a flag row, it also leaves a newly created row behind. Tests must not overwrite admin-configured feature flags. T027 is therefore checked off prematurely.
+
+REVIEW VERDICT: REJECT
+tokens used
+40,091
+Implemented task: **T027**. The contract suite exercises all documented response codes and validates every schema actually declared in `openapi.yaml`. Test results: contract 13/13, unit 227/227, integration 185/185; lint, build, and `git diff --check` pass. No Odoo-core, tenant-isolation, accounting, UI-leakage, hard-coded entitlement, or missing feature-gate violation was found.
+
+1. The contract test corrupts pre-existing feature-flag state during teardown. It always sets `accounts` to disabled instead of restoring its original value; if the feature existed without a flag row, it also leaves a newly created row behind. Tests must not overwrite admin-configured feature flags. T027 is therefore checked off prematurely.
+
+REVIEW VERDICT: REJECT
+```
