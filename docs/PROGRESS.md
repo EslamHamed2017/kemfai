@@ -3308,3 +3308,60 @@ No Odoo core edits, hard-coded entitlement/trial values, native Odoo UI leakage,
 
 REVIEW VERDICT: REJECT
 ```
+
+## Rejected implement tick - 2026-09-21 12:02 +04
+
+Codex rejected the last implement attempt and working tree was reverted. Reviewer verdict:
+
+```
+PASS src/integrations/provisioning/trial-expiry-sweep.processor.spec.ts
+PASS src/common/interceptors/idempotency.interceptor.spec.ts
+PASS src/openapi/openapi-contract.spec.ts
+PASS src/common/guards/trial-window.guard.spec.ts
+PASS src/common/guards/tenant-scope.guard.spec.ts
+PASS src/common/guards/feature-flag.guard.spec.ts
+PASS src/integrations/keycloak/admin-rest-keycloak-user-provisioner.spec.ts
+PASS src/common/guards/role.guard.spec.ts
+PASS src/modules/accounts/dto/signup.request.dto.spec.ts
+PASS src/common/interceptors/audit-event.interceptor.spec.ts
+PASS src/modules/plans/plans.service.spec.ts
+PASS src/common/guards/bearer-auth.guard.spec.ts
+PASS src/integrations/minio/minio-client.spec.ts
+PASS src/modules/audit/audit.service.spec.ts
+PASS src/modules/entitlements/entitlements.service.spec.ts
+PASS src/common/queues/queue-scheduling.service.spec.ts
+PASS src/integrations/odoo-rpc/odoo-rpc.service.spec.ts
+PASS src/app.controller.spec.ts
+PASS src/integrations/minio/minio-storage.service.spec.ts
+PASS src/integrations/odoo-rpc/odoo-rpc-client.spec.ts
+PASS src/common/queues/queue-names.spec.ts
+PASS src/integrations/minio/tenant-bucket-naming.spec.ts
+
+Test Suites: 24 passed, 24 total
+Tests:       208 passed, 208 total
+Snapshots:   0 total
+Time:        9.221 s
+Ran all test suites.
+
+codex
+Implemented tasks: T027 and T035. Both were marked complete prematurely.
+
+Build and lint pass; the ordinary unit suite passes (208 tests). The dedicated contract suite fails 2 of 5 tests.
+
+1. T027 fails its own contract suite: signup 201 and verify-email 410 schema assertions fail. It also does not exercise required 409 and 422 responses. See [accounts.contract-spec.ts](/home/hermesops/kemfai/backend/api/test/contract/accounts.contract-spec.ts:150).
+2. T035 violates Acceptance Scenario 1.4: [accounts.service.ts](/home/hermesops/kemfai/backend/api/src/modules/accounts/accounts.service.ts:441) allows an unverified account to enroll or confirm MFA because `emailVerified` is never checked.
+3. T027 and T035 are both checked off despite failed acceptance proof and missing verified-account enforcement. See [tasks.md](/home/hermesops/kemfai/specs/001-saas-onboarding-shell/tasks.md:351).
+
+REVIEW VERDICT: REJECT
+tokens used
+36,990
+Implemented tasks: T027 and T035. Both were marked complete prematurely.
+
+Build and lint pass; the ordinary unit suite passes (208 tests). The dedicated contract suite fails 2 of 5 tests.
+
+1. T027 fails its own contract suite: signup 201 and verify-email 410 schema assertions fail. It also does not exercise required 409 and 422 responses. See [accounts.contract-spec.ts](/home/hermesops/kemfai/backend/api/test/contract/accounts.contract-spec.ts:150).
+2. T035 violates Acceptance Scenario 1.4: [accounts.service.ts](/home/hermesops/kemfai/backend/api/src/modules/accounts/accounts.service.ts:441) allows an unverified account to enroll or confirm MFA because `emailVerified` is never checked.
+3. T027 and T035 are both checked off despite failed acceptance proof and missing verified-account enforcement. See [tasks.md](/home/hermesops/kemfai/specs/001-saas-onboarding-shell/tasks.md:351).
+
+REVIEW VERDICT: REJECT
+```
