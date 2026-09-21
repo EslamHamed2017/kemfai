@@ -11,7 +11,13 @@ TASKS=${TASKS:-1}
 ATTEMPTS=${ATTEMPTS:-2}
 LOCK=/tmp/kemfai_loop.lock
 REPO=/home/hermesops/kemfai
+REJECTION_FILE="$REPO/scripts/.state/last_rejection.txt"
+mkdir -p "$REPO/scripts/.state"
 KEMFAI_FIX_NOTE=""
+if [ -s "$REJECTION_FILE" ]; then
+  KEMFAI_FIX_NOTE=$(head -c 6000 "$REJECTION_FILE")
+  echo "LOOP: resuming rejected task with persisted Codex feedback."
+fi
 export KEMFAI_FIX_NOTE
 
 exec 9>"$LOCK"
@@ -47,7 +53,7 @@ for t in $(seq 1 "$TASKS"); do
     if echo "$OUT" | grep -q "Codex REJECTED"; then
       if [ "$a" -eq "$ATTEMPTS" ]; then
         echo "LOOP: task STILL REJECTED after $ATTEMPTS attempts — stopping for owner attention."
-        echo "$OUT" | extract_verdict > /tmp/kemfai_last_rejection.txt
+        echo "$OUT" | extract_verdict > "$REJECTION_FILE"
         echo "SUMMARY: tasks_completed=$DONE; stop=still_rejected_after_${ATTEMPTS}_attempts"
         exit 0
       fi
@@ -61,6 +67,7 @@ for t in $(seq 1 "$TASKS"); do
     DONE=$((DONE+1))
     KEMFAI_FIX_NOTE=""
     export KEMFAI_FIX_NOTE
+    rm -f "$REJECTION_FILE"
     break
   done
 done
