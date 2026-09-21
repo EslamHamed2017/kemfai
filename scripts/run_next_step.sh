@@ -58,12 +58,12 @@ if [ -n "${KEMFAI_FIX_NOTE:-}" ]; then
 fi
 
 # --- run executor with bounded time + real provider fallback ---
-# Codex is primary because its output is the acceptance baseline; Gemini is intentionally excluded.
+# Claude is primary, GLM is fallback, and independent Codex review remains mandatory; Gemini is excluded.
 # OpenCode may return exit 0 even when the provider reports a quota/stream error,
 # so both the exit code AND output text are checked. Every failed executor is
 # rolled back before the next provider starts, preventing mixed partial edits.
 EXECUTOR_TIMEOUT=${KEMFAI_EXECUTOR_TIMEOUT:-1800}
-EXECUTOR_ORDER="codex glm claude" # fixed policy: ignore stale cron overrides
+EXECUTOR_ORDER="claude glm" # fixed policy: Claude primary, GLM fallback; Codex reviews only
 EXECUTOR=""
 OUT=""
 EC=1
@@ -123,11 +123,6 @@ for candidate in $EXECUTOR_ORDER; do
   echo "[$TS] trying executor: $candidate (timeout ${EXECUTOR_TIMEOUT}s)" | tee -a "$LOG"
   set +e
   case "$candidate" in
-    codex)
-      OUT=$(timeout --signal=TERM --kill-after=30s "${EXECUTOR_TIMEOUT}s" \
-        codex exec --dangerously-bypass-approvals-and-sandbox "$PROMPT" 2>&1)
-      EC=$?
-      ;;
     glm)
       OUT=$(timeout --signal=TERM --kill-after=30s "${EXECUTOR_TIMEOUT}s" \
         opencode run --auto -m zai-coding/glm-5.2 "$PROMPT" 2>&1)
