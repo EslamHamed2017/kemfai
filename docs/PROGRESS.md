@@ -3593,3 +3593,60 @@ However, [tasks.md](/home/hermesops/kemfai/specs/001-saas-onboarding-shell/tasks
 
 REVIEW VERDICT: REJECT
 ```
+
+## Rejected implement tick - 2026-09-21 15:34 +04
+
+Codex rejected the last implement attempt and working tree was reverted. Reviewer verdict:
+
+```
+PASS src/modules/entitlements/entitlements.service.spec.ts
+PASS src/modules/plans/plans.service.spec.ts
+PASS src/common/interceptors/audit-event.interceptor.spec.ts
+PASS src/modules/audit/audit.service.spec.ts
+PASS src/common/queues/queue-scheduling.service.spec.ts
+PASS src/app.controller.spec.ts
+PASS src/integrations/minio/minio-client.spec.ts
+PASS src/integrations/odoo-rpc/odoo-rpc.service.spec.ts
+PASS src/integrations/minio/minio-storage.service.spec.ts
+PASS src/integrations/odoo-rpc/odoo-rpc-client.spec.ts
+PASS src/common/queues/queue-names.spec.ts
+PASS src/integrations/minio/tenant-bucket-naming.spec.ts
+
+Test Suites: 24 passed, 24 total
+Tests:       230 passed, 230 total
+Snapshots:   0 total
+Time:        23.42 s
+Ran all test suites.
+
+codex
+Implemented task: **T035** — MFA enroll/confirm endpoints via Keycloak.
+
+Tests executed:
+
+- Unit suite: 230/230 passed
+- T035 integration suite: 14/14 passed
+- Build: passed
+- Lint: passed
+
+No Odoo core edits, hard-coded entitlements, native Odoo UI leakage, accounting changes, or cross-tenant access were introduced. Authentication, verified-account enforcement, Keycloak credential checking, and feature-flag gating are present.
+
+1. Concurrent confirmations are not failure-atomic. Two requests can both read `mfaEnrolled=false`; the first flips it and begins auditing, while the second sees its conditional update affect zero rows and immediately returns `200 { mfaEnrolled: true }`. If the first request’s audit then fails, its compensation resets the flag to false. The second request has therefore reported success with neither persisted enrollment state nor the mandatory `account.mfa_enrolled` audit event. The integration tests do not cover this race. T035’s audit requirement is not reliably satisfied, so marking it complete was premature.
+
+REVIEW VERDICT: REJECT
+tokens used
+57,296
+Implemented task: **T035** — MFA enroll/confirm endpoints via Keycloak.
+
+Tests executed:
+
+- Unit suite: 230/230 passed
+- T035 integration suite: 14/14 passed
+- Build: passed
+- Lint: passed
+
+No Odoo core edits, hard-coded entitlements, native Odoo UI leakage, accounting changes, or cross-tenant access were introduced. Authentication, verified-account enforcement, Keycloak credential checking, and feature-flag gating are present.
+
+1. Concurrent confirmations are not failure-atomic. Two requests can both read `mfaEnrolled=false`; the first flips it and begins auditing, while the second sees its conditional update affect zero rows and immediately returns `200 { mfaEnrolled: true }`. If the first request’s audit then fails, its compensation resets the flag to false. The second request has therefore reported success with neither persisted enrollment state nor the mandatory `account.mfa_enrolled` audit event. The integration tests do not cover this race. T035’s audit requirement is not reliably satisfied, so marking it complete was premature.
+
+REVIEW VERDICT: REJECT
+```
