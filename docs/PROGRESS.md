@@ -2966,3 +2966,60 @@ The contract suite passes (8/8), the full API unit suite passes (208/208), and b
 
 REVIEW VERDICT: REJECT
 ```
+
+## Rejected implement tick - 2026-09-21 04:10 +04
+
+Codex rejected the last implement attempt and working tree was reverted. Reviewer verdict:
+
+```
+  query-string  5.0.0 - 9.4.1
+  Depends on vulnerable versions of decode-uri-component
+  node_modules/query-string
+    minio  >=7.0.30
+    Depends on vulnerable versions of query-string
+    Depends on vulnerable versions of stream-json
+    node_modules/minio
+
+stream-json  <=3.4.0
+Severity: moderate
+stream-json: pick/ignore/filter/replace filters are O(depth²) on nested input — small crafted JSON blocks the event loop for seconds→minutes (DoS) - https://github.com/advisories/GHSA-528h-pc64-c93x
+fix available via `npm audit fix --force`
+Will install minio@7.1.3, which is a breaking change
+node_modules/stream-json
+
+9 moderate severity vulnerabilities
+
+To address issues that do not require attention, run:
+  npm audit fix
+
+To address all issues (including breaking changes), run:
+  npm audit fix --force
+
+codex
+Implemented Task ID: T027.
+
+The contract command passes: 8/8 tests. The broader API suite passes: 208/208 tests across 24 suites. `npm run build` also succeeds. However, those results do not establish valid completion.
+
+No core Odoo edits, hard-coded plan/trial values, tenant-isolation regression, accounting nondeterminism, or missing feature-flag annotation were found in this change.
+
+1. The test does not validate the committed contract unchanged. It silently rewrites malformed OpenAPI responses in memory, deletes the configured server, and supplies permissive arbitrary-object schemas for errors. This can conceal contract defects rather than detect them.
+2. T027 improperly adds production MFA endpoints that return `200` without enrolling or confirming MFA, invoking Keycloak, checking verified-account state, or emitting `account.mfa_enrolled`. That is an exposed fake-success implementation of still-open T035.
+3. The test bypasses the application’s real authentication and guard chain. Both protected MFA endpoints succeed without bearer authentication in the suite, so their documented security behavior is untested.
+4. Marking T027 complete is premature because its passing assertions depend on a modified, weakened version of the contract and unsafe production stubs.
+
+REVIEW VERDICT: REJECT
+tokens used
+38,181
+Implemented Task ID: T027.
+
+The contract command passes: 8/8 tests. The broader API suite passes: 208/208 tests across 24 suites. `npm run build` also succeeds. However, those results do not establish valid completion.
+
+No core Odoo edits, hard-coded plan/trial values, tenant-isolation regression, accounting nondeterminism, or missing feature-flag annotation were found in this change.
+
+1. The test does not validate the committed contract unchanged. It silently rewrites malformed OpenAPI responses in memory, deletes the configured server, and supplies permissive arbitrary-object schemas for errors. This can conceal contract defects rather than detect them.
+2. T027 improperly adds production MFA endpoints that return `200` without enrolling or confirming MFA, invoking Keycloak, checking verified-account state, or emitting `account.mfa_enrolled`. That is an exposed fake-success implementation of still-open T035.
+3. The test bypasses the application’s real authentication and guard chain. Both protected MFA endpoints succeed without bearer authentication in the suite, so their documented security behavior is untested.
+4. Marking T027 complete is premature because its passing assertions depend on a modified, weakened version of the contract and unsafe production stubs.
+
+REVIEW VERDICT: REJECT
+```
