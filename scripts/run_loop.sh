@@ -59,7 +59,8 @@ for t in $(seq 1 "$TASKS"); do
       fi
       KEMFAI_FIX_NOTE=$(echo "$OUT" | extract_verdict)
       export KEMFAI_FIX_NOTE
-      echo "LOOP: rejected on attempt $a — retrying SAME task now with reviewer feedback."
+      printf '%s\n' "$KEMFAI_FIX_NOTE" > "$REJECTION_FILE"
+      echo "LOOP: rejected on attempt $a — persisted feedback and retrying SAME task now."
       continue
     fi
 
