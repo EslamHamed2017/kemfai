@@ -3536,3 +3536,60 @@ Blockers:
 
 REVIEW VERDICT: REJECT
 ```
+
+## Rejected implement tick - 2026-09-21 15:24 +04
+
+Codex rejected the last implement attempt and working tree was reverted. Reviewer verdict:
+
+```
+   296	    const token = await tokenFor(account);
+   297	    await setAccountsFlag(false);
+   298	    try {
+   299	      await request(app.getHttpServer())
+   300	        .post('/accounts/mfa/enroll')
+   301	        .set('Authorization', `Bearer ${token}`)
+   302	        .expect(404);
+   303	    } finally {
+   304	      await setAccountsFlag(true);
+   305	    }
+   306	  });
+   307	});
+
+codex
+Implemented task: **T035**.
+
+The main behavior is present: authenticated verified-account MFA enrollment, Keycloak `CONFIGURE_TOTP`, credential-based confirmation, idempotency, feature-flag gating, and `account.mfa_enrolled` auditing. No Odoo core edits, hard-coded entitlement/trial values, native Odoo UI leakage, accounting changes, or obvious cross-tenant access were introduced.
+
+Test evidence:
+
+- Full unit suite: **228/228 passed**
+- MFA integration suite: **9/9 passed**
+- Build: passed
+- Lint: passed
+- `git diff --check`: passed
+
+However, [tasks.md](/home/hermesops/kemfai/specs/001-saas-onboarding-shell/tasks.md:426) was marked complete prematurely.
+
+1. MFA state and its mandatory audit event are not atomic. [accounts.service.ts](/home/hermesops/kemfai/backend/api/src/modules/accounts/accounts.service.ts:415) commits `mfaEnrolled=true`, then performs the tenant lookup outside the audit failure/compensation block at line 420. If that lookup fails—or the process dies before the audit insert—the account remains MFA-enrolled without the required `account.mfa_enrolled` event. This violates T035’s explicit audit requirement and the constitution’s auditability gate. The integration tests cover successful auditing but not this failure path.
+
+REVIEW VERDICT: REJECT
+tokens used
+47,471
+Implemented task: **T035**.
+
+The main behavior is present: authenticated verified-account MFA enrollment, Keycloak `CONFIGURE_TOTP`, credential-based confirmation, idempotency, feature-flag gating, and `account.mfa_enrolled` auditing. No Odoo core edits, hard-coded entitlement/trial values, native Odoo UI leakage, accounting changes, or obvious cross-tenant access were introduced.
+
+Test evidence:
+
+- Full unit suite: **228/228 passed**
+- MFA integration suite: **9/9 passed**
+- Build: passed
+- Lint: passed
+- `git diff --check`: passed
+
+However, [tasks.md](/home/hermesops/kemfai/specs/001-saas-onboarding-shell/tasks.md:426) was marked complete prematurely.
+
+1. MFA state and its mandatory audit event are not atomic. [accounts.service.ts](/home/hermesops/kemfai/backend/api/src/modules/accounts/accounts.service.ts:415) commits `mfaEnrolled=true`, then performs the tenant lookup outside the audit failure/compensation block at line 420. If that lookup fails—or the process dies before the audit insert—the account remains MFA-enrolled without the required `account.mfa_enrolled` event. This violates T035’s explicit audit requirement and the constitution’s auditability gate. The integration tests cover successful auditing but not this failure path.
+
+REVIEW VERDICT: REJECT
+```
