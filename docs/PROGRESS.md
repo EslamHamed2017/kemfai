@@ -3821,3 +3821,60 @@ Tests: `npm test -- --runInBand` passed all 17 tests; production build and stand
 
 REVIEW VERDICT: REJECT
 ```
+
+## Rejected implement tick - 2026-09-22 04:16 +04
+
+Codex rejected the last implement attempt and working tree was reverted. Reviewer verdict:
+
+```
+   220	- **FR-020**: System MUST allow a verified account to enroll in multi-factor authentication (MFA) as an available capability; enrollment MUST NOT be a blocking requirement to proceed with onboarding unless a future policy mandates it.
+ M frontend/jest.config.js
+D  frontend/src/app/(public)/.gitkeep
+ M frontend/src/lib/api-client/schema.d.ts
+ M frontend/src/locales/ar/common.json
+ M frontend/src/locales/en/common.json
+ M specs/001-saas-onboarding-shell/contracts/openapi.yaml
+ M specs/001-saas-onboarding-shell/tasks.md
+?? frontend/src/app/(public)/
+?? frontend/src/lib/config/
+?? frontend/tests/unit/plan-feature-labels.spec.ts
+?? frontend/tests/unit/plans-catalog.spec.tsx
+
+codex
+Implemented task: **T036**.
+
+Tests do exist and pass:
+
+- `npm test -- --runInBand`: 7 suites, 23 tests passed.
+- `npm run typecheck`: passed.
+- `npm run build`: passed.
+
+No Odoo core edit, native Odoo UI exposure, accounting nondeterminism, or tenant-isolation leak was found in this change. The T036 checkbox was nevertheless marked complete prematurely.
+
+1. The page does not satisfy Scenario 1.1/FR-016. It receives only entitlement keys and discards configured limit values, so it cannot display the required feature/limit summary ([plans.service.ts](/home/hermesops/kemfai/backend/api/src/modules/plans/plans.service.ts:38), [plans-catalog.tsx](/home/hermesops/kemfai/frontend/src/app/(public)/plans/plans-catalog.tsx:38)).
+
+2. Feature presentation is hard-coded to the current seed catalog, contrary to configuration-driven entitlements. Any newly configured feature falls back to an English-derived label—even in Arabic—violating FR-014’s no-untranslated-text requirement ([plan-feature-labels.ts](/home/hermesops/kemfai/frontend/src/lib/config/plan-feature-labels.ts:11), [plan-feature-labels.ts](/home/hermesops/kemfai/frontend/src/lib/config/plan-feature-labels.ts:35)). The tests explicitly miss the Arabic unknown-feature case.
+
+3. Backend/API failure is silently converted into “no plans are published,” presenting a false business state and preventing an actionable retry/error path ([page.tsx](/home/hermesops/kemfai/frontend/src/app/(public)/plans/page.tsx:14)). The page-fetch behavior is untested; existing tests exercise only the supplied catalog component.
+
+REVIEW VERDICT: REJECT
+tokens used
+35,171
+Implemented task: **T036**.
+
+Tests do exist and pass:
+
+- `npm test -- --runInBand`: 7 suites, 23 tests passed.
+- `npm run typecheck`: passed.
+- `npm run build`: passed.
+
+No Odoo core edit, native Odoo UI exposure, accounting nondeterminism, or tenant-isolation leak was found in this change. The T036 checkbox was nevertheless marked complete prematurely.
+
+1. The page does not satisfy Scenario 1.1/FR-016. It receives only entitlement keys and discards configured limit values, so it cannot display the required feature/limit summary ([plans.service.ts](/home/hermesops/kemfai/backend/api/src/modules/plans/plans.service.ts:38), [plans-catalog.tsx](/home/hermesops/kemfai/frontend/src/app/(public)/plans/plans-catalog.tsx:38)).
+
+2. Feature presentation is hard-coded to the current seed catalog, contrary to configuration-driven entitlements. Any newly configured feature falls back to an English-derived label—even in Arabic—violating FR-014’s no-untranslated-text requirement ([plan-feature-labels.ts](/home/hermesops/kemfai/frontend/src/lib/config/plan-feature-labels.ts:11), [plan-feature-labels.ts](/home/hermesops/kemfai/frontend/src/lib/config/plan-feature-labels.ts:35)). The tests explicitly miss the Arabic unknown-feature case.
+
+3. Backend/API failure is silently converted into “no plans are published,” presenting a false business state and preventing an actionable retry/error path ([page.tsx](/home/hermesops/kemfai/frontend/src/app/(public)/plans/page.tsx:14)). The page-fetch behavior is untested; existing tests exercise only the supplied catalog component.
+
+REVIEW VERDICT: REJECT
+```
