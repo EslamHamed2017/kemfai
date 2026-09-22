@@ -4049,3 +4049,60 @@ T036 was marked complete prematurely.
 
 REVIEW VERDICT: REJECT
 ```
+
+## Rejected implement tick - 2026-09-22 14:05 +04
+
+Codex rejected the last implement attempt and working tree was reverted. Reviewer verdict:
+
+```
+   122	
+   123	    await waitFor(() => {
+   124	      expect(
+   125	        screen.getByText('If that email has a pending verification, a new link is on its way.'),
+   126	      ).toBeInTheDocument();
+   127	    });
+   128	
+   129	    expect(post).toHaveBeenCalledWith('/accounts/resend-verification', {
+   130	      body: { email: 'owner@example.com' },
+   131	    });
+   132	  });
+   133	});
+docs/PROGRESS.md
+frontend/src/app/(auth)/verify/page.tsx
+frontend/src/app/(auth)/verify/verify-email-screen.tsx
+frontend/src/lib/api-client/browser.ts
+frontend/src/lib/api-client/index.ts
+frontend/src/locales/ar/common.json
+frontend/src/locales/en/common.json
+frontend/tests/unit/verify-email-screen.spec.tsx
+specs/001-saas-onboarding-shell/tasks.md
+M  docs/PROGRESS.md
+A  frontend/src/app/(auth)/verify/page.tsx
+A  frontend/src/app/(auth)/verify/verify-email-screen.tsx
+A  frontend/src/lib/api-client/browser.ts
+M  frontend/src/lib/api-client/index.ts
+M  frontend/src/locales/ar/common.json
+M  frontend/src/locales/en/common.json
+A  frontend/tests/unit/verify-email-screen.spec.tsx
+M  specs/001-saas-onboarding-shell/tasks.md
+
+codex
+Implemented task: T038. Unit tests exist; all 18 frontend tests passed. Typecheck and production build also passed. No Odoo-core, tenant-isolation, accounting, entitlement, feature-flag, localization, or native-Odoo-UI violation was found.
+
+T038 was marked complete prematurely.
+
+1. Resend unconditionally displays success even when the API returns an error, falsely telling the customer a verification email was sent ([verify-email-screen.tsx](/home/hermesops/kemfai/frontend/src/app/(auth)/verify/verify-email-screen.tsx:45)).
+2. A rejected verification request has no catch/error transition, leaving the screen permanently stuck on “Verifying your email…” ([verify-email-screen.tsx](/home/hermesops/kemfai/frontend/src/app/(auth)/verify/verify-email-screen.tsx:33)). Tests cover neither failure path.
+
+REVIEW VERDICT: REJECT
+tokens used
+33,015
+Implemented task: T038. Unit tests exist; all 18 frontend tests passed. Typecheck and production build also passed. No Odoo-core, tenant-isolation, accounting, entitlement, feature-flag, localization, or native-Odoo-UI violation was found.
+
+T038 was marked complete prematurely.
+
+1. Resend unconditionally displays success even when the API returns an error, falsely telling the customer a verification email was sent ([verify-email-screen.tsx](/home/hermesops/kemfai/frontend/src/app/(auth)/verify/verify-email-screen.tsx:45)).
+2. A rejected verification request has no catch/error transition, leaving the screen permanently stuck on “Verifying your email…” ([verify-email-screen.tsx](/home/hermesops/kemfai/frontend/src/app/(auth)/verify/verify-email-screen.tsx:33)). Tests cover neither failure path.
+
+REVIEW VERDICT: REJECT
+```
