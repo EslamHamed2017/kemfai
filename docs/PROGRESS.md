@@ -3764,3 +3764,60 @@ Implemented task: **T027**. The contract suite exercises all documented response
 
 REVIEW VERDICT: REJECT
 ```
+
+## Rejected implement tick - 2026-09-22 04:05 +04
+
+Codex rejected the last implement attempt and working tree was reverted. Reviewer verdict:
+
+```
+        ],
+        trialWindowDays: 14,
+        autoRestrictUnpaid: true,
+        featureFlags: [],
+      }),
+    } as unknown as EntitlementsService;
+
+    const result = await new PlansService(entitlementsService).listPublishedPlans();
+
+    expect(result).toEqual([
+      {
+        id: 'plan-1',
+        name: 'Growth',
+        monthlyPrice: 1200,
+        annualPrice: 12000,
+        currency: 'EGP',
+        features: ['module.accounting'],
+      },
+    ]);
+  });
+});
+ D frontend/src/app/(public)/.gitkeep
+ M frontend/src/locales/ar/common.json
+ M frontend/src/locales/en/common.json
+ M specs/001-saas-onboarding-shell/tasks.md
+?? frontend/src/app/(public)/plans/
+?? frontend/src/lib/config/
+?? frontend/tests/unit/plans-page.spec.tsx
+
+codex
+Implemented Task ID: T036. The checkbox was marked done prematurely.
+
+Tests: `npm test -- --runInBand` passed all 17 tests; production build and standalone typecheck also passed.
+
+1. EN/AR acceptance is not met: plan names and features render raw API values. The API currently returns feature keys such as `module.accounting`, so Arabic users see untranslated internal identifiers rather than a localized feature summary, violating FR-014.
+2. Mandatory EN/AR-RTL and accessibility coverage is missing. The new tests exercise only English, mock localization, never render Arabic/RTL, and do not verify full keyboard operation or accessibility as required by the task suite and plan.
+3. T036 is therefore incomplete, making its `[X]` status premature.
+
+REVIEW VERDICT: REJECT
+tokens used
+40,584
+Implemented Task ID: T036. The checkbox was marked done prematurely.
+
+Tests: `npm test -- --runInBand` passed all 17 tests; production build and standalone typecheck also passed.
+
+1. EN/AR acceptance is not met: plan names and features render raw API values. The API currently returns feature keys such as `module.accounting`, so Arabic users see untranslated internal identifiers rather than a localized feature summary, violating FR-014.
+2. Mandatory EN/AR-RTL and accessibility coverage is missing. The new tests exercise only English, mock localization, never render Arabic/RTL, and do not verify full keyboard operation or accessibility as required by the task suite and plan.
+3. T036 is therefore incomplete, making its `[X]` status premature.
+
+REVIEW VERDICT: REJECT
+```
