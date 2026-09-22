@@ -26,11 +26,13 @@ describe('api-client (T024)', () => {
     const plans: components['schemas']['PlanSummary'][] = [
       {
         id: '11111111-1111-1111-1111-111111111111',
-        name: 'Starter',
+        name: { en: 'Starter', ar: 'المبتدئة' },
         monthlyPrice: 10,
         annualPrice: 100,
         currency: 'USD',
-        features: ['invoicing'],
+        features: [
+          { key: 'invoicing', name: { en: 'Invoicing', ar: 'الفوترة' }, limitValue: null },
+        ],
       },
     ];
     const fetchMock = jest.fn(async (request: Request) => {

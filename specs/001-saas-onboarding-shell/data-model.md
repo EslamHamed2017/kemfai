@@ -53,9 +53,11 @@ proof upload (US5) only ever happens after a tenant is registered but has no dep
 ### Plan / Feature / PlanFeatureEntitlement / PlanSetting / EntitlementDefault
 The entitlement engine (FR-030/FR-030a).
 
-- **Plan**: id (PK), name, published (bool), monthly_price, annual_price, currency, created_at, updated_at.
-- **Feature**: id (PK), key (unique, e.g. `module.accounting`, `module.projects`), display_name, kind
-  (enum: module, limit).
+- **Plan**: id (PK), name (legacy/admin compatibility), name_en, name_ar, published (bool), monthly_price,
+  annual_price, currency, created_at, updated_at. Public catalog output requires both localized names.
+- **Feature**: id (PK), key (unique, e.g. `module.accounting`, `module.projects`), display_name
+  (legacy/admin compatibility), display_name_en, display_name_ar, kind (enum: module, limit). A published
+  catalog entry is omitted if any enabled feature lacks either localized display name.
 - **PlanFeatureEntitlement**: plan_id (FK), feature_key (FK), enabled (bool), limit_value (numeric, nullable) —
   composite PK (plan_id, feature_key). This is the *only* table any module-selection or usage-limit check reads
   (FR-030) — no plan-name branching anywhere in code.
@@ -87,7 +89,8 @@ UI-driven and raw HTTP paths (same FR-006 pattern as `TenantScopeGuard`/`RoleGua
 `PlanFeatureEntitlement` (which governs what a *paying* tenant's plan allows) — a feature can be fully entitled
 by plan and still hidden platform-wide while incomplete.
 
-**Validation**: `published=false` plans are excluded from the public plan list (FR-016) and, if a visitor's
+**Validation**: `published=false` plans and plans with incomplete EN/AR customer-facing copy are excluded from
+the public plan list (FR-014, FR-016) and, if a visitor's
 in-flight selection references a plan that becomes unpublished before signup completes, the signup step
 re-validates and prompts re-selection (Edge Cases).
 

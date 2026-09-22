@@ -34,23 +34,47 @@ const SEED_ENTITLEMENT_DEFAULT = {
 };
 
 const SEED_FEATURES = [
-  { key: 'module.accounting', displayName: 'Accounting', kind: FeatureKind.MODULE },
-  { key: 'module.invoicing', displayName: 'Invoicing', kind: FeatureKind.MODULE },
+  {
+    key: 'module.accounting',
+    displayName: 'Accounting',
+    displayNameEn: 'Accounting',
+    displayNameAr: 'المحاسبة',
+    kind: FeatureKind.MODULE,
+  },
+  {
+    key: 'module.invoicing',
+    displayName: 'Invoicing',
+    displayNameEn: 'Invoicing',
+    displayNameAr: 'الفوترة',
+    kind: FeatureKind.MODULE,
+  },
   {
     key: 'limit.users',
     displayName: 'User seats',
+    displayNameEn: 'User seats',
+    displayNameAr: 'مقاعد المستخدمين',
     kind: FeatureKind.LIMIT,
   },
   {
     key: 'module.accounts',
     displayName: 'Accounts & signup (US1)',
+    displayNameEn: 'Accounts & signup',
+    displayNameAr: 'الحسابات والتسجيل',
     kind: FeatureKind.MODULE,
   },
-] satisfies Array<{ key: string; displayName: string; kind: FeatureKind }>;
+] satisfies Array<{
+  key: string;
+  displayName: string;
+  displayNameEn: string;
+  displayNameAr: string;
+  kind: FeatureKind;
+}>;
 
 const SEED_PLAN = {
   id: SEED_PLAN_ID,
   name: 'Growth (dev seed)',
+  nameEn: 'Growth',
+  nameAr: 'النمو',
   published: true,
   monthlyPrice: '1200.00',
   annualPrice: '12000.00',
@@ -80,7 +104,7 @@ export async function runDevQuickstartSeed(dataSource: DataSource): Promise<void
     .into(Feature)
     .values(SEED_FEATURES)
     .onConflict(
-      '("key") DO UPDATE SET "display_name" = EXCLUDED."display_name", "kind" = EXCLUDED."kind"',
+      '("key") DO UPDATE SET "display_name" = EXCLUDED."display_name", "display_name_en" = EXCLUDED."display_name_en", "display_name_ar" = EXCLUDED."display_name_ar", "kind" = EXCLUDED."kind"',
     )
     .execute();
 
@@ -91,7 +115,7 @@ export async function runDevQuickstartSeed(dataSource: DataSource): Promise<void
     .into(Plan)
     .values(SEED_PLAN)
     .onConflict(
-      '("id") DO UPDATE SET "name" = EXCLUDED."name", "published" = EXCLUDED."published", ' +
+      '("id") DO UPDATE SET "name" = EXCLUDED."name", "name_en" = EXCLUDED."name_en", "name_ar" = EXCLUDED."name_ar", "published" = EXCLUDED."published", ' +
         '"monthly_price" = EXCLUDED."monthly_price", "annual_price" = EXCLUDED."annual_price", ' +
         '"currency" = EXCLUDED."currency"',
     )

@@ -19,6 +19,12 @@ export class Plan {
   @Column({ name: 'name', type: 'text' })
   name: string;
 
+  @Column({ name: 'name_en', type: 'text', nullable: true })
+  nameEn: string | null;
+
+  @Column({ name: 'name_ar', type: 'text', nullable: true })
+  nameAr: string | null;
+
   @Column({ name: 'published', type: 'boolean', default: false })
   published: boolean;
 

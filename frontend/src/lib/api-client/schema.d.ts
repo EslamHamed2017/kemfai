@@ -1120,22 +1120,35 @@ export interface components {
     schemas: {
         PlanSummary: {
             /** Format: uuid */
-            id?: string;
-            name?: string;
-            monthlyPrice?: number;
-            annualPrice?: number;
-            currency?: string;
-            features?: string[];
+            id: string;
+            name: components["schemas"]["LocalizedText"];
+            monthlyPrice: number;
+            annualPrice: number;
+            currency: string;
+            features: components["schemas"]["PlanFeatureSummary"][];
+        };
+        LocalizedText: {
+            en: string;
+            ar: string;
+        };
+        PlanFeatureSummary: {
+            key: string;
+            name: components["schemas"]["LocalizedText"];
+            limitValue: number | null;
         };
         SignupRequest: {
             /** Format: email */
             email: string;
-            /** Format: password */
+            /**
+             * Format: password
+             * @description FR-018's documented minimum password standard: a string of at least 10 and at most 128 characters. Length is the gate (no composition rules), mirroring NIST SP 800-63B guidance. Anything shorter/longer or non-string is rejected with 422.
+             */
             password: string;
             /** Format: uuid */
             planId: string;
             /** @enum {string} */
             billingCycle: "monthly" | "annual";
+            /** @description Must be true — the legal terms must be accepted to sign up (Scenario 1.2). */
             acceptedTerms: boolean;
         };
         TenantStatus: {

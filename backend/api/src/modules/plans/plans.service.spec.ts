@@ -1,6 +1,7 @@
 import controlDataSource from '../../database/data-source';
 import { EntitlementsService } from '../entitlements/entitlements.service';
 import { Plan } from '../entitlements/entities/plan.entity';
+import { Feature } from '../entitlements/entities/feature.entity';
 import { PlansService } from './plans.service';
 
 /**
@@ -10,10 +11,13 @@ import { PlansService } from './plans.service';
  * test/integration/plans-http.integration-spec.ts.
  */
 describe('PlansService (T031, unit)', () => {
-  function mockPlanRepository(plans: Partial<Plan>[]) {
+  function mockRepositories(plans: Partial<Plan>[], features: Partial<Feature>[] = []) {
     jest.spyOn(controlDataSource, 'getRepository').mockImplementation((target: any) => {
       if (target === Plan) {
         return { find: jest.fn().mockResolvedValue(plans) } as any;
+      }
+      if (target === Feature) {
+        return { find: jest.fn().mockResolvedValue(features) } as any;
       }
       throw new Error(`Unexpected repository requested for ${String(target)}`);
     });
@@ -24,7 +28,7 @@ describe('PlansService (T031, unit)', () => {
   });
 
   it('returns an empty array when no plan is published (FR-011 empty state, not an error)', async () => {
-    mockPlanRepository([]);
+    mockRepositories([]);
     const entitlementsService = { getEntitlementSet: jest.fn() } as unknown as EntitlementsService;
 
     const result = await new PlansService(entitlementsService).listPublishedPlans();
@@ -49,20 +53,25 @@ describe('PlansService (T031, unit)', () => {
   });
 
   it('maps each published plan to the PlanSummary shape, sourcing features from EntitlementsService', async () => {
-    mockPlanRepository([
-      {
-        id: 'plan-1',
-        name: 'Growth',
-        monthlyPrice: '1200.00',
-        annualPrice: '12000.00',
-        currency: 'EGP',
-      },
-    ]);
+    mockRepositories(
+      [
+        {
+          id: 'plan-1',
+          name: 'Growth',
+          nameEn: 'Growth',
+          nameAr: 'النمو',
+          monthlyPrice: '1200.00',
+          annualPrice: '12000.00',
+          currency: 'EGP',
+        },
+      ],
+      [{ key: 'module.accounting', displayNameEn: 'Accounting', displayNameAr: 'المحاسبة' }],
+    );
     const entitlementsService = {
       getEntitlementSet: jest.fn().mockResolvedValue({
         planId: 'plan-1',
         features: [
-          { key: 'module.accounting', enabled: true, limitValue: null },
+          { key: 'module.accounting', enabled: true, limitValue: 250 },
           { key: 'module.disabled', enabled: false, limitValue: null },
         ],
         trialWindowDays: 14,
@@ -76,12 +85,66 @@ describe('PlansService (T031, unit)', () => {
     expect(result).toEqual([
       {
         id: 'plan-1',
-        name: 'Growth',
+        name: { en: 'Growth', ar: 'النمو' },
         monthlyPrice: 1200,
         annualPrice: 12000,
         currency: 'EGP',
-        features: ['module.accounting'],
+        features: [
+          {
+            key: 'module.accounting',
+            name: { en: 'Accounting', ar: 'المحاسبة' },
+            limitValue: 250,
+          },
+        ],
       },
     ]);
+  });
+
+  it('preserves null limitValue for an unlimited enabled feature', async () => {
+    mockRepositories(
+      [
+        {
+          id: 'plan-1',
+          nameEn: 'Growth',
+          nameAr: 'النمو',
+          monthlyPrice: '1200.00',
+          annualPrice: '12000.00',
+          currency: 'EGP',
+        },
+      ],
+      [{ key: 'module.reports', displayNameEn: 'Reports', displayNameAr: 'التقارير' }],
+    );
+    const entitlementsService = {
+      getEntitlementSet: jest.fn().mockResolvedValue({
+        planId: 'plan-1',
+        features: [{ key: 'module.reports', enabled: true, limitValue: null }],
+        trialWindowDays: 14,
+        autoRestrictUnpaid: true,
+        featureFlags: [],
+      }),
+    } as unknown as EntitlementsService;
+
+    const [summary] = await new PlansService(entitlementsService).listPublishedPlans();
+
+    expect(summary.features).toEqual([
+      { key: 'module.reports', name: { en: 'Reports', ar: 'التقارير' }, limitValue: null },
+    ]);
+  });
+
+  it('never exposes a published plan or enabled feature with missing Arabic copy', async () => {
+    mockRepositories([
+      {
+        id: 'plan-1',
+        nameEn: 'Growth',
+        nameAr: null,
+        monthlyPrice: '1',
+        annualPrice: '10',
+        currency: 'USD',
+      },
+    ]);
+    const entitlementsService = { getEntitlementSet: jest.fn() } as unknown as EntitlementsService;
+
+    expect(await new PlansService(entitlementsService).listPublishedPlans()).toEqual([]);
+    expect(entitlementsService.getEntitlementSet).not.toHaveBeenCalled();
   });
 });

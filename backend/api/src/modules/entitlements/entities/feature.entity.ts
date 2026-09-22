@@ -20,6 +20,12 @@ export class Feature {
   @Column({ name: 'display_name', type: 'text' })
   displayName: string;
 
+  @Column({ name: 'display_name_en', type: 'text', nullable: true })
+  displayNameEn: string | null;
+
+  @Column({ name: 'display_name_ar', type: 'text', nullable: true })
+  displayNameAr: string | null;
+
   @Column({ name: 'kind', type: 'enum', enum: FeatureKind, enumName: 'feature_kind_enum' })
   kind: FeatureKind;
 }

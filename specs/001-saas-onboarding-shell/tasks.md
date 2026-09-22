@@ -431,7 +431,7 @@ tenant/workspace exists until the verification link is used, and the account can
     to continue onboarding (FR-020).
   - **Roles**: Primary: GLM · Backup: Claude · Reviewer: Codex
 
-- [ ] T036 [P] [US1] Build the public plan-selection page (pricing, feature summary, EN/AR/RTL) carrying
+- [X] T036 [P] [US1] Build the public plan-selection page (pricing, feature summary, EN/AR/RTL) carrying
   plan+cycle choice into signup without re-entry in `frontend/src/app/(public)/plans/page.tsx`
   - **Dependencies**: T024, T031
   - **Acceptance Criteria**: Matches Acceptance Scenario 1.1; empty state renders when no plan is published

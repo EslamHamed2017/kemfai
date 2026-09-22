@@ -63,7 +63,15 @@ describe('GET /public/plans (T031, HTTP)', () => {
   async function createFeature(kind: FeatureKind = FeatureKind.MODULE): Promise<Feature> {
     const featureRepo = controlDataSource.getRepository(Feature);
     const key = `test.plans-http.${randomUUID()}`;
-    const feature = await featureRepo.save(featureRepo.create({ key, displayName: key, kind }));
+    const feature = await featureRepo.save(
+      featureRepo.create({
+        key,
+        displayName: key,
+        displayNameEn: `EN ${key}`,
+        displayNameAr: `AR ${key}`,
+        kind,
+      }),
+    );
     createdFeatureKeys.push(key);
     return feature;
   }
@@ -73,6 +81,8 @@ describe('GET /public/plans (T031, HTTP)', () => {
     const plan = await planRepo.save(
       planRepo.create({
         name: `plan-${randomUUID()}`,
+        nameEn: 'Test plan',
+        nameAr: 'خطة اختبار',
         published: true,
         monthlyPrice: '10.00',
         annualPrice: '100.00',
@@ -88,11 +98,10 @@ describe('GET /public/plans (T031, HTTP)', () => {
     planId: string,
     featureKey: string,
     enabled: boolean,
+    limitValue: string | null = null,
   ): Promise<void> {
     const entitlementRepo = controlDataSource.getRepository(PlanFeatureEntitlement);
-    await entitlementRepo.save(
-      entitlementRepo.create({ planId, featureKey, enabled, limitValue: null }),
-    );
+    await entitlementRepo.save(entitlementRepo.create({ planId, featureKey, enabled, limitValue }));
   }
 
   it('is reachable with no Authorization header (@Public bypasses the global BearerAuthGuard)', async () => {
@@ -116,11 +125,13 @@ describe('GET /public/plans (T031, HTTP)', () => {
     const disabledFeature = await createFeature();
     const plan = await createPlan({
       name: 'Growth (T031 test)',
+      nameEn: 'Growth',
+      nameAr: 'النمو',
       monthlyPrice: '1200.00',
       annualPrice: '12000.00',
       currency: 'EGP',
     });
-    await createEntitlement(plan.id, enabledFeature.key, true);
+    await createEntitlement(plan.id, enabledFeature.key, true, '25.00');
     await createEntitlement(plan.id, disabledFeature.key, false);
 
     const response = await request(app.getHttpServer()).get('/public/plans').expect(200);
@@ -128,11 +139,40 @@ describe('GET /public/plans (T031, HTTP)', () => {
     const summary = (response.body as PlanSummary[]).find((item) => item.id === plan.id);
     expect(summary).toEqual({
       id: plan.id,
-      name: 'Growth (T031 test)',
+      name: { en: 'Growth', ar: 'النمو' },
       monthlyPrice: 1200,
       annualPrice: 12000,
       currency: 'EGP',
-      features: [enabledFeature.key],
+      features: [
+        {
+          key: enabledFeature.key,
+          name: { en: `EN ${enabledFeature.key}`, ar: `AR ${enabledFeature.key}` },
+          limitValue: 25,
+        },
+      ],
     });
+  });
+
+  it('returns null limitValue for an unlimited enabled feature', async () => {
+    const feature = await createFeature();
+    const plan = await createPlan();
+    await createEntitlement(plan.id, feature.key, true);
+
+    const response = await request(app.getHttpServer()).get('/public/plans').expect(200);
+    const summary = (response.body as PlanSummary[]).find((item) => item.id === plan.id);
+
+    expect(summary?.features).toEqual([
+      {
+        key: feature.key,
+        name: { en: `EN ${feature.key}`, ar: `AR ${feature.key}` },
+        limitValue: null,
+      },
+    ]);
+  });
+
+  it('does not expose a nominally published plan when a translation is missing', async () => {
+    const plan = await createPlan({ nameAr: null });
+    const response = await request(app.getHttpServer()).get('/public/plans').expect(200);
+    expect((response.body as PlanSummary[]).some((item) => item.id === plan.id)).toBe(false);
   });
 });

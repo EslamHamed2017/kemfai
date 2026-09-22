@@ -405,13 +405,31 @@ components:
   schemas:
     PlanSummary:
       type: object
+      required: [id, name, monthlyPrice, annualPrice, currency, features]
       properties:
         id: { type: string, format: uuid }
-        name: { type: string }
+        name: { $ref: "#/components/schemas/LocalizedText" }
         monthlyPrice: { type: number }
         annualPrice: { type: number }
         currency: { type: string }
-        features: { type: array, items: { type: string } }
+        features:
+          type: array
+          items: { $ref: "#/components/schemas/PlanFeatureSummary" }
+
+    LocalizedText:
+      type: object
+      required: [en, ar]
+      properties:
+        en: { type: string, minLength: 1 }
+        ar: { type: string, minLength: 1 }
+
+    PlanFeatureSummary:
+      type: object
+      required: [key, name, limitValue]
+      properties:
+        key: { type: string }
+        name: { $ref: "#/components/schemas/LocalizedText" }
+        limitValue: { type: number, nullable: true }
 
     SignupRequest:
       type: object

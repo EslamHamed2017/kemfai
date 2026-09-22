@@ -2,6 +2,22 @@
   "app": {
     "title": "KEMFAI"
   },
+  "plans": {
+    "title": "Choose your plan",
+    "intro": "Pick the plan and billing cycle that fit your business.",
+    "billingCycle": "Billing cycle",
+    "monthly": "Monthly",
+    "annual": "Annual",
+    "month": "month",
+    "year": "year",
+    "features": "Included features",
+    "featureLimit": "Limit: {limit}",
+    "choose": "Choose {plan}",
+    "loading": "Loading plans…",
+    "empty": "No plans are available right now. Please check back soon.",
+    "error": "We couldn't load the plans. Please try again.",
+    "retry": "Try again"
+  },
   "verifyEmail": {
     "verifying": "Verifying your email…",
     "success": {

@@ -1,15 +1,32 @@
 import { Injectable } from '@nestjs/common';
+import { In } from 'typeorm';
 import controlDataSource from '../../database/data-source';
+import { Feature } from '../entitlements/entities/feature.entity';
 import { Plan } from '../entitlements/entities/plan.entity';
 import { EntitlementsService } from '../entitlements/entitlements.service';
 
 export interface PlanSummary {
   id: string;
-  name: string;
+  name: LocalizedText;
   monthlyPrice: number;
   annualPrice: number;
   currency: string;
-  features: string[];
+  features: PlanFeatureSummary[];
+}
+
+export interface PlanFeatureSummary {
+  key: string;
+  name: LocalizedText;
+  limitValue: number | null;
+}
+
+export interface LocalizedText {
+  en: string;
+  ar: string;
+}
+
+function translated(en: string | null, ar: string | null): en is string {
+  return Boolean(en?.trim() && ar?.trim());
 }
 
 /**
@@ -26,20 +43,41 @@ export class PlansService {
     const planRepo = controlDataSource.getRepository(Plan);
     const plans = await planRepo.find({ where: { published: true }, order: { createdAt: 'ASC' } });
 
-    return Promise.all(
+    const summaries = await Promise.all(
       plans.map(async (plan) => {
+        if (!translated(plan.nameEn, plan.nameAr)) return null;
         const entitlementSet = await this.entitlementsService.getEntitlementSet(plan.id);
+        const enabledEntitlements = entitlementSet.features.filter((feature) => feature.enabled);
+        const enabledKeys = enabledEntitlements.map((feature) => feature.key);
+        const features = enabledKeys.length
+          ? await controlDataSource.getRepository(Feature).find({ where: { key: In(enabledKeys) } })
+          : [];
+        const byKey = new Map(features.map((feature) => [feature.key, feature]));
+        const translatedFeatures = enabledEntitlements.map((entitlement) => ({
+          entitlement,
+          feature: byKey.get(entitlement.key),
+        }));
+        if (
+          translatedFeatures.some(
+            ({ feature }) => !feature || !translated(feature.displayNameEn, feature.displayNameAr),
+          )
+        ) {
+          return null;
+        }
         return {
           id: plan.id,
-          name: plan.name,
+          name: { en: plan.nameEn!, ar: plan.nameAr! },
           monthlyPrice: Number(plan.monthlyPrice),
           annualPrice: Number(plan.annualPrice),
           currency: plan.currency,
-          features: entitlementSet.features
-            .filter((feature) => feature.enabled)
-            .map((feature) => feature.key),
+          features: translatedFeatures.map(({ entitlement, feature }) => ({
+            key: feature!.key,
+            name: { en: feature!.displayNameEn!, ar: feature!.displayNameAr! },
+            limitValue: entitlement.limitValue,
+          })),
         };
       }),
     );
+    return summaries.filter((summary): summary is PlanSummary => summary !== null);
   }
 }

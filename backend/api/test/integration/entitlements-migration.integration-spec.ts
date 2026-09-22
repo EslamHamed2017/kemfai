@@ -65,6 +65,21 @@ describe('Entitlement engine migration + entities (T009)', () => {
     expect(rows[0].defaultAutoRestrictUnpaid).toBe(true);
   });
 
+  it('applies the collision-safe bilingual catalog migration with all four columns intact', async () => {
+    const migrations = await controlDataSource.query(
+      'SELECT name FROM migrations WHERE name = $1',
+      ['AddBilingualCatalogNames1789837200000'],
+    );
+    expect(migrations).toHaveLength(1);
+
+    const columns = await controlDataSource.query(
+      `SELECT table_name, column_name FROM information_schema.columns
+       WHERE (table_name = 'plan' AND column_name IN ('name_en', 'name_ar'))
+          OR (table_name = 'feature' AND column_name IN ('display_name_en', 'display_name_ar'))`,
+    );
+    expect(columns).toHaveLength(4);
+  });
+
   it('enforces EntitlementDefault as a DB-level singleton (CHECK id = 1 rejects a second row)', async () => {
     await expect(
       controlDataSource.query(
