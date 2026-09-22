@@ -1,0 +1,134 @@
+#!/usr/bin/env bash
+# Deterministic mock of the `claude` CLI for KEMFAI governance tests.
+# No real model call. Behavior is driven entirely by MOCK_STATE_DIR files
+# prepared by the test, consumed one line per invocation.
+set -euo pipefail
+STATE="${MOCK_STATE_DIR:?MOCK_STATE_DIR not set}"
+REPO_DIR="${MOCK_REPO_DIR:?MOCK_REPO_DIR not set}"
+mkdir -p "$STATE"
+
+IDX_FILE="$STATE/claude_index.txt"
+SEQ_FILE="$STATE/claude_sequence.txt"
+IDX=0
+[ -f "$IDX_FILE" ] && IDX=$(cat "$IDX_FILE")
+MODE=$(sed -n "$((IDX+1))p" "$SEQ_FILE" 2>/dev/null || true)
+[ -n "$MODE" ] || MODE="ACCEPT"
+echo $((IDX+1)) > "$IDX_FILE"
+
+# Capture the exact prompt this invocation received (the "-p" argument) so
+# tests can assert on what was actually fed back to the executor -- e.g.
+# that stale/partial state was never injected (blocker #1) and that long
+# reviewer feedback was not truncated (blocker #5).
+printf '%s' "${2:-}" > "$STATE/claude_prompt_$((IDX+1)).txt"
+
+TASK_ID="${MOCK_TASK_ID:-T036}"
+
+case "$MODE" in
+  ACCEPT)
+    echo "mock change $IDX" >> "$REPO_DIR/mock_file.txt"
+    echo "KEMFAI_TASK_ID: $TASK_ID"
+    echo "Implemented the task."
+    ;;
+  TECH_QUESTION)
+    echo "mock change $IDX" >> "$REPO_DIR/mock_file.txt"
+    echo "KEMFAI_TASK_ID: $TASK_ID"
+    echo "Ambiguity found while implementing."
+    echo "KEMFAI_TECH_QUESTION: Which column holds the bilingual display name?"
+    ;;
+  OWNER_ESCALATION)
+    echo "KEMFAI_TASK_ID: $TASK_ID"
+    echo "This changes billing behavior for existing customers."
+    echo "KEMFAI_OWNER_ESCALATION: New plan tier changes billing behavior"
+    ;;
+  OTHER_TASK)
+    echo "mock change $IDX" >> "$REPO_DIR/mock_file.txt"
+    echo "KEMFAI_TASK_ID: T099"
+    echo "Implemented a different task than the one pinned."
+    ;;
+  NONE)
+    echo "KEMFAI_TASK_ID: NONE"
+    echo "No implementation progress made this attempt."
+    ;;
+  MALFORMED)
+    # Violates the mandated "exact first line" contract on purpose: prose
+    # precedes the marker, so extract_task_id must resolve this to UNKNOWN.
+    echo "mock change $IDX" >> "$REPO_DIR/mock_file.txt"
+    echo "Let me think about this before reporting the task id."
+    echo "KEMFAI_TASK_ID: $TASK_ID"
+    echo "Implemented something, but the report format is broken."
+    ;;
+  OTHER_TASK_ESCALATION)
+    # Reports a DIFFERENT known task id (like OTHER_TASK) but also tacks on
+    # a real-category KEMFAI_OWNER_ESCALATION marker -- must still resolve
+    # to a pin violation, never an owner escalation.
+    echo "mock change $IDX" >> "$REPO_DIR/mock_file.txt"
+    echo "KEMFAI_TASK_ID: T099"
+    echo "This looks like it touches accounting and tax policy."
+    echo "KEMFAI_OWNER_ESCALATION: New tax calculation changes accounting policy"
+    ;;
+  FAKE_ESCALATION)
+    # A KEMFAI_OWNER_ESCALATION marker whose content is ordinary technical
+    # content (no real category) -- must downgrade to a technical setback.
+    echo "mock change $IDX" >> "$REPO_DIR/mock_file.txt"
+    echo "KEMFAI_TASK_ID: $TASK_ID"
+    echo "This needs a decision."
+    echo "KEMFAI_OWNER_ESCALATION: Need to refactor the shared utils module before proceeding"
+    ;;
+  LEGACY_DR_TECH)
+    # Legacy/plain Decision Request (no strict KEMFAI_TECH_QUESTION marker
+    # at all) whose content is ordinary technical ambiguity.
+    echo "mock change $IDX" >> "$REPO_DIR/mock_file.txt"
+    echo "KEMFAI_TASK_ID: $TASK_ID"
+    echo "I hit ambiguity implementing this."
+    echo ""
+    echo "## Decision Request - which column stores the bilingual plan name"
+    echo ""
+    echo "Should this be name_en/name_ar columns or a single jsonb column?"
+    ;;
+  MALFORMED_ESCALATION)
+    # Violates the mandated "exact first line" contract (prose precedes the
+    # marker, so extract_task_id resolves to UNKNOWN) AND tacks on a
+    # real-category KEMFAI_OWNER_ESCALATION marker -- must still resolve to
+    # a pin violation, never an owner escalation, when a task is pinned.
+    echo "mock change $IDX" >> "$REPO_DIR/mock_file.txt"
+    echo "Let me think about this before reporting the task id."
+    echo "KEMFAI_TASK_ID: $TASK_ID"
+    echo "This looks like it touches accounting and tax policy."
+    echo "KEMFAI_OWNER_ESCALATION: New tax calculation changes accounting policy"
+    ;;
+  ABSENT_ID_ESCALATION)
+    # No KEMFAI_TASK_ID line at all (first line is ordinary prose, so
+    # extract_task_id resolves to UNKNOWN) AND tacks on a real-category
+    # KEMFAI_OWNER_ESCALATION marker -- must still resolve to a pin
+    # violation, never an owner escalation, when a task is pinned.
+    echo "mock change $IDX" >> "$REPO_DIR/mock_file.txt"
+    echo "I found a blocker while implementing, here is my analysis."
+    echo "This looks like it touches accounting and tax policy."
+    echo "KEMFAI_OWNER_ESCALATION: New tax calculation changes accounting policy"
+    ;;
+  LEGACY_DR_ESCALATION)
+    # Legacy/plain Decision Request whose content is a real escalation
+    # category (accounting/tax) -- must resolve to a real owner escalation.
+    echo "KEMFAI_TASK_ID: $TASK_ID"
+    echo "I hit a real blocker."
+    echo ""
+    echo "## Decision Request - accounting and tax policy for prorated billing"
+    echo ""
+    echo "This changes how VAT is calculated for mid-cycle plan upgrades."
+    ;;
+  FALSE_POSITIVE_ESCALATION)
+    # Governance blocker regression: a KEMFAI_OWNER_ESCALATION marker whose
+    # content is ordinary technical work that merely mentions invoice/
+    # ledger/pricing/customer contract -- must downgrade to a technical
+    # setback, never trusted as a real ACCOUNTING_TAX/LEGAL_COMPLIANCE
+    # escalation just because those nouns appear.
+    echo "mock change $IDX" >> "$REPO_DIR/mock_file.txt"
+    echo "KEMFAI_TASK_ID: $TASK_ID"
+    echo "This touches invoice and pricing code so flagging for review."
+    echo "KEMFAI_OWNER_ESCALATION: Reindex the ledger table and rename the customer contract DTO field on the invoice pricing API"
+    ;;
+  *)
+    echo "KEMFAI_TASK_ID: NONE"
+    echo "Unrecognized mock mode: $MODE"
+    ;;
+esac

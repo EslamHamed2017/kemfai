@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+# Deterministic mock of the `opencode` CLI (GLM fallback) for KEMFAI
+# governance tests. Not expected to be invoked while the claude mock
+# succeeds, but present for safety and to keep fallback wiring testable.
+set -euo pipefail
+REPO_DIR="${MOCK_REPO_DIR:?MOCK_REPO_DIR not set}"
+echo "mock opencode change" >> "$REPO_DIR/mock_file.txt"
+echo "KEMFAI_TASK_ID: ${MOCK_TASK_ID:-T036}"
+echo "Implemented via GLM fallback."

@@ -5,7 +5,7 @@
 #   - exit 0 if ACCEPT, exit 2 if REJECT, exit 3 if verdict missing
 set -euo pipefail
 
-REPO=/home/hermesops/kemfai
+REPO=${KEMFAI_REPO:-/home/hermesops/kemfai}
 cd "$REPO"
 
 DIFF_SUMMARY="$(git status --short; echo '----- unstaged diff-stat -----'; git --no-pager diff --stat; echo '----- staged diff-stat -----'; git --no-pager diff --cached --stat; echo; echo '----- unstaged diff (first 400 lines) -----'; git --no-pager diff | sed -n '1,400p'; echo; echo '----- staged diff (first 400 lines) -----'; git --no-pager diff --cached | sed -n '1,400p')"

@@ -1,0 +1,98 @@
+#!/usr/bin/env bash
+# Deterministic mock of the `codex` CLI for KEMFAI governance tests.
+# No real model call. Distinguishes reviewer vs arbiter calls by prompt
+# content and returns the next scripted verdict from MOCK_STATE_DIR.
+set -euo pipefail
+STATE="${MOCK_STATE_DIR:?MOCK_STATE_DIR not set}"
+mkdir -p "$STATE"
+ARGS="$*"
+
+if printf '%s' "$ARGS" | grep -q "TECHNICAL ARBITER"; then
+  SEQ_FILE="$STATE/arbiter_sequence.txt"
+  IDX_FILE="$STATE/arbiter_index.txt"
+  KIND=arbiter
+else
+  SEQ_FILE="$STATE/review_sequence.txt"
+  IDX_FILE="$STATE/review_index.txt"
+  KIND=review
+fi
+
+IDX=0
+[ -f "$IDX_FILE" ] && IDX=$(cat "$IDX_FILE")
+VERDICT=$(sed -n "$((IDX+1))p" "$SEQ_FILE" 2>/dev/null || true)
+if [ "$KIND" = "arbiter" ]; then
+  [ -n "$VERDICT" ] || VERDICT="RESOLVED"
+else
+  [ -n "$VERDICT" ] || VERDICT="ACCEPT"
+fi
+echo $((IDX+1)) > "$IDX_FILE"
+
+echo "codex"
+echo "mock $KIND call #$((IDX+1))"
+if [ "$KIND" = "arbiter" ]; then
+  case "$VERDICT" in
+    RESOLVED)
+      echo "1. Use column feature.name_i18n (jsonb) for the bilingual schema."
+      echo "ARBITER VERDICT: RESOLVED"
+      ;;
+    ESCALATE_PRODUCT_SCOPE)
+      # Real category: PRODUCT_SCOPE.
+      echo "This is actually a material product scope change affecting customer-facing behavior."
+      echo "ARBITER VERDICT: ESCALATE"
+      ;;
+    ESCALATE_ACCOUNTING_TAX)
+      # Real category: ACCOUNTING_TAX.
+      echo "This changes billing policy and tax calculation for existing invoices."
+      echo "ARBITER VERDICT: ESCALATE"
+      ;;
+    ESCALATE_LEGAL_COMPLIANCE)
+      # Real category: LEGAL_COMPLIANCE.
+      echo "This raises a GDPR compliance and data protection concern for EU customers."
+      echo "ARBITER VERDICT: ESCALATE"
+      ;;
+    ESCALATE_FAKE_TECH)
+      # No real category -- ordinary technical content mislabeled as
+      # ESCALATE by the arbiter. Must be downgraded to a technical setback.
+      echo "This just needs a refactor of the shared utils module before proceeding."
+      echo "ARBITER VERDICT: ESCALATE"
+      ;;
+    ESCALATE_LOCKED_BASELINE)
+      # Real category: LOCKED_BASELINE (explicit change to a ratified/
+      # locked decision, not just a domain-noun mention).
+      echo "This would require changing the locked baseline ratified in GATE0_DECISIONS.md."
+      echo "ARBITER VERDICT: ESCALATE"
+      ;;
+    ESCALATE_FALSE_POSITIVE_TECH)
+      # Governance blocker regression: ordinary technical work that merely
+      # mentions invoice/ledger/pricing/customer contract, mislabeled as
+      # ESCALATE by the arbiter. Must be downgraded to a technical setback,
+      # never trusted as a real ACCOUNTING_TAX/LEGAL_COMPLIANCE escalation.
+      echo "This just needs the invoice/ledger table index rebuilt and the pricing API DTO field renamed for the customer contract lookup."
+      echo "ARBITER VERDICT: ESCALATE"
+      ;;
+    *)
+      # Default/legacy ESCALATE: real category LOCKED_BASELINE.
+      echo "This is actually a locked baseline / pricing policy change."
+      echo "ARBITER VERDICT: ESCALATE"
+      ;;
+  esac
+else
+  if [ "$VERDICT" = "ACCEPT" ]; then
+    echo "REVIEW VERDICT: ACCEPT"
+  elif [ "$VERDICT" = "REJECT_LONG" ]; then
+    # Deliberately >6000 bytes so the (no-trunc) fix can be verified
+    # end-to-end: this full body must survive into last_rejection.txt and
+    # then into the next attempt's prompt, unmangled by any 4K/6K cut.
+    echo "1. Mock long blocker enumerating many issues so the reviewer feedback exceeds 6000 bytes end-to-end:"
+    i=1
+    while [ "$i" -le 150 ]; do
+      echo "   - blocker line $i: 0123456789ABCDEFGHIJabcdefghij0123456789ABCDEFGHIJ"
+      i=$((i+1))
+    done
+    echo "   - LAST_LONG_BLOCKER_LINE_MARKER"
+    echo "REVIEW VERDICT: REJECT"
+  else
+    echo "1. Mock blocker: integration tests fail."
+    echo "REVIEW VERDICT: REJECT"
+  fi
+fi

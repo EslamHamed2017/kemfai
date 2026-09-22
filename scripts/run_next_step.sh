@@ -4,11 +4,13 @@
 # Claude Code non-interactively, commits, and prints a short status brief.
 set -euo pipefail
 
-REPO=/home/hermesops/kemfai
+REPO=${KEMFAI_REPO:-/home/hermesops/kemfai}
 FEATURE_DIR="$REPO/specs/001-saas-onboarding-shell"
 STATE="$REPO/scripts/.state"
 LOG_DIR="$REPO/scripts/logs"
 mkdir -p "$LOG_DIR" "$STATE"
+# shellcheck disable=SC1091
+source "$REPO/scripts/lib_governance.sh"
 TS=$(TZ=Asia/Dubai date '+%Y-%m-%d %H:%M %Z')
 LOG="$LOG_DIR/$(TZ=Asia/Dubai date +%Y%m%d-%H%M).log"
 
@@ -46,15 +48,33 @@ case "$next" in
     MSG='docs: SpecKit analyze pass for Slice 1'
     ;;
   implement)
-    PROMPT='/speckit-implement Execute the NEXT single unblocked task from specs/001-saas-onboarding-shell/tasks.md. Rules: honor the ratified constitution (no Odoo core edits, DB-per-tenant, EN/AR from Day 1, deterministic accounting, config-driven entitlements/trial, feature flags gate incomplete modules). Implement a small vertical slice WITH its tests, run those tests, and only mark the task done in tasks.md if they actually pass. State the Task ID you implemented on the first line of your final message. If the task is genuinely ambiguous on a business/product decision, do NOT guess: stop and append a short Decision Request to docs/PROGRESS.md and say so.'
+    TASK_TARGET="Execute the NEXT single unblocked task from specs/001-saas-onboarding-shell/tasks.md."
+    if [ -n "${KEMFAI_PINNED_TASK:-}" ]; then
+      TASK_TARGET="Continue Task ID ${KEMFAI_PINNED_TASK}, which is already in progress from a prior attempt. Do NOT switch to a different task."
+    fi
+    PROMPT="/speckit-implement ${TASK_TARGET} Rules: honor the ratified constitution (no Odoo core edits, DB-per-tenant, EN/AR from Day 1, deterministic accounting, config-driven entitlements/trial, feature flags gate incomplete modules). Implement a small vertical slice WITH its tests, run those tests, and only mark the task done in tasks.md if they actually pass.
+
+MANDATORY OUTPUT CONTRACT (machine-parsed, follow exactly):
+- The FIRST LINE of your final message must be exactly one of:
+  KEMFAI_TASK_ID: T### (the task id you worked, e.g. KEMFAI_TASK_ID: T036)
+  KEMFAI_TASK_ID: NONE (if you made no implementation progress)
+  Nothing may precede this line (no blank line, no markdown) and nothing may follow the ID on that line.
+- Ordinary technical/architecture/schema/API/localization/migration/test ambiguity is NOT a reason to stop. Make the most reasonable technical decision yourself using the constitution, spec and tasks.md as authority, note the decision briefly, and proceed.
+- Only if you genuinely cannot safely proceed without a firm technical decision, add this exact line elsewhere in your message (do not guess destructively):
+  KEMFAI_TECH_QUESTION: <one specific, concrete question a technical arbiter can resolve>
+- Only stop for OWNER attention when the blocker is one of: a material product scope/behavior change, accounting/tax policy, legal/compliance exposure, or a change to a LOCKED baseline decision (docs/GATE0_DECISIONS.md or the ratified constitution). In that case add this exact line:
+  KEMFAI_OWNER_ESCALATION: <one-line summary of the scope/policy/legal/locked-baseline issue>
+Do not use KEMFAI_OWNER_ESCALATION for anything a competent engineer could decide technically."
     MSG='feat: SpecKit implement tick'
     REVIEW=1
     ;;
 esac
 
-# --- fix-until-accept: feed last reviewer verdict back into the same task ---
-if [ -n "${KEMFAI_FIX_NOTE:-}" ]; then
-  PROMPT="IMPORTANT: The previous attempt at this task was REJECTED by independent review. Fix the issues below and complete the SAME task properly (do not skip to another task). Reviewer verdict to address:\n\n${KEMFAI_FIX_NOTE}\n\n---\n${PROMPT}"
+# --- fix-until-accept: feed prior Codex feedback back into the SAME task ---
+if [ -n "${KEMFAI_ARBITER_RESOLUTION:-}" ]; then
+  PROMPT="IMPORTANT: Codex, acting as independent technical arbiter, already resolved the blocking ambiguity for this SAME task. Implement EXACTLY this resolution; do not re-litigate or re-raise the same question:\n\n${KEMFAI_ARBITER_RESOLUTION}\n\n---\n${PROMPT}"
+elif [ -n "${KEMFAI_FIX_NOTE:-}" ]; then
+  PROMPT="IMPORTANT: The previous attempt at this SAME task was rejected or blocked. Address the feedback below and complete the SAME task properly (do not skip to another task). Feedback to address:\n\n${KEMFAI_FIX_NOTE}\n\n---\n${PROMPT}"
 fi
 
 # --- run executor with bounded time + real provider fallback ---
@@ -178,6 +198,100 @@ fi
 echo "$OUT" | tee -a "$LOG" >/dev/null
 echo "[$TS] executor: ${EXECUTOR:-none}; exit: $EC" | tee -a "$LOG"
 
+# --- governance: task-id contract, tech-question interception, owner escalation ---
+# Ordinary technical/architecture/schema/API/localization/migration/test
+# ambiguity must never stop the loop for owner attention (AGENTS.md). Only a
+# material product scope/behavior change, accounting/tax policy, legal/
+# compliance exposure, or a locked-baseline change may escalate to the owner.
+#
+# Order matters here (independent-review fixes, see lib_governance.sh):
+#   1. Pin discipline is checked and enforced FIRST, before any escalation
+#      or question marker is even inspected. A mismatched Task ID means the
+#      executor's entire output -- including any owner-escalation claim --
+#      is not trustworthy for the pinned task, so it is ALWAYS a pin
+#      violation, never an escalation.
+#   2. Only once pin discipline passes is the executor's signal classified:
+#      a KEMFAI_OWNER_ESCALATION marker is never trusted on its own -- its
+#      content must validate against one of the four real categories, else
+#      it is downgraded to an ordinary technical setback. A legacy/plain
+#      "Decision Request" (still documented in AGENTS.md/constitution.md)
+#      is intercepted and classified the same way even without
+#      KEMFAI_TECH_QUESTION, so it can never slip through to review/commit.
+if [ "$next" = "implement" ] && [ -n "$EXECUTOR" ] && [ $EC -eq 0 ]; then
+  RESULT_TASK_ID=$(extract_task_id "$OUT")
+
+  # No exemption for UNKNOWN/malformed/absent task ids: when a task is
+  # pinned, ANY first-line id that is not an exact match -- including
+  # UNKNOWN (malformed, absent, or otherwise unparseable) -- is a pin
+  # violation. Exempting UNKNOWN here would let a contract-violating
+  # response fall through to classify_executor_signal below, where a
+  # fabricated owner-escalation/legacy-Decision-Request marker could be
+  # trusted despite the executor never proving which task it was even
+  # working on.
+  PIN_VIOLATION=""
+  if [ -n "${KEMFAI_PINNED_TASK:-}" ] && [ "$RESULT_TASK_ID" != "$KEMFAI_PINNED_TASK" ]; then
+    PIN_VIOLATION="1"
+  fi
+
+  if [ -n "$PIN_VIOLATION" ]; then
+    echo "[$TS] executor ignored pinned task $KEMFAI_PINNED_TASK and reported $RESULT_TASK_ID instead - discarding (pin violation takes priority over any escalation/question marker)" | tee -a "$LOG"
+    echo "KEMFAI_RESULT_TASK_ID: $KEMFAI_PINNED_TASK"
+    echo "KEMFAI_RESULT: PIN_VIOLATION"
+    echo "KEMFAI_RESULT_DETAIL: executor ignored pinned task $KEMFAI_PINNED_TASK and reported $RESULT_TASK_ID"
+    rollback_partial_executor_work
+    echo "STATUS: PIN_VIOLATION"
+    exit 0
+  fi
+
+  SIGNAL_OUT=$(classify_executor_signal "$OUT" || true)
+  SIGNAL_KIND=$(printf '%s\n' "$SIGNAL_OUT" | sed -n '1p')
+  SIGNAL_CATEGORY=$(printf '%s\n' "$SIGNAL_OUT" | sed -n '2p')
+  SIGNAL_TEXT=$(printf '%s\n' "$SIGNAL_OUT" | tail -n +3)
+
+  if [ "$SIGNAL_KIND" = "OWNER_ESCALATION" ]; then
+    echo "[$TS] KEMFAI_RESULT: OWNER_ESCALATION ($SIGNAL_CATEGORY) - $SIGNAL_TEXT" | tee -a "$LOG"
+    echo "KEMFAI_RESULT_TASK_ID: $RESULT_TASK_ID"
+    echo "KEMFAI_RESULT: OWNER_ESCALATION"
+    echo "KEMFAI_RESULT_DETAIL: $SIGNAL_TEXT"
+    rollback_partial_executor_work
+    {
+      echo ""
+      echo "## OWNER ESCALATION - $TS"
+      echo ""
+      echo "Task ID: $RESULT_TASK_ID"
+      echo "Category: $SIGNAL_CATEGORY"
+      echo "Reason (material product scope/behavior, accounting/tax policy, legal/compliance, or locked-baseline change):"
+      echo ""
+      echo "$SIGNAL_TEXT"
+    } >> docs/PROGRESS.md
+    git add docs/PROGRESS.md
+    git -c user.email='eslam.berkawy@gmail.com' -c user.name='Eslam El Berkawy' \
+      commit -m "docs: owner escalation for $RESULT_TASK_ID ($TS)" >/dev/null 2>&1 || true
+    echo "STATUS: OWNER_ESCALATION"
+    exit 0
+  fi
+
+  if [ "$SIGNAL_KIND" = "TECH_QUESTION" ]; then
+    echo "[$TS] KEMFAI_RESULT: TECH_QUESTION - $SIGNAL_TEXT" | tee -a "$LOG"
+    echo "KEMFAI_RESULT_TASK_ID: $RESULT_TASK_ID"
+    echo "KEMFAI_RESULT: TECH_QUESTION"
+    echo "KEMFAI_RESULT_DETAIL: $SIGNAL_TEXT"
+    # Intercepted: not committed, not reviewed, not skipped -- the SAME task
+    # stays pinned for the next attempt via run_loop.sh's persisted state.
+    # This branch also catches a mislabeled KEMFAI_OWNER_ESCALATION that
+    # failed category validation and any legacy plain Decision Request that
+    # classified as ordinary technical content.
+    rollback_partial_executor_work
+    echo "STATUS: TECH_QUESTION"
+    exit 0
+  fi
+
+  # No escalation/question marker and no legacy Decision Request: fall
+  # through to the normal review flow below, but always report the task id
+  # so run_loop.sh can key state.
+  echo "KEMFAI_RESULT_TASK_ID: $RESULT_TASK_ID"
+fi
+
 # --- safety: never let a stage repeat forever silently ---
 if [ "$next" = "analyze" ] && [ ! -f "$FEATURE_DIR/analysis.md" ]; then
   {
@@ -228,6 +342,7 @@ if [ "${REVIEW:-0}" = "1" ] && [ $EC -eq 0 ]; then
       git add docs/PROGRESS.md
       git -c user.email='eslam.berkawy@gmail.com' -c user.name='Eslam El Berkawy' \
         commit -m "docs: record rejected implement tick ($TS)" >/dev/null 2>&1 || true
+      echo "KEMFAI_RESULT: REJECTED"
       echo "[$TS] Exiting after rejection" | tee -a "$LOG"
       exit 0
     elif [ $REVIEW_EXIT -ne 0 ]; then
@@ -253,6 +368,9 @@ fi
 if [ "$next" = "implement" ] && [ -z "$CHANGED" ]; then
   echo "STATUS: FAILED (no reviewed commit produced)" | tee -a "$LOG"
   exit 4
+fi
+if [ "$next" = "implement" ] && [ -n "$CHANGED" ]; then
+  echo "KEMFAI_RESULT: ACCEPTED"
 fi
 
 # --- final brief printed to stdout (delivered by cron) ---
