@@ -4197,3 +4197,60 @@ T036 remains unchecked, so `tasks.md` was not marked done prematurely. The only 
 
 REVIEW VERDICT: REJECT
 ```
+
+## Rejected implement tick - 2026-09-22 20:10 +04
+
+Codex rejected the last implement attempt and working tree was reverted. Reviewer verdict:
+
+```
+
+- Frontend Jest: 6 suites, 21 tests passed.
+- Backend Jest: 25 suites, 227 tests passed.
+- No T036-specific test exists.
+- Required page `frontend/src/app/(public)/plans/page.tsx` is missing.
+- Required Playwright test is missing.
+
+T036 remains unchecked, so `tasks.md` was not marked done prematurely. The only change is a Decision Request in `docs/PROGRESS.md`, which is appropriate for the unresolved bilingual plan/feature schema. No Odoo core edit, hard-coded entitlement value, Odoo UI leak, accounting issue, feature-flag violation, or tenant-isolation/security leak was introduced.
+
+1. No task was implemented: T036’s required page is absent and none of its acceptance criteria are delivered.
+2. Passing repository tests are irrelevant to T036 because no T036 implementation or acceptance test exists.
+
+REVIEW VERDICT: REJECT
+```
+
+codex
+Implemented task: **T036 — public plan-selection page**.
+
+The page itself covers pricing, bilingual plan/feature labels, billing-cycle selection, signup query parameters, empty/error states, and semantic keyboard controls. T036 remains `[ ]`, so `tasks.md` was not marked done prematurely.
+
+Test results:
+
+- Frontend: 7 suites / 28 tests passed; typecheck passed.
+- Backend: 25 suites / 227 tests passed; build passed.
+- Integration: **4 suites failed, 56 tests failed**.
+- Contract: **1 suite failed, 9 tests failed**.
+
+No Odoo core edit, native Odoo UI leakage, hard-coded entitlement/trial value, accounting nondeterminism, or tenant-isolation leak was found.
+
+1. The bilingual schema migration drops `feature.display_name`, but multiple integration and contract fixtures still insert into that removed column—for example [accounts-mfa.integration-spec.ts](/home/hermesops/kemfai/backend/api/test/integration/accounts-mfa.integration-spec.ts:34) and [accounts.contract-spec.ts](/home/hermesops/kemfai/backend/api/test/contract/accounts.contract-spec.ts:74). The mandatory Test Gate is red: 56 integration failures and 9 contract failures.
+
+REVIEW VERDICT: REJECT
+tokens used
+73,666
+Implemented task: **T036 — public plan-selection page**.
+
+The page itself covers pricing, bilingual plan/feature labels, billing-cycle selection, signup query parameters, empty/error states, and semantic keyboard controls. T036 remains `[ ]`, so `tasks.md` was not marked done prematurely.
+
+Test results:
+
+- Frontend: 7 suites / 28 tests passed; typecheck passed.
+- Backend: 25 suites / 227 tests passed; build passed.
+- Integration: **4 suites failed, 56 tests failed**.
+- Contract: **1 suite failed, 9 tests failed**.
+
+No Odoo core edit, native Odoo UI leakage, hard-coded entitlement/trial value, accounting nondeterminism, or tenant-isolation leak was found.
+
+1. The bilingual schema migration drops `feature.display_name`, but multiple integration and contract fixtures still insert into that removed column—for example [accounts-mfa.integration-spec.ts](/home/hermesops/kemfai/backend/api/test/integration/accounts-mfa.integration-spec.ts:34) and [accounts.contract-spec.ts](/home/hermesops/kemfai/backend/api/test/contract/accounts.contract-spec.ts:74). The mandatory Test Gate is red: 56 integration failures and 9 contract failures.
+
+REVIEW VERDICT: REJECT
+```
