@@ -1,5 +1,24 @@
 {
   "app": {
     "title": "KEMFAI"
+  },
+  "verifyEmail": {
+    "verifying": "Verifying your email…",
+    "success": {
+      "title": "Email verified",
+      "body": "Your email address has been verified. Continue to finish setting up your workspace.",
+      "continue": "Continue"
+    },
+    "invalid": {
+      "title": "This link is no longer valid",
+      "body": "This verification link is missing, expired, invalid, or has already been used. Request a new one below."
+    },
+    "resend": {
+      "emailLabel": "Email address",
+      "submit": "Resend verification email",
+      "sending": "Sending…",
+      "confirmation": "If that email has a pending verification, a new link is on its way.",
+      "error": "We couldn't send the email. Please try again."
+    }
   }
 }

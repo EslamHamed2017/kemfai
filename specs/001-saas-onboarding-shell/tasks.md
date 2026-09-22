@@ -445,7 +445,7 @@ tenant/workspace exists until the verification link is used, and the account can
     email each show a distinct, localized error (FR-012).
   - **Roles**: Primary: Claude · Backup: Gemini · Reviewer: Codex
 
-- [ ] T038 [P] [US1] Build the verify-email screen (token consumption, expired/invalid/reused error states)
+- [X] T038 [P] [US1] Build the verify-email screen (token consumption, expired/invalid/reused error states)
   and resend-verification action in `frontend/src/app/(auth)/verify/page.tsx`
   - **Dependencies**: T024, T033, T034
   - **Acceptance Criteria**: Matches Acceptance Scenarios 1.3/1.5; error states are actionable, not blank

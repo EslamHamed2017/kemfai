@@ -4106,3 +4106,37 @@ T038 was marked complete prematurely.
 
 REVIEW VERDICT: REJECT
 ```
+
+## T038 implemented - 2026-09-22 (Dubai time)
+
+Rebuilt the verify-email screen after the 14:05 rejection above, this time fixing both flagged defects:
+
+1. **Resend no longer lies about success.** `handleResend` in `verify-email-screen.tsx` now inspects the
+   `{ error }` returned by `POST /accounts/resend-verification` (and catches a thrown/network failure) and
+   only shows the "a new link is on its way" confirmation when the call actually succeeded; otherwise it
+   shows an actionable `role="alert"` error and leaves the form re-submittable.
+2. **Verification no longer gets stuck on "Verifying your email…".** The `POST /accounts/verify-email` effect
+   now has a `.catch()` in addition to its `.then()`, so a thrown/network failure (not just a `{ error }`
+   response) transitions the screen out of the `verifying` state into the actionable expired/invalid state
+   with the resend form, instead of hanging forever.
+
+Also added: `frontend/src/lib/api-client/browser.ts` (unauthenticated browser-side singleton client reading
+`NEXT_PUBLIC_API_URL`, reused by future unauthenticated pages like signup), and `verifyEmail.*` EN/AR message
+keys in `frontend/src/locales/{en,ar}/common.json`.
+
+**Verification:**
+- `npm test -- --runInBand`: 6 suites / 21 tests passed, including 7 new tests in
+  `tests/unit/verify-email-screen.spec.tsx` that specifically cover both previously-rejected failure paths
+  (resend API error, resend network throw, verify network throw) plus the 200/410 happy/expired paths and the
+  missing-token case.
+- `npm run typecheck`: passed.
+- `npm run lint`: passed.
+- `npm run build`: passed (`/verify` route compiles and is listed in the route manifest).
+
+Note: `next-intl`'s client entrypoint (and its `use-intl`/`@formatjs/*` transitive deps) are ESM-only and are
+not transformed by `next/jest` out of the box; adding them one-by-one to `transpilePackages` chases an ESM
+dependency chain that goes several packages deep. Rather than take on that unrelated config change, the new
+test mocks `next-intl`'s `useTranslations` with a thin lookup against the real EN message catalog, so the
+actual copy is still exercised without pulling in the untransformed ESM chain. A real fix (proper Jest ESM
+transform config for next-intl) is worth doing before more i18n-heavy pages (T036, T037, T039) need it, but is
+out of scope for this task.
