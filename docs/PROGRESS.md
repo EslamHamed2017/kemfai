@@ -3992,3 +3992,60 @@ The T036 checkbox was marked done prematurely.
 
 REVIEW VERDICT: REJECT
 ```
+
+## Rejected implement tick - 2026-09-22 12:32 +04
+
+Codex rejected the last implement attempt and working tree was reverted. Reviewer verdict:
+
+```
+ M frontend/src/locales/ar/common.json
+ M frontend/src/locales/en/common.json
+ M frontend/tests/unit/api-client.spec.ts
+ M specs/001-saas-onboarding-shell/contracts/openapi.yaml
+ M specs/001-saas-onboarding-shell/data-model.md
+ M specs/001-saas-onboarding-shell/tasks.md
+?? backend/api/src/bootstrap.ts
+?? backend/api/src/database/migrations/1789800000000-AddBilingualPlanFeatureNames.ts
+?? backend/api/test/integration/production-bootstrap.integration-spec.ts
+?? frontend/src/app/(public)/plans/
+?? frontend/src/lib/plans/
+?? frontend/tests/unit/fetch-published-plans.spec.ts
+?? frontend/tests/unit/plans-catalog.spec.tsx
+?? frontend/tests/unit/plans-page.spec.tsx
+
+codex
+Implemented task: **T036**. The page largely matches Scenario 1.1, including bilingual catalog data, billing-cycle selection, signup query parameters, empty/error states, and semantic controls. However, it cannot pass the mandatory quality gates.
+
+Tests observed:
+
+- Frontend: 25/25 passed; typecheck and production build passed.
+- Backend unit: 228/228 passed; build passed.
+- Backend integration: 23/24 suites failed, 181 tests failed.
+- Backend contract: failed.
+- No Odoo core edit, tenant-isolation leak, accounting nondeterminism, or hard-coded entitlement/trial decision was found.
+
+T036 was marked complete prematurely.
+
+1. The new migration reuses timestamp `1789800000000`, already recorded as `AddFeatureDisplayNameAr1789800000000`. TypeORM consequently treats `AddBilingualPlanFeatureNames1789800000000` as pending against an existing valid database and crashes because `feature.display_name_ar` already exists. This breaks migrations, integration tests, contract tests, and deployment upgrades.
+2. The page has empty and error states but no loading UI (`loading.tsx` or equivalent), violating the constitution’s mandatory story contract requiring loading states.
+
+REVIEW VERDICT: REJECT
+tokens used
+79,460
+Implemented task: **T036**. The page largely matches Scenario 1.1, including bilingual catalog data, billing-cycle selection, signup query parameters, empty/error states, and semantic controls. However, it cannot pass the mandatory quality gates.
+
+Tests observed:
+
+- Frontend: 25/25 passed; typecheck and production build passed.
+- Backend unit: 228/228 passed; build passed.
+- Backend integration: 23/24 suites failed, 181 tests failed.
+- Backend contract: failed.
+- No Odoo core edit, tenant-isolation leak, accounting nondeterminism, or hard-coded entitlement/trial decision was found.
+
+T036 was marked complete prematurely.
+
+1. The new migration reuses timestamp `1789800000000`, already recorded as `AddFeatureDisplayNameAr1789800000000`. TypeORM consequently treats `AddBilingualPlanFeatureNames1789800000000` as pending against an existing valid database and crashes because `feature.display_name_ar` already exists. This breaks migrations, integration tests, contract tests, and deployment upgrades.
+2. The page has empty and error states but no loading UI (`loading.tsx` or equivalent), violating the constitution’s mandatory story contract requiring loading states.
+
+REVIEW VERDICT: REJECT
+```
