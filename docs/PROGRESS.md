@@ -3878,3 +3878,60 @@ No Odoo core edit, native Odoo UI exposure, accounting nondeterminism, or tenant
 
 REVIEW VERDICT: REJECT
 ```
+
+## Rejected implement tick - 2026-09-22 06:05 +04
+
+Codex rejected the last implement attempt and working tree was reverted. Reviewer verdict:
+
+```
+      ✓ 200: consuming the link issued at signup (36 ms)
+      ✓ 410: an unknown token value (5 ms)
+    POST /accounts/resend-verification
+      ✓ 202: sent regardless of whether the email is known (no account-existence leak) (6 ms)
+    POST /accounts/mfa/enroll
+      ✓ 200: begins TOTP enrollment for the authenticated, verified account (18 ms)
+    POST /accounts/mfa/confirm
+      ✓ 200: confirms MFA once Keycloak reports an active TOTP credential (21 ms)
+    coverage (T027 acceptance criterion)
+      ✓ every documented response code for each of these five operations was exercised
+
+Test Suites: 1 passed, 1 total
+Tests:       9 passed, 9 total
+Snapshots:   0 total
+Time:        5.928 s, estimated 6 s
+Ran all test suites.
+
+> kemfai-api@0.1.0 build
+> nest build
+
+
+codex
+Implemented task: T036 — public plan-selection page. It was marked `[X]` prematurely.
+
+Test evidence:
+
+- Frontend: 9 suites / 26 tests passed; typecheck and production build passed.
+- Backend: 25 suites / 227 unit tests, 23 suites / 186 integration tests, and 9 contract tests passed; build passed.
+- No Odoo core edit, tenant-isolation break, accounting nondeterminism, native Odoo UI leak, or relevant missing feature-flag gate found.
+
+1. Arabic/localization acceptance is not satisfied. Feature labels are hard-coded in `plan-feature-labels.ts`; any administrator-configured feature outside that list exposes its raw technical key (for example, `module.custom_widget`) to customers. The Arabic test explicitly accepts `ميزة: module.custom_widget`, contradicting FR-014’s requirement for no untranslated text and P-07’s configuration-over-hard-coding rule. Adding a feature currently requires a code deployment to obtain a customer-facing bilingual label.
+
+2. The tests do not genuinely prove T036’s required RTL behavior. They render `PlansCatalog` under an Arabic translation provider but never render the page through `RootLayout` or assert `dir="rtl"`/mirrored layout. The scheduled Playwright RTL/axe test T030 remains incomplete, so the task’s explicit EN/AR/RTL acceptance criterion lacks passing proof.
+
+REVIEW VERDICT: REJECT
+tokens used
+46,277
+Implemented task: T036 — public plan-selection page. It was marked `[X]` prematurely.
+
+Test evidence:
+
+- Frontend: 9 suites / 26 tests passed; typecheck and production build passed.
+- Backend: 25 suites / 227 unit tests, 23 suites / 186 integration tests, and 9 contract tests passed; build passed.
+- No Odoo core edit, tenant-isolation break, accounting nondeterminism, native Odoo UI leak, or relevant missing feature-flag gate found.
+
+1. Arabic/localization acceptance is not satisfied. Feature labels are hard-coded in `plan-feature-labels.ts`; any administrator-configured feature outside that list exposes its raw technical key (for example, `module.custom_widget`) to customers. The Arabic test explicitly accepts `ميزة: module.custom_widget`, contradicting FR-014’s requirement for no untranslated text and P-07’s configuration-over-hard-coding rule. Adding a feature currently requires a code deployment to obtain a customer-facing bilingual label.
+
+2. The tests do not genuinely prove T036’s required RTL behavior. They render `PlansCatalog` under an Arabic translation provider but never render the page through `RootLayout` or assert `dir="rtl"`/mirrored layout. The scheduled Playwright RTL/axe test T030 remains incomplete, so the task’s explicit EN/AR/RTL acceptance criterion lacks passing proof.
+
+REVIEW VERDICT: REJECT
+```
