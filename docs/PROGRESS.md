@@ -4140,3 +4140,60 @@ test mocks `next-intl`'s `useTranslations` with a thin lookup against the real E
 actual copy is still exercised without pulling in the untransformed ESM chain. A real fix (proper Jest ESM
 transform config for next-intl) is worth doing before more i18n-heavy pages (T036, T037, T039) need it, but is
 out of scope for this task.
+
+## Rejected implement tick - 2026-09-22 20:05 +04
+
+Codex rejected the last implement attempt and working tree was reverted. Reviewer verdict:
+
+```
+exec
+/bin/bash -lc "for p in 'frontend/src/app/(public)/plans/page.tsx' 'frontend/tests/e2e/us1-signup.spec.ts'; do if [ -e \""'$p" ]; then echo "EXISTS $p"; sed -n '"'1,240p' \""'$p"; else echo "MISSING $p"; fi; done
+rg -n "PlansCatalog|plan-selection|no plan|billing cycle|signup.*plan|dir=.rtl.|rtl" frontend/src frontend/tests 2>/dev/null || true
+git diff --name-status
+git diff --numstat' in /home/hermesops/kemfai
+ succeeded in 0ms:
+MISSING frontend/src/app/(public)/plans/page.tsx
+MISSING frontend/tests/e2e/us1-signup.spec.ts
+frontend/tests/unit/i18n-config.spec.ts:13:    expect(getDirection('ar')).toBe('rtl');
+frontend/src/lib/i18n/config.ts:9:type Direction = 'ltr' | 'rtl';
+frontend/src/lib/i18n/config.ts:11:const rtlLocales: ReadonlySet<Locale> = new Set(['ar']);
+frontend/src/lib/i18n/config.ts:18:  return rtlLocales.has(locale) ? 'rtl' : 'ltr';
+M	docs/PROGRESS.md
+45	0	docs/PROGRESS.md
+
+codex
+Implemented Task ID: **none**. The executor considered T036 but explicitly made no implementation.
+
+Tests run:
+
+- Frontend Jest: 6 suites, 21 tests passed.
+- Backend Jest: 25 suites, 227 tests passed.
+- No T036-specific test exists.
+- Required page `frontend/src/app/(public)/plans/page.tsx` is missing.
+- Required Playwright test is missing.
+
+T036 remains unchecked, so `tasks.md` was not marked done prematurely. The only change is a Decision Request in `docs/PROGRESS.md`, which is appropriate for the unresolved bilingual plan/feature schema. No Odoo core edit, hard-coded entitlement value, Odoo UI leak, accounting issue, feature-flag violation, or tenant-isolation/security leak was introduced.
+
+1. No task was implemented: T036’s required page is absent and none of its acceptance criteria are delivered.
+2. Passing repository tests are irrelevant to T036 because no T036 implementation or acceptance test exists.
+
+REVIEW VERDICT: REJECT
+tokens used
+19,397
+Implemented Task ID: **none**. The executor considered T036 but explicitly made no implementation.
+
+Tests run:
+
+- Frontend Jest: 6 suites, 21 tests passed.
+- Backend Jest: 25 suites, 227 tests passed.
+- No T036-specific test exists.
+- Required page `frontend/src/app/(public)/plans/page.tsx` is missing.
+- Required Playwright test is missing.
+
+T036 remains unchecked, so `tasks.md` was not marked done prematurely. The only change is a Decision Request in `docs/PROGRESS.md`, which is appropriate for the unresolved bilingual plan/feature schema. No Odoo core edit, hard-coded entitlement value, Odoo UI leak, accounting issue, feature-flag violation, or tenant-isolation/security leak was introduced.
+
+1. No task was implemented: T036’s required page is absent and none of its acceptance criteria are delivered.
+2. Passing repository tests are irrelevant to T036 because no T036 implementation or acceptance test exists.
+
+REVIEW VERDICT: REJECT
+```
