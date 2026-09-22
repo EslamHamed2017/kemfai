@@ -3935,3 +3935,60 @@ Test evidence:
 
 REVIEW VERDICT: REJECT
 ```
+
+## Rejected implement tick - 2026-09-22 12:05 +04
+
+Codex rejected the last implement attempt and working tree was reverted. Reviewer verdict:
+
+```
+test/integration/account-migration.integration-spec.ts:11:      await controlDataSource.initialize();
+test/integration/accounts-signup.integration-spec.ts:84:      await controlDataSource.initialize();
+test/integration/tenant-migration.integration-spec.ts:12:      await controlDataSource.initialize();
+test/integration/subscription-migration.integration-spec.ts:18:      await controlDataSource.initialize();
+test/integration/accounts-verification.integration-spec.ts:90:      await controlDataSource.initialize();
+test/integration/role-guard.integration-spec.ts:70:      await controlDataSource.initialize();
+test/integration/payment-submission-migration.integration-spec.ts:21:      await controlDataSource.initialize();
+test/integration/idempotency-key-migration.integration-spec.ts:20:      await controlDataSource.initialize();
+test/integration/entitlements-service.integration-spec.ts:21:      await controlDataSource.initialize();
+test/integration/accounts-mfa.integration-spec.ts:64:      await controlDataSource.initialize();
+test/contract/accounts.contract-spec.ts:138:      await controlDataSource.initialize();
+src/database/seeds/dev-quickstart.seed.ts:160:      : await controlDataSource.initialize();
+
+codex
+Implemented task: **T036 — public plan-selection page**.
+
+Test evidence:
+
+- Frontend: 9 suites / 28 tests passed; typecheck passed; production compilation completed.
+- Backend: 25 suites / 228 tests passed; build passed.
+- Relevant database-backed HTTP integration: 5/5 tests passed.
+- Contract suite: 9/9 tests passed.
+
+No Odoo core edits, tenant-isolation regression, accounting nondeterminism, hard-coded plan/trial limits, or native Odoo UI leakage were introduced.
+
+The T036 checkbox was marked done prematurely.
+
+1. Arabic is incomplete. The page renders the admin-supplied English `plan.name` unchanged in the Arabic heading and selection link. Only feature names gained Arabic fields. This violates T036’s EN/AR acceptance criterion and FR-014’s prohibition on untranslated text; the RTL test checks only `dir` and `lang`, so it misses the defect.
+2. The production API bootstrap never initializes `controlDataSource`. Consequently, `/public/plans` cannot query the database in the real application and the page falls into its error state instead of displaying plans. Integration tests conceal this by explicitly initializing the datasource themselves. Acceptance Scenario 1.1 therefore does not work end-to-end in the actual runtime.
+
+REVIEW VERDICT: REJECT
+tokens used
+49,127
+Implemented task: **T036 — public plan-selection page**.
+
+Test evidence:
+
+- Frontend: 9 suites / 28 tests passed; typecheck passed; production compilation completed.
+- Backend: 25 suites / 228 tests passed; build passed.
+- Relevant database-backed HTTP integration: 5/5 tests passed.
+- Contract suite: 9/9 tests passed.
+
+No Odoo core edits, tenant-isolation regression, accounting nondeterminism, hard-coded plan/trial limits, or native Odoo UI leakage were introduced.
+
+The T036 checkbox was marked done prematurely.
+
+1. Arabic is incomplete. The page renders the admin-supplied English `plan.name` unchanged in the Arabic heading and selection link. Only feature names gained Arabic fields. This violates T036’s EN/AR acceptance criterion and FR-014’s prohibition on untranslated text; the RTL test checks only `dir` and `lang`, so it misses the defect.
+2. The production API bootstrap never initializes `controlDataSource`. Consequently, `/public/plans` cannot query the database in the real application and the page falls into its error state instead of displaying plans. Integration tests conceal this by explicitly initializing the datasource themselves. Acceptance Scenario 1.1 therefore does not work end-to-end in the actual runtime.
+
+REVIEW VERDICT: REJECT
+```
