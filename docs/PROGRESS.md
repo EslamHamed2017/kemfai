@@ -4254,3 +4254,60 @@ No Odoo core edit, native Odoo UI leakage, hard-coded entitlement/trial value, a
 
 REVIEW VERDICT: REJECT
 ```
+
+## Rejected implement tick - 2026-09-23 02:05 +04
+
+Codex rejected the last implement attempt and working tree was reverted. Reviewer verdict:
+
+```
+  );
+}
+import createClient from 'openapi-fetch';
+import type { paths } from './schema';
+
+export type GetAuthToken = () => string | undefined;
+
+export interface CreateApiClientOptions {
+  baseUrl: string;
+  getAuthToken?: GetAuthToken;
+}
+
+/**
+ * Typed API client for the KEMFAI BFF, generated from contracts/openapi.yaml (T024).
+ * Every path/method/request/response type below is derived from `./schema.ts` —
+ * no manual `any` overrides.
+ */
+export function createApiClient({ baseUrl, getAuthToken }: CreateApiClientOptions) {
+  const client = createClient<paths>({ baseUrl });
+
+  client.use({
+    onRequest({ request }) {
+      const token = getAuthToken?.();
+      if (token) {
+        request.headers.set('Authorization', `Bearer ${token}`);
+      }
+      return request;
+    },
+  });
+
+  return client;
+}
+
+export type ApiClient = ReturnType<typeof createApiClient>;
+
+codex
+Implemented task: T037. Focused tests pass (9/9), full frontend suite passes (34/34), and TypeScript typecheck passes.
+
+1. API error handling is wrong: every non-409 response—including 400/422 validation errors, 503 service failures, and feature-flag rejection—is shown as “selected plan is no longer available.” This violates FR-012’s requirement for accurate, actionable localized errors. The tests only cover 409, presumed-plan 422, and thrown network errors, so they miss real HTTP failure paths.
+2. `tasks.md` was marked complete prematurely because this required error-state behavior is not satisfied.
+
+REVIEW VERDICT: REJECT
+tokens used
+30,585
+Implemented task: T037. Focused tests pass (9/9), full frontend suite passes (34/34), and TypeScript typecheck passes.
+
+1. API error handling is wrong: every non-409 response—including 400/422 validation errors, 503 service failures, and feature-flag rejection—is shown as “selected plan is no longer available.” This violates FR-012’s requirement for accurate, actionable localized errors. The tests only cover 409, presumed-plan 422, and thrown network errors, so they miss real HTTP failure paths.
+2. `tasks.md` was marked complete prematurely because this required error-state behavior is not satisfied.
+
+REVIEW VERDICT: REJECT
+```
