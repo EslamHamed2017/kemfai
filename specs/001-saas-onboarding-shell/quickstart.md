@@ -15,6 +15,15 @@ audit/job signals live in `contracts/events.md`.
 - `frontend` running with `NEXT_PUBLIC_API_URL` pointed at the running `backend/api`.
 - A seeded internal Keycloak user with the Billing Admin role in `kemfai-internal`, for Story 6.
 
+### T039 live authentication integration
+
+Run `bash scripts/test_t039_live_auth.sh`. It starts the required Docker Keycloak, Redis,
+control database, and API services, creates a disposable verified Keycloak user, and exercises
+Authorization Code + PKCE, token exchange, live JWKS signature/issuer/audience/nonce validation,
+Redis-backed session persistence, and the authenticated MFA BFF/API bearer boundary. The user and
+session are deleted afterward. Ordinary `npm test` remains Docker-independent; this live test runs
+only when `LIVE_DOCKER_AUTH=1` is explicitly set by the script.
+
 ## Scenario walkthroughs (map to spec.md User Stories)
 
 Each walkthrough should be run once in English/LTR and once in Arabic/RTL per FR-014/FR-024, unless noted.

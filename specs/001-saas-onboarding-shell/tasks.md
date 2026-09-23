@@ -452,7 +452,7 @@ tenant/workspace exists until the verification link is used, and the account can
     (FR-012).
   - **Roles**: Primary: Claude · Backup: Gemini · Reviewer: Codex
 
-- [ ] T039 [P] [US1] Build the MFA enrollment screen (TOTP QR/confirm flow, optional/non-blocking) in
+- [X] T039 [P] [US1] Build the MFA enrollment screen (TOTP QR/confirm flow, optional/non-blocking) in
   `frontend/src/app/(auth)/mfa/page.tsx`
   - **Dependencies**: T024, T035
   - **Acceptance Criteria**: Matches Acceptance Scenario 1.4; user can skip and return to onboarding without

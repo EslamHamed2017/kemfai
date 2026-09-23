@@ -74,6 +74,9 @@ services:
     environment:
       KEYCLOAK_ADMIN: admin
       KEYCLOAK_ADMIN_PASSWORD: kemfai_dev_admin
+      KC_HOSTNAME: ${KEYCLOAK_PUBLIC_ORIGIN:-http://localhost:8080}
+      KC_HOSTNAME_BACKCHANNEL_DYNAMIC: "true"
+      KC_HTTP_ENABLED: "true"
     command: start-dev --import-realm
     volumes:
       - ../keycloak:/opt/keycloak/data/import:ro
@@ -98,10 +101,15 @@ services:
         condition: service_healthy
     environment:
       PORT: 4000
+      HOST: 0.0.0.0
       NODE_ENV: development
       REDIS_URL: redis://redis:6379
       KEMFAI_ODOO_URL: http://kemfai-odoo:8069
       KEYCLOAK_URL: http://keycloak:8080
+      # Tokens minted through either browser or backchannel carry this one canonical issuer.
+      KEYCLOAK_ISSUER: ${KEYCLOAK_ISSUER:-http://localhost:8080/realms/kemfai-customers}
+      KEYCLOAK_JWKS_URI: http://keycloak:8080/realms/kemfai-customers/protocol/openid-connect/certs
+      KEYCLOAK_API_AUDIENCE: ${KEYCLOAK_API_AUDIENCE:-kemfai-api}
       STORAGE_ENDPOINT: http://minio:9000
       # T025: must match the minio service's MINIO_ROOT_USER/MINIO_ROOT_PASSWORD above —
       # the API/BFF's own service credentials are the only credentials ever allowed to
@@ -133,10 +141,24 @@ services:
       context: ../../frontend
     container_name: kemfai-frontend
     depends_on:
-      - api
+      api:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      keycloak:
+        condition: service_healthy
     environment:
       NEXT_PUBLIC_API_URL: http://localhost:4000
       NEXT_PUBLIC_DEFAULT_LOCALE: en
+      # T039: public issuer/redirect are browser-visible; the backchannel stays on the
+      # compose network. Tokens are exchanged server-side and stored only in Redis.
+      KEYCLOAK_ISSUER: ${KEYCLOAK_ISSUER:-http://localhost:8080/realms/kemfai-customers}
+      KEYCLOAK_BACKCHANNEL_URL: http://keycloak:8080/realms/kemfai-customers
+      KEYCLOAK_JWKS_URI: http://keycloak:8080/realms/kemfai-customers/protocol/openid-connect/certs
+      KEYCLOAK_CLIENT_ID: ${KEYCLOAK_CLIENT_ID:-kemfai-api}
+      KEYCLOAK_REDIRECT_URI: ${KEYCLOAK_REDIRECT_URI:-http://localhost:3010/auth/callback}
+      KEMFAI_API_URL: http://api:4000
+      REDIS_URL: redis://redis:6379
       # T037 duplicate-email recovery actions (/login, /reset-password route handlers).
       # Unset in dev on purpose - the handlers fall back to a localized "temporarily
       # unavailable" message rather than a dead link when these are empty.

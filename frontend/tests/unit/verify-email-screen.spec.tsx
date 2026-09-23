@@ -70,8 +70,8 @@ describe('VerifyEmailScreen (T038)', () => {
 
     expect(postMock).toHaveBeenCalledWith('/accounts/verify-email', { body: { token: 'valid-token' } });
 
-    fireEvent.click(screen.getByRole('button', { name: en.verifyEmail.success.continue }));
-    expect(pushMock).toHaveBeenCalledWith('/provisioning');
+    expect(screen.getByRole('link', { name: en.verifyEmail.success.continue }))
+      .toHaveAttribute('href', '/auth/login?returnTo=%2Fmfa');
   });
 
   it('shows the actionable resend form when the token is expired/invalid/reused (410)', async () => {

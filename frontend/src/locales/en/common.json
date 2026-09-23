@@ -65,5 +65,26 @@
       "confirmation": "If that email has a pending verification, a new link is on its way.",
       "error": "We couldn't send the email. Please try again."
     }
+  },
+  "mfa": {
+    "title": "Protect your account",
+    "description": "Use an authenticator app for an extra layer of security.",
+    "optional": "This is optional. You can skip it now and enable it later.",
+    "enable": "Enable multi-factor authentication",
+    "enrolling": "Preparing secure setup…",
+    "confirming": "Checking setup…",
+    "skip": "Skip for now",
+    "continue": "Continue to onboarding",
+    "confirm": "I finished setup — confirm",
+    "setup": {
+      "title": "Set up your authenticator",
+      "body": "Continue to Keycloak's secure setup, scan its QR code with your authenticator app, then return here to confirm.",
+      "open": "Open secure authenticator setup"
+    },
+    "complete": {
+      "title": "Multi-factor authentication is active",
+      "body": "Your account now requires your authenticator when you sign in."
+    },
+    "error": "We couldn't complete MFA setup. You can retry or skip for now."
   }
 }

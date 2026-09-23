@@ -1,7 +1,6 @@
 'use client';
 
 import { useEffect, useState, type FormEvent } from 'react';
-import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 
 import { getBrowserApiClient } from '@/lib/api-client';
@@ -22,7 +21,6 @@ interface VerifyEmailScreenProps {
  */
 export function VerifyEmailScreen({ token }: VerifyEmailScreenProps) {
   const t = useTranslations('verifyEmail');
-  const router = useRouter();
   const [status, setStatus] = useState<VerificationStatus>(token ? 'verifying' : 'invalid');
   const [resendEmail, setResendEmail] = useState('');
   const [resendStatus, setResendStatus] = useState<ResendStatus>('idle');
@@ -78,9 +76,9 @@ export function VerifyEmailScreen({ token }: VerifyEmailScreenProps) {
       <main>
         <h1>{t('success.title')}</h1>
         <p>{t('success.body')}</p>
-        <button type="button" onClick={() => router.push('/provisioning')}>
+        <a href="/auth/login?returnTo=%2Fmfa">
           {t('success.continue')}
-        </button>
+        </a>
       </main>
     );
   }

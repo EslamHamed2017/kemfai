@@ -11,16 +11,19 @@
     "lint": "next lint",
     "typecheck": "tsc --noEmit",
     "test": "jest",
+    "test:integration:auth": "jest --config jest.live-auth.config.js --runInBand",
     "test:watch": "jest --watch",
     "generate:api-client": "openapi-typescript ../specs/001-saas-onboarding-shell/contracts/openapi.yaml -o src/lib/api-client/schema.d.ts"
   },
   "dependencies": {
     "@carbon/react": "1.116.0",
+    "jose": "5.10.0",
     "next": "15.5.25",
     "next-intl": "4.14.5",
     "openapi-fetch": "0.17.0",
     "react": "19.3.0",
-    "react-dom": "19.3.0"
+    "react-dom": "19.3.0",
+    "redis": "5.8.2"
   },
   "devDependencies": {
     "@testing-library/jest-dom": "7.0.1",
