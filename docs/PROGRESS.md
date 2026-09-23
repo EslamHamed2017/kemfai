@@ -4425,3 +4425,18 @@ Implemented task: T037. Frontend tests pass (33/33), and TypeScript typecheck pa
 
 REVIEW VERDICT: REJECT
 ```
+
+## Rejected implement tick - 2026-09-23 09:22 +04
+
+Codex rejected the last implement attempt and working tree was reverted. Reviewer verdict:
+
+```
+Implemented task: T037. All frontend checks pass: 53 tests, TypeScript, production build, and `git diff --check`.
+
+T037 was marked complete prematurely.
+
+1. Passwords over the specified 128-character maximum produce “Password must be at least 10 characters.” This is inaccurate and violates FR-012’s requirement that localized errors state what went wrong.
+2. Duplicate-email recovery links lead only to placeholder pages where sign-in and password reset are unavailable. Acceptance Scenario 1.6 requires directing the user to actual sign-in or password-reset flows, not dead-end “coming soon” screens.
+
+REVIEW VERDICT: REJECT
+```
