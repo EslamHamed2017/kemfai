@@ -40,6 +40,36 @@ assert_eq "marker found later in the message (not first line) is UNKNOWN" \
   "UNKNOWN" "$(extract_task_id $'Some preamble.\nKEMFAI_TASK_ID: T036')"
 
 echo ""
+echo "== extract_unique_task_marker (real-output normalization hardening) =="
+
+assert_eq "exactly one marker later in the message (not first line) is still returned" \
+  "T036" "$(extract_unique_task_marker $'Some preamble.\nKEMFAI_TASK_ID: T036\nmore text')"
+
+if extract_unique_task_marker $'KEMFAI_TASK_ID: T036\ntext\nKEMFAI_TASK_ID: T036\nmore' >/dev/null 2>&1; then
+  RESULT="matched"
+else
+  RESULT="no-match"
+fi
+assert_eq "the same marker repeated more than once is ambiguous and never normalized" "no-match" "$RESULT"
+
+if extract_unique_task_marker $'Preamble.\nKEMFAI_TASK_ID: T036\ntext\nKEMFAI_TASK_ID: T099' >/dev/null 2>&1; then
+  RESULT="matched"
+else
+  RESULT="no-match"
+fi
+assert_eq "two DIFFERENT markers anywhere in the output is never normalized (ambiguous)" "no-match" "$RESULT"
+
+if extract_unique_task_marker $'Just prose, no marker anywhere.' >/dev/null 2>&1; then
+  RESULT="matched"
+else
+  RESULT="no-match"
+fi
+assert_eq "no marker anywhere yields no match (absent ids are never normalized)" "no-match" "$RESULT"
+
+assert_eq "a single NONE marker (not just T###) is still reported as the unique value" \
+  "NONE" "$(extract_unique_task_marker $'Preamble.\nKEMFAI_TASK_ID: NONE\nmore text')"
+
+echo ""
 echo "== extract_marker =="
 
 OWNER_MSG=$'Some analysis text.\nKEMFAI_OWNER_ESCALATION: New plan tier changes billing behavior\nmore text'
@@ -172,6 +202,61 @@ assert_eq "no-trunc: an 8000-byte (>6000) feedback body round-trips at full leng
 assert_eq "no-trunc: an 8000-byte feedback body round-trips byte-for-byte" "$BIG_CONTENT" "$READ_BACK"
 
 rm -f "$TMP_KEYED_FILE"
+
+echo ""
+echo "== read_task_keyed_state_to_file (E2BIG fix: validate without loading into an exportable string) =="
+
+TMP_KEYED_FILE2=$(mktemp)
+TMP_OUT_FILE=$(mktemp)
+trap 'rm -f "$TMP_KEYED_FILE2" "$TMP_OUT_FILE"' EXIT
+
+write_task_keyed_state "$TMP_KEYED_FILE2" "T036" "1. Fix the bilingual column."
+if read_task_keyed_state_to_file "$TMP_KEYED_FILE2" "T036" "$TMP_OUT_FILE"; then
+  RESULT="matched"
+else
+  RESULT="no-match"
+fi
+assert_eq "round-trip to file: succeeds for the SAME task id it was keyed to" "matched" "$RESULT"
+assert_eq "round-trip to file: OUT_FILE content matches exactly" \
+  "1. Fix the bilingual column." "$(cat "$TMP_OUT_FILE")"
+
+rm -f "$TMP_OUT_FILE"
+if read_task_keyed_state_to_file "$TMP_KEYED_FILE2" "T099" "$TMP_OUT_FILE" >/dev/null 2>&1; then
+  RESULT="matched"
+else
+  RESULT="no-match"
+fi
+assert_eq "stale state to file: content keyed to a DIFFERENT task never reads for a mismatched task" "no-match" "$RESULT"
+assert_file_absent "stale state to file: OUT_FILE is never created on a key mismatch" "$TMP_OUT_FILE"
+
+printf 'This is a partially written/hand-edited file with no key header at all.\n' > "$TMP_KEYED_FILE2"
+if read_task_keyed_state_to_file "$TMP_KEYED_FILE2" "T036" "$TMP_OUT_FILE" >/dev/null 2>&1; then
+  RESULT="matched"
+else
+  RESULT="no-match"
+fi
+assert_eq "partial state to file: a file missing the KEMFAI_STATE_TASK_ID header is rejected outright" "no-match" "$RESULT"
+assert_file_absent "partial state to file: OUT_FILE is never created for a headerless file" "$TMP_OUT_FILE"
+
+# The exact production scenario this fix addresses: a 372046-byte real
+# last_resolution.txt. Validate a >300KB keyed payload streams to OUT_FILE
+# intact, all the way to its far end, without ever being held as a single
+# in-process string long enough to matter (this is a pure disk-to-disk copy).
+BIG_KEYED=$(head -c 320000 /dev/zero | tr '\0' 'b')
+BIG_KEYED="${BIG_KEYED}
+FAR_END_UNIQUE_MARKER_LIBGOV_999"
+write_task_keyed_state "$TMP_KEYED_FILE2" "T036" "$BIG_KEYED"
+rm -f "$TMP_OUT_FILE"
+if read_task_keyed_state_to_file "$TMP_KEYED_FILE2" "T036" "$TMP_OUT_FILE"; then
+  RESULT="matched"
+else
+  RESULT="no-match"
+fi
+assert_eq "a >300KB keyed payload (production E2BIG size class) streams to OUT_FILE successfully" "matched" "$RESULT"
+assert_contains "the far end of a >300KB payload reaches OUT_FILE intact" \
+  "$(cat "$TMP_OUT_FILE")" "FAR_END_UNIQUE_MARKER_LIBGOV_999"
+
+rm -f "$TMP_KEYED_FILE2" "$TMP_OUT_FILE"
 
 echo ""
 echo "== cap_state_content (global file-size safety, not content truncation) =="

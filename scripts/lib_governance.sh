@@ -28,6 +28,33 @@ extract_task_id() {
   fi
 }
 
+# extract_unique_task_marker OUTPUT
+# Scans the ENTIRE output (any line, not just the mandated first line) for
+# full-line "KEMFAI_TASK_ID: T###" or "KEMFAI_TASK_ID: NONE" markers. Prints
+# the id and returns 0 only if EXACTLY ONE marker occurrence appears anywhere;
+# prints nothing and returns 1 for zero markers or any repeated/multiple markers,
+# even when repeated occurrences carry the same value. This backs
+# the narrow real-output hardening: a normally-compliant model occasionally
+# emits its KEMFAI_TASK_ID marker after some preamble instead of as the
+# literal first line. That is still a contract violation and must not be
+# silently accepted in general -- but when a task is already pinned and
+# exactly one marker occurrence exists and it equals the pin, the caller may
+# choose to normalize the task id rather than discard genuinely-correct
+# work as an UNKNOWN pin violation. Multiple, mismatched, or wholly absent
+# markers are NEVER normalized by this function -- it only ever reports
+# "exactly one occurrence or nothing," leaving all ambiguity/mismatch
+# judgment to the caller.
+extract_unique_task_marker() {
+  local output="$1" ids count
+  ids=$(printf '%s\n' "$output" | grep -oE '^KEMFAI_TASK_ID: (T[0-9]{3}|NONE)$' | sed -E 's/^KEMFAI_TASK_ID: //')
+  count=$(printf '%s\n' "$ids" | grep -c '^.\+$' || true)
+  if [ -n "$ids" ] && [ "$count" -eq 1 ]; then
+    printf '%s\n' "$ids"
+    return 0
+  fi
+  return 1
+}
+
 # extract_marker OUTPUT PREFIX
 # Strict full-line match with a required minimum-length summary. Rejects
 # bare category tags (e.g. "PREFIX: TECHNICALITY") and substrings buried in
@@ -172,6 +199,35 @@ read_task_keyed_state() {
   fi
   [ "$stored_id" = "$expected" ] || return 1
   tail -n +2 "$file"
+}
+
+# read_task_keyed_state_to_file FILE EXPECTED_TASK_ID OUT_FILE
+# Same validation as read_task_keyed_state, but streams the validated
+# content straight to OUT_FILE on disk instead of returning it as a shell
+# string. This is the core of the E2BIG fix: callers (run_loop.sh) that
+# used to do `VAR=$(read_task_keyed_state ...); export VAR` were exporting
+# arbitrarily large (here, 372KB) resolution/rejection content as a single
+# environment string, and execve() rejects any single argv/envp string over
+# Linux's MAX_ARG_STRLEN (~128KB) with E2BIG -- so every subsequent `bash
+# run_next_step.sh` invocation failed before any executor even ran. Callers
+# now export only OUT_FILE's path (always small) and let the executor read
+# the content itself via stdin/cat, so there is no size at which this can
+# ever hit an OS argument/environment limit again.
+# Prints nothing; returns 0 and writes OUT_FILE only on a valid key match
+# (missing/stale/partial input leaves OUT_FILE untouched), 1 otherwise.
+read_task_keyed_state_to_file() {
+  local file="$1" expected="$2" out_file="$3" first_line stored_id
+  [ -n "$expected" ] || return 1
+  [ -f "$file" ] || return 1
+  first_line=$(head -n1 "$file" 2>/dev/null | tr -d '\r')
+  if [[ "$first_line" =~ ^KEMFAI_STATE_TASK_ID:\ (.+)$ ]]; then
+    stored_id="${BASH_REMATCH[1]}"
+  else
+    return 1
+  fi
+  [ "$stored_id" = "$expected" ] || return 1
+  tail -n +2 "$file" > "$out_file"
+  return 0
 }
 
 # classify_owner_escalation TEXT

@@ -333,10 +333,19 @@ assert_not_contains "scenario N: a partial/corrupted rejection file with no key 
 
 # ---------------------------------------------------------------------------
 echo ""
-echo "== Scenario O: malformed first-line task id + valid-looking escalation marker is STILL a pin violation (blocker #1) =="
+echo "== Scenario O: malformed (non-first-line) task id that is the ONE UNIQUE marker and matches the pin is normalized, never a pin violation or trusted escalation =="
+# Superseded expectation (pre real-output hardening): this exact shape used
+# to be flagged PIN_VIOLATION because extract_task_id is strict about the
+# literal first line. Per the real-output hardening, a task id that appears
+# later is normalized when it is the ONE UNIQUE marker and matches the pin
+# -- and because the output still violated the format contract, its
+# attached (real-category) escalation marker must never be trusted either;
+# the executor's actual work goes through normal independent review instead
+# (see also Scenario AB, which covers the same rule from lib_governance.sh's
+# side with a different mock shape).
 REPO_O=$(new_scratch_repo scenario_o)
 STATE_O=$(mktemp -d)
-printf 'MALFORMED_ESCALATION\nACCEPT\n' > "$STATE_O/claude_sequence.txt"
+printf 'MALFORMED_ESCALATION\n' > "$STATE_O/claude_sequence.txt"
 printf 'ACCEPT\n' > "$STATE_O/review_sequence.txt"
 mkdir -p "$REPO_O/scripts/.state"
 printf 'T036\n' > "$REPO_O/scripts/.state/current_task.txt"
@@ -344,13 +353,13 @@ printf 'T036\n' > "$REPO_O/scripts/.state/current_task.txt"
 run_fire "$REPO_O" "$STATE_O" TASKS=1 ATTEMPTS=2 ARBITER_AFTER=99 MOCK_TASK_ID=T036
 
 assert_eq "scenario O: exits 0" "0" "$FIRE_EC"
-assert_contains "scenario O: malformed (non-first-line) task id with a real-category escalation marker is still flagged PIN_VIOLATION" \
-  "$FIRE_OUT" "KEMFAI_RESULT: PIN_VIOLATION"
+assert_contains "scenario O: the one unique, pin-matching late marker is normalized" "$FIRE_OUT" "normalizing the task id"
+assert_not_contains "scenario O: never flagged as a pin violation once normalized" "$FIRE_OUT" "KEMFAI_RESULT: PIN_VIOLATION"
 assert_not_contains "scenario O: never treated as an owner escalation just because the executor attached the marker" \
   "$FIRE_OUT" "stop=owner_escalation"
-assert_not_contains "scenario O: docs/PROGRESS.md never records a bogus escalation for a pin-violating malformed attempt" \
+assert_not_contains "scenario O: docs/PROGRESS.md never records a bogus escalation for normalized-but-non-conforming output" \
   "$(cat "$REPO_O/docs/PROGRESS.md")" "OWNER ESCALATION"
-assert_contains "scenario O: SAME pinned task eventually accepted" "$FIRE_OUT" "LOOP: task T036 accepted"
+assert_contains "scenario O: sent through normal independent review and accepted on the first attempt" "$FIRE_OUT" "LOOP: task T036 accepted"
 
 # ---------------------------------------------------------------------------
 echo ""
@@ -507,5 +516,185 @@ assert_contains "scenario W: arbiter ESCALATE with LOCKED_BASELINE content stops
   "$FIRE_OUT" "stop=owner_escalation_via_arbiter"
 assert_contains "scenario W: docs/PROGRESS.md records the classified LOCKED_BASELINE category" \
   "$(cat "$REPO_W/docs/PROGRESS.md")" "Category: LOCKED_BASELINE"
+
+# ---------------------------------------------------------------------------
+echo ""
+echo "== Scenario X: a >300KB keyed arbiter resolution never triggers E2BIG and reaches the mocked executor via file/stdin, intact to its far end =="
+# Regression test for the actual production incident: a real
+# scripts/.state/last_resolution.txt was 372046 bytes. The old design
+# exported its content as KEMFAI_ARBITER_RESOLUTION and execve'd
+# `bash run_next_step.sh` -- a single environment string over Linux's
+# MAX_ARG_STRLEN (~128KB) fails with E2BIG before any executor runs. If that
+# regressed, this fire would fail non-zero (or claude_prompt_1.txt would
+# never be created at all) instead of completing normally.
+REPO_X=$(new_scratch_repo scenario_x)
+STATE_X=$(mktemp -d)
+mkdir -p "$REPO_X/scripts/.state"
+printf 'T036\n' > "$REPO_X/scripts/.state/current_task.txt"
+BIG_RESOLUTION=$(head -c 320000 /dev/zero | tr '\0' 'r')
+BIG_RESOLUTION="${BIG_RESOLUTION}
+FAR_END_UNIQUE_MARKER_ZZZ999"
+(
+  cd "$REPO_X"
+  # shellcheck disable=SC1091
+  source scripts/lib_governance.sh
+  write_task_keyed_state "scripts/.state/last_resolution.txt" "T036" "$BIG_RESOLUTION"
+)
+KEYED_SIZE=$(wc -c < "$REPO_X/scripts/.state/last_resolution.txt")
+printf 'ACCEPT\n' > "$STATE_X/claude_sequence.txt"
+printf 'ACCEPT\n' > "$STATE_X/review_sequence.txt"
+
+run_fire "$REPO_X" "$STATE_X" TASKS=1 ATTEMPTS=1 ARBITER_AFTER=5 MOCK_TASK_ID=T036
+
+assert_eq "scenario X: seeded resolution file is genuinely >300KB (production incident size class)" "1" "$([ "$KEYED_SIZE" -gt 300000 ] && echo 1 || echo 0)"
+assert_eq "scenario X: run_loop does not crash (no E2BIG) despite a >300KB keyed resolution" "0" "$FIRE_EC"
+assert_contains "scenario X: pinned task resumed normally" "$FIRE_OUT" "resuming pinned task T036"
+assert_contains "scenario X: SAME pinned task accepted with the huge resolution fed to the executor" "$FIRE_OUT" "LOOP: task T036 accepted"
+PROMPT_X1="$STATE_X/claude_prompt_1.txt"
+assert_file_exists "scenario X: attempt 1's prompt was captured (proves the executor actually ran, not blocked by E2BIG)" "$PROMPT_X1"
+assert_contains "scenario X: the far end (300KB+ in) of the huge resolution reached the mocked executor via file/stdin intact" \
+  "$(cat "$PROMPT_X1" 2>/dev/null)" "FAR_END_UNIQUE_MARKER_ZZZ999"
+
+# ---------------------------------------------------------------------------
+echo ""
+echo "== Scenario Y: a >300KB STALE resolution keyed to a DIFFERENT task never leaks into the pinned task's prompt =="
+REPO_Y=$(new_scratch_repo scenario_y)
+STATE_Y=$(mktemp -d)
+mkdir -p "$REPO_Y/scripts/.state"
+printf 'T036\n' > "$REPO_Y/scripts/.state/current_task.txt"
+BIG_STALE=$(head -c 320000 /dev/zero | tr '\0' 's')
+BIG_STALE="${BIG_STALE}
+STALE_FAR_END_MARKER_MUST_NEVER_LEAK_888"
+(
+  cd "$REPO_Y"
+  # shellcheck disable=SC1091
+  source scripts/lib_governance.sh
+  write_task_keyed_state "scripts/.state/last_resolution.txt" "T099" "$BIG_STALE"
+)
+printf 'ACCEPT\n' > "$STATE_Y/claude_sequence.txt"
+printf 'ACCEPT\n' > "$STATE_Y/review_sequence.txt"
+
+run_fire "$REPO_Y" "$STATE_Y" TASKS=1 ATTEMPTS=1 ARBITER_AFTER=5 MOCK_TASK_ID=T036
+
+assert_eq "scenario Y: exits 0" "0" "$FIRE_EC"
+assert_contains "scenario Y: pinned task T036 still accepted normally" "$FIRE_OUT" "LOOP: task T036 accepted"
+PROMPT_Y1="$STATE_Y/claude_prompt_1.txt"
+assert_file_exists "scenario Y: attempt 1's prompt was captured" "$PROMPT_Y1"
+assert_not_contains "scenario Y: a >300KB stale resolution keyed to a DIFFERENT task never reaches T036's prompt" \
+  "$(cat "$PROMPT_Y1" 2>/dev/null)" "STALE_FAR_END_MARKER_MUST_NEVER_LEAK_888"
+
+# ---------------------------------------------------------------------------
+echo ""
+echo "== Scenario Z: independent review/arbiter prompts are fed via stdin, never argv, and no real model/network call occurs =="
+# codex_review.sh/codex_arbiter.sh now pipe their prompt via stdin and read
+# only the -o/--output-last-message file for the verdict. The mock codex
+# captures the stdin it received; assert it actually got the real prompt
+# text (not an empty/placeholder argv) and that the persisted rejection
+# never contains the mock's simulated discarded transcript noise -- i.e.
+# only the final actionable answer survives into governance state.
+REPO_Z=$(new_scratch_repo scenario_z)
+STATE_Z=$(mktemp -d)
+printf 'ACCEPT\nACCEPT\n' > "$STATE_Z/claude_sequence.txt"
+printf 'REJECT\nACCEPT\n' > "$STATE_Z/review_sequence.txt"
+
+run_fire "$REPO_Z" "$STATE_Z" TASKS=1 ATTEMPTS=2 ARBITER_AFTER=5 MOCK_TASK_ID=T036
+
+assert_eq "scenario Z: exits 0" "0" "$FIRE_EC"
+assert_contains "scenario Z: reviewer was actually invoked and rejected via stdin-fed prompt" "$FIRE_OUT" "setback #1 for task T036 (REJECTED)"
+assert_file_exists "scenario Z: codex mock captured a real stdin prompt (proves stdin feed works, not empty argv)" "$STATE_Z/codex_stdin_prompt.txt"
+assert_contains "scenario Z: the stdin-fed reviewer prompt contains the real instructions" \
+  "$(cat "$STATE_Z/codex_stdin_prompt.txt" 2>/dev/null)" "independent REVIEWER for KEMFAI"
+assert_not_contains "scenario Z: discarded Codex transcript/tool-call noise never survives into persisted governance state" \
+  "$FIRE_OUT" "MOCK_TRANSCRIPT_NOISE_MARKER"
+assert_contains "scenario Z: SAME task retried and accepted" "$FIRE_OUT" "LOOP: task T036 accepted"
+
+# ---------------------------------------------------------------------------
+echo ""
+echo "== Scenario AA: real-output hardening -- a late (non-first-line) but unique, pin-matching task marker is normalized and sent through normal review =="
+REPO_AA=$(new_scratch_repo scenario_aa)
+STATE_AA=$(mktemp -d)
+mkdir -p "$REPO_AA/scripts/.state"
+printf 'T036\n' > "$REPO_AA/scripts/.state/current_task.txt"
+printf 'LATE_MARKER_MATCH\n' > "$STATE_AA/claude_sequence.txt"
+printf 'ACCEPT\n' > "$STATE_AA/review_sequence.txt"
+
+run_fire "$REPO_AA" "$STATE_AA" TASKS=1 ATTEMPTS=2 ARBITER_AFTER=5 MOCK_TASK_ID=T036
+
+assert_eq "scenario AA: exits 0" "0" "$FIRE_EC"
+assert_contains "scenario AA: malformed-but-pin-matching output is normalized instead of discarded" \
+  "$FIRE_OUT" "normalizing the task id"
+assert_not_contains "scenario AA: never flagged as a pin violation" "$FIRE_OUT" "KEMFAI_RESULT: PIN_VIOLATION"
+assert_contains "scenario AA: proceeds through normal independent review and is accepted" "$FIRE_OUT" "LOOP: task T036 accepted"
+
+# ---------------------------------------------------------------------------
+echo ""
+echo "== Scenario AB: real-output hardening -- a late, unique, pin-matching marker with a REAL-CATEGORY escalation marker is still NOT trusted =="
+REPO_AB=$(new_scratch_repo scenario_ab)
+STATE_AB=$(mktemp -d)
+mkdir -p "$REPO_AB/scripts/.state"
+printf 'T036\n' > "$REPO_AB/scripts/.state/current_task.txt"
+printf 'LATE_MARKER_MATCH_FAKE_ESCALATION\n' > "$STATE_AB/claude_sequence.txt"
+printf 'ACCEPT\n' > "$STATE_AB/review_sequence.txt"
+
+run_fire "$REPO_AB" "$STATE_AB" TASKS=1 ATTEMPTS=2 ARBITER_AFTER=5 MOCK_TASK_ID=T036
+
+assert_eq "scenario AB: exits 0" "0" "$FIRE_EC"
+assert_contains "scenario AB: normalized despite the attached escalation marker" "$FIRE_OUT" "normalizing the task id"
+assert_not_contains "scenario AB: the escalation marker from non-conforming output is never trusted" "$FIRE_OUT" "stop=owner_escalation"
+assert_not_contains "scenario AB: never flagged as a pin violation" "$FIRE_OUT" "KEMFAI_RESULT: PIN_VIOLATION"
+assert_contains "scenario AB: sent through normal independent review and accepted instead of escalated" "$FIRE_OUT" "LOOP: task T036 accepted"
+assert_not_contains "scenario AB: docs/PROGRESS.md never records a bogus escalation from malformed-but-normalized output" \
+  "$(cat "$REPO_AB/docs/PROGRESS.md")" "OWNER ESCALATION"
+
+# ---------------------------------------------------------------------------
+echo ""
+echo "== Scenario AC: real-output hardening -- MULTIPLE different late markers are never normalized, remain a pin violation =="
+REPO_AC=$(new_scratch_repo scenario_ac)
+STATE_AC=$(mktemp -d)
+mkdir -p "$REPO_AC/scripts/.state"
+printf 'T036\n' > "$REPO_AC/scripts/.state/current_task.txt"
+printf 'LATE_MARKER_MULTIPLE\nACCEPT\n' > "$STATE_AC/claude_sequence.txt"
+printf 'ACCEPT\n' > "$STATE_AC/review_sequence.txt"
+
+run_fire "$REPO_AC" "$STATE_AC" TASKS=1 ATTEMPTS=2 ARBITER_AFTER=99 MOCK_TASK_ID=T036
+
+assert_eq "scenario AC: exits 0" "0" "$FIRE_EC"
+assert_not_contains "scenario AC: never normalized when multiple different markers are present" "$FIRE_OUT" "normalizing the task id"
+assert_contains "scenario AC: multiple different late markers remain a pin violation" "$FIRE_OUT" "KEMFAI_RESULT: PIN_VIOLATION"
+assert_contains "scenario AC: SAME pinned task eventually accepted on retry" "$FIRE_OUT" "LOOP: task T036 accepted"
+
+# ---------------------------------------------------------------------------
+echo ""
+echo "== Scenario AD: real-output hardening -- a single late marker that MISMATCHES the pin is never normalized, remains a pin violation =="
+REPO_AD=$(new_scratch_repo scenario_ad)
+STATE_AD=$(mktemp -d)
+mkdir -p "$REPO_AD/scripts/.state"
+printf 'T036\n' > "$REPO_AD/scripts/.state/current_task.txt"
+printf 'LATE_MARKER_MISMATCH\nACCEPT\n' > "$STATE_AD/claude_sequence.txt"
+printf 'ACCEPT\n' > "$STATE_AD/review_sequence.txt"
+
+run_fire "$REPO_AD" "$STATE_AD" TASKS=1 ATTEMPTS=2 ARBITER_AFTER=99 MOCK_TASK_ID=T036
+
+assert_eq "scenario AD: exits 0" "0" "$FIRE_EC"
+assert_not_contains "scenario AD: never normalized when the single late marker mismatches the pin" "$FIRE_OUT" "normalizing the task id"
+assert_contains "scenario AD: mismatched late marker remains a pin violation" "$FIRE_OUT" "KEMFAI_RESULT: PIN_VIOLATION"
+assert_contains "scenario AD: SAME pinned task eventually accepted on retry" "$FIRE_OUT" "LOOP: task T036 accepted"
+
+# ---------------------------------------------------------------------------
+echo ""
+echo "== Scenario AE: repeated identical late task markers are ambiguous and remain a pin violation =="
+REPO_AE=$(new_scratch_repo scenario_ae)
+STATE_AE=$(mktemp -d)
+mkdir -p "$REPO_AE/scripts/.state"
+printf 'T036\n' > "$REPO_AE/scripts/.state/current_task.txt"
+printf 'LATE_MARKER_DUPLICATE_SAME\nACCEPT\n' > "$STATE_AE/claude_sequence.txt"
+printf 'ACCEPT\n' > "$STATE_AE/review_sequence.txt"
+
+run_fire "$REPO_AE" "$STATE_AE" TASKS=1 ATTEMPTS=2 ARBITER_AFTER=99 MOCK_TASK_ID=T036
+
+assert_eq "scenario AE: exits 0" "0" "$FIRE_EC"
+assert_not_contains "scenario AE: repeated identical markers are never normalized" "$FIRE_OUT" "normalizing the task id"
+assert_contains "scenario AE: repeated identical markers remain a pin violation" "$FIRE_OUT" "KEMFAI_RESULT: PIN_VIOLATION"
+assert_contains "scenario AE: SAME pinned task eventually accepted on retry" "$FIRE_OUT" "LOOP: task T036 accepted"
 
 print_summary

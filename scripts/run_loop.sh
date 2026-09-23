@@ -36,6 +36,16 @@ SETBACK_FILE="$STATE/setback_state.txt"
 REJECTION_FILE="$STATE/last_rejection.txt"
 RESOLUTION_FILE="$STATE/last_resolution.txt"
 
+# Per-fire scratch dir for the small handoff files below. Task-keyed
+# resolution/rejection content can legitimately be hundreds of KB (a real
+# 372046-byte resolution triggered this fix), so it is NEVER put in a shell
+# variable that gets exported into a child process's environment -- only
+# ever a file path (see read_task_keyed_state_to_file, lib_governance.sh).
+# A single top-level trap covers every exit path (including the many early
+# `exit`s below), so cleanup never depends on which branch a fire takes.
+RUN_TMP_DIR=$(mktemp -d)
+trap 'rm -rf "$RUN_TMP_DIR"' EXIT
+
 exec 9>"$LOCK"
 if ! flock -n 9; then
   echo "LOOP: another KEMFAI run is still active — skipping this fire."
@@ -71,21 +81,28 @@ for t in $(seq 1 "$TASKS"); do
     # Arbiter resolutions take priority over raw rejection/question feedback;
     # never send both for the same attempt. Both files are atomically keyed
     # to the task id they were written for (write_task_keyed_state /
-    # read_task_keyed_state, lib_governance.sh) and validated here against
-    # the CURRENTLY pinned task -- a stale (different-task), partial, or
-    # hand-edited file can never be fed into this attempt: it simply fails
-    # the key check and reads as empty, no matter how or why it was written.
-    KEMFAI_ARBITER_RESOLUTION=""
-    if [ -n "$KEMFAI_PINNED_TASK" ]; then
-      KEMFAI_ARBITER_RESOLUTION=$(read_task_keyed_state "$RESOLUTION_FILE" "$KEMFAI_PINNED_TASK" || true)
-    fi
-    export KEMFAI_ARBITER_RESOLUTION
+    # read_task_keyed_state_to_file, lib_governance.sh) and validated here
+    # against the CURRENTLY pinned task -- a stale (different-task), partial,
+    # or hand-edited file can never be fed into this attempt: it simply
+    # fails the key check and nothing is written, no matter how or why it
+    # was written. Only the resulting file PATH is exported (never the
+    # content itself) so run_next_step.sh's own execve of claude/opencode/
+    # codex can never fail with E2BIG regardless of how large the validated
+    # content is.
+    ATTEMPT_TMP_DIR="$RUN_TMP_DIR/t${t}_a${a}"
+    mkdir -p "$ATTEMPT_TMP_DIR"
 
-    KEMFAI_FIX_NOTE=""
-    if [ -z "$KEMFAI_ARBITER_RESOLUTION" ] && [ -n "$KEMFAI_PINNED_TASK" ]; then
-      KEMFAI_FIX_NOTE=$(read_task_keyed_state "$REJECTION_FILE" "$KEMFAI_PINNED_TASK" || true)
+    KEMFAI_ARBITER_RESOLUTION_FILE=""
+    if [ -n "$KEMFAI_PINNED_TASK" ] && read_task_keyed_state_to_file "$RESOLUTION_FILE" "$KEMFAI_PINNED_TASK" "$ATTEMPT_TMP_DIR/resolution.txt"; then
+      KEMFAI_ARBITER_RESOLUTION_FILE="$ATTEMPT_TMP_DIR/resolution.txt"
     fi
-    export KEMFAI_FIX_NOTE
+    export KEMFAI_ARBITER_RESOLUTION_FILE
+
+    KEMFAI_FIX_NOTE_FILE=""
+    if [ -z "$KEMFAI_ARBITER_RESOLUTION_FILE" ] && [ -n "$KEMFAI_PINNED_TASK" ] && read_task_keyed_state_to_file "$REJECTION_FILE" "$KEMFAI_PINNED_TASK" "$ATTEMPT_TMP_DIR/fixnote.txt"; then
+      KEMFAI_FIX_NOTE_FILE="$ATTEMPT_TMP_DIR/fixnote.txt"
+    fi
+    export KEMFAI_FIX_NOTE_FILE
 
     OUT=$(bash "$REPO/scripts/run_next_step.sh" 2>&1)
     EC=$?

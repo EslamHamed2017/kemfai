@@ -15,11 +15,13 @@ MODE=$(sed -n "$((IDX+1))p" "$SEQ_FILE" 2>/dev/null || true)
 [ -n "$MODE" ] || MODE="ACCEPT"
 echo $((IDX+1)) > "$IDX_FILE"
 
-# Capture the exact prompt this invocation received (the "-p" argument) so
-# tests can assert on what was actually fed back to the executor -- e.g.
-# that stale/partial state was never injected (blocker #1) and that long
-# reviewer feedback was not truncated (blocker #5).
-printf '%s' "${2:-}" > "$STATE/claude_prompt_$((IDX+1)).txt"
+# The real `claude -p` (no positional prompt argument) reads the prompt from
+# stdin -- capture it the same way so tests can assert on what was actually
+# fed back to the executor -- e.g. that stale/partial state was never
+# injected (blocker #1), that long reviewer feedback was not truncated
+# (blocker #5), and that a >300KB keyed resolution reaches the executor
+# intact via file/stdin instead of argv (E2BIG fix).
+cat > "$STATE/claude_prompt_$((IDX+1)).txt"
 
 TASK_ID="${MOCK_TASK_ID:-T036}"
 
@@ -126,6 +128,55 @@ case "$MODE" in
     echo "KEMFAI_TASK_ID: $TASK_ID"
     echo "This touches invoice and pricing code so flagging for review."
     echo "KEMFAI_OWNER_ESCALATION: Reindex the ledger table and rename the customer contract DTO field on the invoice pricing API"
+    ;;
+  LATE_MARKER_MATCH)
+    # Real-output hardening: violates the mandated first-line contract
+    # (preamble precedes the marker), but exactly ONE unique task marker
+    # appears anywhere and it matches the pinned task -- must be normalized
+    # and sent through normal independent review, never treated as a pin
+    # violation.
+    echo "mock change $IDX" >> "$REPO_DIR/mock_file.txt"
+    echo "Let me walk through my reasoning before stating the task id."
+    echo "Some more analysis text here."
+    echo "KEMFAI_TASK_ID: $TASK_ID"
+    echo "Implemented the task; format contract violated but the id matches the pin."
+    ;;
+  LATE_MARKER_MATCH_FAKE_ESCALATION)
+    # Same late-but-unique-and-matching marker as LATE_MARKER_MATCH, but
+    # ALSO carries a real-category KEMFAI_OWNER_ESCALATION marker. Because
+    # the output is non-conforming, this marker must NEVER be trusted -- the
+    # normalized output must still go through normal independent review, not
+    # stop for owner attention.
+    echo "mock change $IDX" >> "$REPO_DIR/mock_file.txt"
+    echo "Let me walk through my reasoning before stating the task id."
+    echo "KEMFAI_TASK_ID: $TASK_ID"
+    echo "This looks like it touches accounting and tax policy."
+    echo "KEMFAI_OWNER_ESCALATION: New tax calculation changes accounting policy"
+    ;;
+  LATE_MARKER_MULTIPLE)
+    # Two DIFFERENT task markers appear later in the message (neither on the
+    # literal first line) -- ambiguous, must never be normalized; remains a
+    # pin violation against the pinned task.
+    echo "mock change $IDX" >> "$REPO_DIR/mock_file.txt"
+    echo "Reasoning first."
+    echo "KEMFAI_TASK_ID: $TASK_ID"
+    echo "Actually let me also mention another id."
+    echo "KEMFAI_TASK_ID: T099"
+    ;;
+  LATE_MARKER_DUPLICATE_SAME)
+    echo "mock change $IDX" >> "$REPO_DIR/mock_file.txt"
+    echo "Preamble before duplicated task markers."
+    echo "KEMFAI_TASK_ID: $TASK_ID"
+    echo "Repeated reporting marker follows."
+    echo "KEMFAI_TASK_ID: $TASK_ID"
+    ;;
+  LATE_MARKER_MISMATCH)
+    # Exactly one late marker, but it does not match the pinned task -- must
+    # never be normalized; remains a pin violation.
+    echo "mock change $IDX" >> "$REPO_DIR/mock_file.txt"
+    echo "Reasoning first."
+    echo "KEMFAI_TASK_ID: T099"
+    echo "Implemented a different task; format contract also violated."
     ;;
   *)
     echo "KEMFAI_TASK_ID: NONE"

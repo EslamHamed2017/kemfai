@@ -14,6 +14,13 @@ source "$REPO/scripts/lib_governance.sh"
 TS=$(TZ=Asia/Dubai date '+%Y-%m-%d %H:%M %Z')
 LOG="$LOG_DIR/$(TZ=Asia/Dubai date +%Y%m%d-%H%M).log"
 
+# Executor prompts are assembled on disk and fed via stdin/file attachment,
+# never as a single argv string -- a large arbiter resolution or rejection
+# note embedded literally in argv can exceed Linux's MAX_ARG_STRLEN (~128KB)
+# and fail execve with E2BIG before the executor ever runs.
+PROMPT_TMP_DIR=$(mktemp -d)
+trap 'rm -rf "$PROMPT_TMP_DIR"' EXIT
+
 cd "$REPO"
 
 # --- decide next stage ---
@@ -71,11 +78,26 @@ Do not use KEMFAI_OWNER_ESCALATION for anything a competent engineer could decid
 esac
 
 # --- fix-until-accept: feed prior Codex feedback back into the SAME task ---
-if [ -n "${KEMFAI_ARBITER_RESOLUTION:-}" ]; then
-  PROMPT="IMPORTANT: Codex, acting as independent technical arbiter, already resolved the blocking ambiguity for this SAME task. Implement EXACTLY this resolution; do not re-litigate or re-raise the same question:\n\n${KEMFAI_ARBITER_RESOLUTION}\n\n---\n${PROMPT}"
-elif [ -n "${KEMFAI_FIX_NOTE:-}" ]; then
-  PROMPT="IMPORTANT: The previous attempt at this SAME task was rejected or blocked. Address the feedback below and complete the SAME task properly (do not skip to another task). Feedback to address:\n\n${KEMFAI_FIX_NOTE}\n\n---\n${PROMPT}"
-fi
+# KEMFAI_ARBITER_RESOLUTION_FILE / KEMFAI_FIX_NOTE_FILE (set by run_loop.sh)
+# are file PATHS, never the content itself -- the content behind them was
+# already validated as task-keyed there (read_task_keyed_state_to_file) and
+# can legitimately be hundreds of KB. It is streamed straight into
+# PROMPT_FILE below via `cat`, so it is never held as a single shell
+# variable that could later be exported or handed to a subprocess as one
+# oversized argv/environment string.
+PROMPT_FILE="$PROMPT_TMP_DIR/executor_prompt.txt"
+{
+  if [ -n "${KEMFAI_ARBITER_RESOLUTION_FILE:-}" ] && [ -s "$KEMFAI_ARBITER_RESOLUTION_FILE" ]; then
+    printf 'IMPORTANT: Codex, acting as independent technical arbiter, already resolved the blocking ambiguity for this SAME task. Implement EXACTLY this resolution; do not re-litigate or re-raise the same question:\n\n'
+    cat "$KEMFAI_ARBITER_RESOLUTION_FILE"
+    printf '\n---\n'
+  elif [ -n "${KEMFAI_FIX_NOTE_FILE:-}" ] && [ -s "$KEMFAI_FIX_NOTE_FILE" ]; then
+    printf 'IMPORTANT: The previous attempt at this SAME task was rejected or blocked. Address the feedback below and complete the SAME task properly (do not skip to another task). Feedback to address:\n\n'
+    cat "$KEMFAI_FIX_NOTE_FILE"
+    printf '\n---\n'
+  fi
+  printf '%s\n' "$PROMPT"
+} > "$PROMPT_FILE"
 
 # --- run executor with bounded time + real provider fallback ---
 # Claude is primary, GLM is fallback, and independent Codex review remains mandatory; Gemini is excluded.
@@ -144,16 +166,25 @@ for candidate in $EXECUTOR_ORDER; do
   set +e
   case "$candidate" in
     glm)
+      # opencode's `run` positional message is a plain argv string with no
+      # documented stdin mode, so the (potentially large) prompt is handed
+      # over via its file-attachment flag (-f) instead of embedding it in
+      # argv, where it could exceed MAX_ARG_STRLEN.
       OUT=$(timeout --signal=TERM --kill-after=30s "${EXECUTOR_TIMEOUT}s" \
-        opencode run --auto -m zai-coding/glm-5.2 "$PROMPT" 2>&1)
+        opencode run --auto -m zai-coding/glm-5.2 \
+          -f "$PROMPT_FILE" \
+          "Follow the complete task instructions in the attached file exactly." 2>&1)
       EC=$?
       ;;
     claude)
+      # `claude -p` with no positional prompt argument reads the prompt from
+      # stdin ("useful for pipes" per --help) -- so the prompt never has to
+      # be a single argv string regardless of size.
       OUT=$(timeout --signal=TERM --kill-after=30s "${EXECUTOR_TIMEOUT}s" \
-        claude -p "$PROMPT" \
+        claude -p \
           --permission-mode acceptEdits \
           --allowedTools 'Read,Write,Edit,Glob,Grep,Bash' \
-          --output-format text 2>&1)
+          --output-format text < "$PROMPT_FILE" 2>&1)
       EC=$?
       ;;
     *)
@@ -228,6 +259,26 @@ if [ "$next" = "implement" ] && [ -n "$EXECUTOR" ] && [ $EC -eq 0 ]; then
   # fabricated owner-escalation/legacy-Decision-Request marker could be
   # trusted despite the executor never proving which task it was even
   # working on.
+  #
+  # Narrow real-output hardening: a real executor occasionally emits its
+  # KEMFAI_TASK_ID marker after some preamble instead of as the mandated
+  # literal first line. When a task IS pinned and extract_unique_task_marker
+  # finds EXACTLY ONE UNIQUE marker anywhere in the output and it equals the
+  # pin, the id is normalized so genuinely-correct work is not discarded as
+  # a pin violation. Multiple/mismatched/absent markers are NEVER
+  # normalized. Because the output still violated the format contract, its
+  # escalation/tech-question markers are never trusted either -- normalized
+  # output always falls straight through to the normal independent-review
+  # path below, exactly as if no marker had been present at all.
+  NORMALIZED_FROM_MALFORMED=""
+  if [ "$RESULT_TASK_ID" = "UNKNOWN" ] && [ -n "${KEMFAI_PINNED_TASK:-}" ]; then
+    if UNIQUE_MARKER=$(extract_unique_task_marker "$OUT") && [ "$UNIQUE_MARKER" = "$KEMFAI_PINNED_TASK" ]; then
+      RESULT_TASK_ID="$UNIQUE_MARKER"
+      NORMALIZED_FROM_MALFORMED="1"
+      echo "[$TS] executor output violated the first-line KEMFAI_TASK_ID contract, but exactly one unique task marker ($UNIQUE_MARKER) exists and matches the pinned task -- normalizing the task id and sending this output through normal independent review only (no escalation/tech-question marker from this non-conforming output is trusted)." | tee -a "$LOG"
+    fi
+  fi
+
   PIN_VIOLATION=""
   if [ -n "${KEMFAI_PINNED_TASK:-}" ] && [ "$RESULT_TASK_ID" != "$KEMFAI_PINNED_TASK" ]; then
     PIN_VIOLATION="1"
@@ -243,10 +294,14 @@ if [ "$next" = "implement" ] && [ -n "$EXECUTOR" ] && [ $EC -eq 0 ]; then
     exit 0
   fi
 
-  SIGNAL_OUT=$(classify_executor_signal "$OUT" || true)
-  SIGNAL_KIND=$(printf '%s\n' "$SIGNAL_OUT" | sed -n '1p')
-  SIGNAL_CATEGORY=$(printf '%s\n' "$SIGNAL_OUT" | sed -n '2p')
-  SIGNAL_TEXT=$(printf '%s\n' "$SIGNAL_OUT" | tail -n +3)
+  if [ -n "$NORMALIZED_FROM_MALFORMED" ]; then
+    SIGNAL_KIND="NONE"
+  else
+    SIGNAL_OUT=$(classify_executor_signal "$OUT" || true)
+    SIGNAL_KIND=$(printf '%s\n' "$SIGNAL_OUT" | sed -n '1p')
+    SIGNAL_CATEGORY=$(printf '%s\n' "$SIGNAL_OUT" | sed -n '2p')
+    SIGNAL_TEXT=$(printf '%s\n' "$SIGNAL_OUT" | tail -n +3)
+  fi
 
   if [ "$SIGNAL_KIND" = "OWNER_ESCALATION" ]; then
     echo "[$TS] KEMFAI_RESULT: OWNER_ESCALATION ($SIGNAL_CATEGORY) - $SIGNAL_TEXT" | tee -a "$LOG"

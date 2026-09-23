@@ -2,8 +2,25 @@
 # Deterministic mock of the `opencode` CLI (GLM fallback) for KEMFAI
 # governance tests. Not expected to be invoked while the claude mock
 # succeeds, but present for safety and to keep fallback wiring testable.
+# The real invocation passes the (potentially large) prompt via `-f <file>`
+# (opencode's documented file-attachment flag) rather than embedding it in
+# argv; capture that file's content the same way the claude mock captures
+# stdin, so tests can assert on what was actually fed to the fallback path.
 set -euo pipefail
+STATE="${MOCK_STATE_DIR:-}"
 REPO_DIR="${MOCK_REPO_DIR:?MOCK_REPO_DIR not set}"
+
+args=("$@")
+for ((i=0; i<${#args[@]}; i++)); do
+  if [ "${args[$i]}" = "-f" ] || [ "${args[$i]}" = "--file" ]; then
+    ATTACHED_FILE="${args[$((i+1))]}"
+    if [ -n "$STATE" ]; then
+      mkdir -p "$STATE"
+      cp "$ATTACHED_FILE" "$STATE/opencode_prompt_file.txt" 2>/dev/null || true
+    fi
+  fi
+done
+
 echo "mock opencode change" >> "$REPO_DIR/mock_file.txt"
 echo "KEMFAI_TASK_ID: ${MOCK_TASK_ID:-T036}"
 echo "Implemented via GLM fallback."
