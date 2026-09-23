@@ -137,6 +137,11 @@ services:
     environment:
       NEXT_PUBLIC_API_URL: http://localhost:4000
       NEXT_PUBLIC_DEFAULT_LOCALE: en
+      # T037 duplicate-email recovery actions (/login, /reset-password route handlers).
+      # Unset in dev on purpose - the handlers fall back to a localized "temporarily
+      # unavailable" message rather than a dead link when these are empty.
+      KEYCLOAK_CUSTOMERS_LOGIN_URL: ${KEYCLOAK_CUSTOMERS_LOGIN_URL:-}
+      KEYCLOAK_CUSTOMERS_RESET_PASSWORD_URL: ${KEYCLOAK_CUSTOMERS_RESET_PASSWORD_URL:-}
     ports:
       - "127.0.0.1:3010:3000"
     restart: unless-stopped

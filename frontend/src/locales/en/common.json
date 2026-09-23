@@ -18,6 +18,35 @@
     "error": "We couldn't load the plans. Please try again.",
     "retry": "Try again"
   },
+  "signup": {
+    "title": "Create your account",
+    "emailLabel": "Email address",
+    "passwordLabel": "Password",
+    "passwordHint": "10–128 characters.",
+    "acceptedTermsLabel": "I accept the Terms of Service",
+    "submit": "Create account",
+    "submitting": "Creating account…",
+    "success": {
+      "title": "Check your email",
+      "body": "We sent a verification link to {email}. Verify your email to continue setting up your workspace."
+    },
+    "errors": {
+      "malformedEmail": "Enter a valid email address.",
+      "weakPassword": "Your password must be 10–128 characters long.",
+      "validation": "We couldn't create your account. Please check the form and try again.",
+      "unexpected": "Something went wrong. Please try again."
+    },
+    "planUnavailable": {
+      "message": "The plan you selected is no longer available.",
+      "link": "Choose a plan"
+    },
+    "duplicateEmail": {
+      "message": "This email cannot be used to create a new account. If it's yours, sign in or reset your password instead.",
+      "signIn": "Sign in",
+      "resetPassword": "Reset password",
+      "recoveryUnavailable": "Account recovery is temporarily unavailable. Please try again shortly."
+    }
+  },
   "verifyEmail": {
     "verifying": "Verifying your email…",
     "success": {

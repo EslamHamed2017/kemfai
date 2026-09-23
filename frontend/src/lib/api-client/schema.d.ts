@@ -75,14 +75,18 @@ export interface paths {
                     headers: {
                         [name: string]: unknown;
                     };
-                    content?: never;
+                    content: {
+                        "application/json": components["schemas"]["NestErrorResponse"];
+                    };
                 };
-                /** @description Malformed email or weak password (FR-018) */
+                /** @description Malformed email, weak password, or a stale/unpublished plan selection (FR-018). The `message` field is what distinguishes the three: class-validator field-prefixed strings ("email must be...", "password must be...", "planId must be...") for the first two, versus the literal PLAN_NO_LONGER_AVAILABLE_MESSAGE string for the third. */
                 422: {
                     headers: {
                         [name: string]: unknown;
                     };
-                    content?: never;
+                    content: {
+                        "application/json": components["schemas"]["NestErrorResponse"];
+                    };
                 };
             };
         };
@@ -1181,6 +1185,12 @@ export interface components {
             values: {
                 [key: string]: unknown;
             };
+        };
+        /** @description Standard NestJS HttpException body shape. `message` is a single string for exceptions thrown with a string argument (e.g. ConflictException, or the PLAN_NO_LONGER_AVAILABLE_MESSAGE 422), and an array of field-prefixed strings for ValidationPipe (class-validator) failures. */
+        NestErrorResponse: {
+            statusCode: number;
+            message: string | string[];
+            error?: string;
         };
         CompanySetupIncompleteError: {
             /** @enum {integer} */

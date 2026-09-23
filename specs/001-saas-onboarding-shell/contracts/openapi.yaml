@@ -54,8 +54,20 @@ paths:
             schema: { $ref: "#/components/schemas/SignupRequest" }
       responses:
         "201": { description: Unverified account created, verification email sent (FR-019) }
-        "409": { description: Email already registered and verified — generic message only (Acceptance Scenario 1.6) }
-        "422": { description: Malformed email or weak password (FR-018) }
+        "409":
+          description: Email already registered and verified — generic message only (Acceptance Scenario 1.6)
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/NestErrorResponse" }
+        "422":
+          description: >
+            Malformed email, weak password, or a stale/unpublished plan selection (FR-018). The
+            `message` field is what distinguishes the three: class-validator field-prefixed
+            strings ("email must be...", "password must be...", "planId must be...") for the
+            first two, versus the literal PLAN_NO_LONGER_AVAILABLE_MESSAGE string for the third.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/NestErrorResponse" }
 
   /accounts/verify-email:
     post:
@@ -483,6 +495,23 @@ components:
       required: [values]
       properties:
         values: { type: object, additionalProperties: true }
+
+    NestErrorResponse:
+      type: object
+      required: [statusCode, message]
+      description: >
+        Standard NestJS HttpException body shape. `message` is a single string for
+        exceptions thrown with a string argument (e.g. ConflictException, or the
+        PLAN_NO_LONGER_AVAILABLE_MESSAGE 422), and an array of field-prefixed strings for
+        ValidationPipe (class-validator) failures.
+      properties:
+        statusCode: { type: integer }
+        message:
+          oneOf:
+            - type: string
+            - type: array
+              items: { type: string }
+        error: { type: string }
 
     CompanySetupIncompleteError:
       type: object

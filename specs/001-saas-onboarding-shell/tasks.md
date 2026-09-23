@@ -438,7 +438,7 @@ tenant/workspace exists until the verification link is used, and the account can
     (FR-011); fully keyboard-operable (FR-013).
   - **Roles**: Primary: Claude · Backup: Gemini · Reviewer: Codex
 
-- [ ] T037 [P] [US1] Build the signup form page (email/password/terms, localized validation errors) in
+- [X] T037 [P] [US1] Build the signup form page (email/password/terms, localized validation errors) in
   `frontend/src/app/(auth)/signup/page.tsx`
   - **Dependencies**: T024, T032, T036
   - **Acceptance Criteria**: Matches Acceptance Scenarios 1.2/1.6; malformed email/weak password/duplicate
