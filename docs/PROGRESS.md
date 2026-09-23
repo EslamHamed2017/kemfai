@@ -4453,3 +4453,15 @@ Implemented task: T037. The new signup form and localized EN/AR messages exist. 
 
 REVIEW VERDICT: REJECT
 ```
+
+## Rejected implement tick - 2026-09-23 10:12 +04
+
+Codex rejected the last implement attempt and working tree was reverted. Reviewer verdict:
+
+```
+Implemented task: T039. Its unit tests, frontend typecheck/build, and backend contract tests pass.
+
+1. The MFA flow is nonfunctional in production: `MfaEnrollmentScreen` uses `getBrowserApiClient()`, which explicitly supplies no authentication token, while both MFA endpoints require global bearer authentication. They will return 401; the tests mock the client and miss this integration failure. T039 was marked complete prematurely.
+
+REVIEW VERDICT: REJECT
+```
