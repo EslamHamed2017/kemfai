@@ -4368,3 +4368,60 @@ No Odoo-core, accounting, feature-flag, or tenant-isolation violations were intr
 
 REVIEW VERDICT: REJECT
 ```
+
+## Rejected implement tick - 2026-09-23 04:05 +04
+
+Codex rejected the last implement attempt and working tree was reverted. Reviewer verdict:
+
+```
+  @Validate(AcceptedTermsTrueConstraint)
+  acceptedTerms!: boolean;
+}
+import { bootstrap } from './bootstrap';
+
+bootstrap();
+backend/api/src/app.module.ts:3:import { ValidationPipe } from '@nestjs/common';
+backend/api/src/app.module.ts:42:      useValue: new ValidationPipe({ errorHttpStatusCode: 422, whitelist: true }),
+backend/api/src/modules/accounts/accounts.controller.ts:54:   * ValidationPipe before service code.
+backend/api/src/modules/accounts/dto/resend-verification.request.dto.ts:6: * stopped by the global ValidationPipe before service code; a well-formed email
+backend/api/src/modules/accounts/dto/verify-email.request.dto.ts:9: * input (422 via the global ValidationPipe); a well-formed but unknown/expired/
+backend/api/src/modules/accounts/dto/signup.request.dto.spec.ts:9: * through class-validator itself (the exact engine the global ValidationPipe runs).
+backend/api/src/modules/accounts/dto/signup.request.dto.ts:20: * ValidationPipe (422), never only by TypeScript types.
+backend/api/src/modules/accounts/dto/signup.request.dto.ts:38: * FR-017/FR-018). Runtime-validated by class-validator via the global ValidationPipe —
+
+exec
+/bin/bash -lc 'npm test -- --runInBand' in /home/hermesops/kemfai/frontend
+exec
+/bin/bash -lc 'npm run typecheck' in /home/hermesops/kemfai/frontend
+ succeeded in 2968ms:
+
+> kemfai-frontend@0.1.0 typecheck
+> tsc --noEmit
+
+
+ succeeded in 3728ms:
+
+> kemfai-frontend@0.1.0 test
+> jest --runInBand
+
+
+Test Suites: 8 passed, 8 total
+Tests:       33 passed, 33 total
+Snapshots:   0 total
+Time:        2.457 s
+Ran all test suites.
+
+codex
+Implemented task: T037. Frontend tests pass (33/33), and TypeScript typecheck passes. However, marking T037 complete is premature.
+
+1. Every HTTP 422 response is shown as “plan unavailable,” but the API contract defines 422 for malformed email or weak password. Client validation is not equivalent to backend `@IsEmail` validation, so backend-rejected email input can produce the wrong localized error. The test suite masks this by testing 422 only as a stale-plan response. This violates T037’s requirement for distinct localized malformed-email and weak-password errors.
+
+REVIEW VERDICT: REJECT
+tokens used
+26,198
+Implemented task: T037. Frontend tests pass (33/33), and TypeScript typecheck passes. However, marking T037 complete is premature.
+
+1. Every HTTP 422 response is shown as “plan unavailable,” but the API contract defines 422 for malformed email or weak password. Client validation is not equivalent to backend `@IsEmail` validation, so backend-rejected email input can produce the wrong localized error. The test suite masks this by testing 422 only as a stale-plan response. This violates T037’s requirement for distinct localized malformed-email and weak-password errors.
+
+REVIEW VERDICT: REJECT
+```
