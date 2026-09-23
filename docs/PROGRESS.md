@@ -4440,3 +4440,16 @@ T037 was marked complete prematurely.
 
 REVIEW VERDICT: REJECT
 ```
+
+## Rejected implement tick - 2026-09-23 09:32 +04
+
+Codex rejected the last implement attempt and working tree was reverted. Reviewer verdict:
+
+```
+Implemented task: T037. The new signup form and localized EN/AR messages exist. Its targeted tests pass (9/9), the full frontend suite passes (34/34), TypeScript passes, and the production build succeeds. T037 was nevertheless marked complete prematurely.
+
+1. Server-side `422` responses are always presented as “plan unavailable.” The API contract also uses `422` for malformed email or weak password, and the client regex is weaker than backend validation. Valid-looking inputs rejected by the backend therefore receive the wrong error, violating T037 and FR-012.
+2. Duplicate-email recovery is a dead end. The message mentions signing in or resetting the password, but provides neither action, and the production build contains no login or password-reset route. This does not satisfy Acceptance Scenario 1.6’s requirement to direct the user to those recovery paths.
+
+REVIEW VERDICT: REJECT
+```
