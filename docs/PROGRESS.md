@@ -4465,3 +4465,24 @@ Implemented task: T039. Its unit tests, frontend typecheck/build, and backend co
 
 REVIEW VERDICT: REJECT
 ```
+
+## Rejected implement tick - 2026-09-26 12:05 +04
+
+Codex rejected the last implement attempt and working tree was reverted. Reviewer verdict:
+
+```
+Implemented task: T030.
+
+Test evidence:
+
+- Playwright: 8/8 passed.
+- Jest: 72/72 passed.
+- TypeScript typecheck passed.
+- No core Odoo edits, hard-coded entitlements, tenant leak, accounting nondeterminism, Odoo UI exposure, or obvious security flaw found.
+
+1. T030 does not assert “full RTL mirroring.” It only checks `html[dir="rtl"]`; no geometry, ordering, alignment, icon, clipping, or RTL screenshot assertions exist. See [us1-signup.spec.ts](/home/hermesops/kemfai/frontend/tests/e2e/us1-signup.spec.ts:33).
+2. Localized errors are not genuinely verified. The signup test only checks that an alert is visible, and the verification test only checks that a form exists. Both would pass with untranslated English copy in Arabic. See [us1-signup.spec.ts](/home/hermesops/kemfai/frontend/tests/e2e/us1-signup.spec.ts:63).
+3. [tasks.md](/home/hermesops/kemfai/specs/001-saas-onboarding-shell/tasks.md:376) was marked complete prematurely because those explicit acceptance criteria remain untested.
+
+REVIEW VERDICT: REJECT
+```
