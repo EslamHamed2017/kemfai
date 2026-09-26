@@ -36,7 +36,7 @@ export function PlansCatalog() {
       <h1>{t('title')}</h1>
       <p>{t('intro')}</p>
 
-      <fieldset>
+      <fieldset data-testid="billing-cycle-fieldset">
         <legend>{t('billingCycle')}</legend>
         {(['monthly', 'annual'] as const).map((value) => (
           <label key={value}>
@@ -46,6 +46,7 @@ export function PlansCatalog() {
               value={value}
               checked={cycle === value}
               onChange={() => setCycle(value)}
+              data-testid="billing-cycle-option"
             />
             {t(value)}
           </label>
@@ -66,7 +67,7 @@ export function PlansCatalog() {
       {plans?.map((plan) => {
         const price = cycle === 'monthly' ? plan.monthlyPrice : plan.annualPrice;
         return (
-          <article key={plan.id} aria-labelledby={`plan-${plan.id}`}>
+          <article key={plan.id} aria-labelledby={`plan-${plan.id}`} data-testid="plan-card">
             <h2 id={`plan-${plan.id}`}>{plan.name[locale]}</h2>
             <p>
               {new Intl.NumberFormat(locale, {
@@ -93,7 +94,10 @@ export function PlansCatalog() {
                 </li>
               ))}
             </ul>
-            <a href={`/signup?plan=${encodeURIComponent(plan.id)}&cycle=${cycle}`}>
+            <a
+              href={`/signup?plan=${encodeURIComponent(plan.id)}&cycle=${cycle}`}
+              data-testid="plan-choose-link"
+            >
               {t('choose', { plan: plan.name[locale] })}
             </a>
           </article>

@@ -72,7 +72,9 @@ export function SignupForm({ planId, billingCycle }: SignupFormProps) {
     <main dir={locale === 'ar' ? 'rtl' : 'ltr'}>
       <h1>{t('title')}</h1>
       <form onSubmit={handleSubmit} noValidate>
-        <label htmlFor="signup-email">{t('emailLabel')}</label>
+        <label htmlFor="signup-email" style={{ display: 'block' }}>
+          {t('emailLabel')}
+        </label>
         <input
           id="signup-email"
           name="email"
@@ -83,7 +85,9 @@ export function SignupForm({ planId, billingCycle }: SignupFormProps) {
           onChange={(event) => setEmail(event.target.value)}
         />
 
-        <label htmlFor="signup-password">{t('passwordLabel')}</label>
+        <label htmlFor="signup-password" style={{ display: 'block' }}>
+          {t('passwordLabel')}
+        </label>
         <input
           id="signup-password"
           name="password"
@@ -98,7 +102,7 @@ export function SignupForm({ planId, billingCycle }: SignupFormProps) {
         />
         <p id="signup-password-hint">{t('passwordHint')}</p>
 
-        <label htmlFor="signup-accepted-terms">
+        <label htmlFor="signup-accepted-terms" style={{ display: 'block' }}>
           <input
             id="signup-accepted-terms"
             name="acceptedTerms"
@@ -110,7 +114,7 @@ export function SignupForm({ planId, billingCycle }: SignupFormProps) {
           {t('acceptedTermsLabel')}
         </label>
 
-        <button type="submit" disabled={submitting}>
+        <button type="submit" disabled={submitting} data-testid="signup-submit-button">
           {t(submitting ? 'submitting' : 'submit')}
         </button>
 

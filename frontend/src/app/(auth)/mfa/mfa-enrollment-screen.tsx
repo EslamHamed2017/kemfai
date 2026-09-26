@@ -54,7 +54,13 @@ export function MfaEnrollmentScreen({ returnedFromSetup = false }: { returnedFro
         <div role="status">
           <h2>{t('complete.title')}</h2>
           <p>{t('complete.body')}</p>
-          <button type="button" onClick={() => router.push('/provisioning')}>{t('continue')}</button>
+          <button
+            type="button"
+            onClick={() => router.push('/provisioning')}
+            data-testid="mfa-continue-button"
+          >
+            {t('continue')}
+          </button>
         </div>
       ) : (
         <>
@@ -63,15 +69,36 @@ export function MfaEnrollmentScreen({ returnedFromSetup = false }: { returnedFro
             <section aria-labelledby="mfa-setup-title">
               <h2 id="mfa-setup-title">{t('setup.title')}</h2>
               <p>{t('setup.body')}</p>
-              <button type="button" onClick={openHostedSetup}>{t('setup.open')}</button>
-              <button type="button" onClick={confirm}>{t('confirm')}</button>
+              <button type="button" onClick={openHostedSetup} data-testid="mfa-setup-open-button">
+                {t('setup.open')}
+              </button>
+              <button
+                type="button"
+                onClick={confirm}
+                data-testid="mfa-confirm-button"
+                style={{ display: 'block' }}
+              >
+                {t('confirm')}
+              </button>
             </section>
           ) : (
-            <button type="button" onClick={enroll} disabled={status === 'enrolling' || status === 'confirming'}>
+            <button
+              type="button"
+              onClick={enroll}
+              disabled={status === 'enrolling' || status === 'confirming'}
+              data-testid="mfa-enable-button"
+            >
               {t(status === 'enrolling' ? 'enrolling' : status === 'confirming' ? 'confirming' : 'enable')}
             </button>
           )}
-          <button type="button" onClick={() => router.push('/provisioning')}>{t('skip')}</button>
+          <button
+            type="button"
+            onClick={() => router.push('/provisioning')}
+            data-testid="mfa-skip-button"
+            style={{ display: 'block' }}
+          >
+            {t('skip')}
+          </button>
         </>
       )}
     </main>

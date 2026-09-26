@@ -373,7 +373,7 @@ tenant/workspace exists until the verification link is used, and the account can
     afterward returns 410 (Edge Cases, FR-021).
   - **Roles**: Primary: Codex · Backup: GLM · Reviewer: Gemini
 
-- [ ] T030 [P] [US1] Playwright EN/AR-RTL + axe accessibility test for the public plan list, signup, verify,
+- [X] T030 [P] [US1] Playwright EN/AR-RTL + axe accessibility test for the public plan list, signup, verify,
   and MFA enrollment screens in `frontend/tests/e2e/us1-signup.spec.ts`
   - **Dependencies**: T023
   - **Acceptance Criteria**: Zero axe violations in either locale; full RTL mirroring asserted in Arabic

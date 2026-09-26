@@ -85,13 +85,17 @@ export function VerifyEmailScreen({ token }: VerifyEmailScreenProps) {
 
   return (
     <main>
-      <h1>{t('invalid.title')}</h1>
-      <p>{t('invalid.body')}</p>
+      <div data-testid="verify-invalid-message">
+        <h1>{t('invalid.title')}</h1>
+        <p>{t('invalid.body')}</p>
+      </div>
       {resendStatus === 'sent' ? (
         <p role="status">{t('resend.confirmation')}</p>
       ) : (
         <form onSubmit={handleResend}>
-          <label htmlFor="resend-email">{t('resend.emailLabel')}</label>
+          <label htmlFor="resend-email" style={{ display: 'block' }}>
+            {t('resend.emailLabel')}
+          </label>
           <input
             id="resend-email"
             name="email"
@@ -100,7 +104,11 @@ export function VerifyEmailScreen({ token }: VerifyEmailScreenProps) {
             value={resendEmail}
             onChange={(event) => setResendEmail(event.target.value)}
           />
-          <button type="submit" disabled={resendStatus === 'sending'}>
+          <button
+            type="submit"
+            disabled={resendStatus === 'sending'}
+            data-testid="verify-resend-button"
+          >
             {t(resendStatus === 'sending' ? 'resend.sending' : 'resend.submit')}
           </button>
           {resendStatus === 'error' ? <p role="alert">{t('resend.error')}</p> : null}

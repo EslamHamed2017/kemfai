@@ -37,6 +37,9 @@ infra/docker/data/
 coverage/
 .pytest_cache/
 .coverage
+test-results/
+playwright-report/
+blob-report/
 
 # KEMFAI runtime (root-level only — do not shadow src/ dirs like modules/tenants/)
 /tenants/
