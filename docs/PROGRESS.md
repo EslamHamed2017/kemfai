@@ -4486,3 +4486,15 @@ Test evidence:
 
 REVIEW VERDICT: REJECT
 ```
+
+## Rejected implement tick - 2026-09-26 12:13 +04
+
+Codex rejected the last implement attempt and working tree was reverted. Reviewer verdict:
+
+```
+Implemented task: T030. Playwright passed 10/10 tests; Jest passed 72/72; TypeScript passed. No Odoo, tenant-isolation, accounting, entitlement, feature-flag, or security violation was introduced.
+
+1. T030 is prematurely marked complete. The verification and MFA tests only assert `html[dir="rtl"]` and absence of horizontal overflow; they never assert that controls, alignment, navigation, or icons are geometrically mirrored. This does not satisfy “full RTL mirroring asserted in Arabic” for all four named screens under FR-014/SC-005.
+
+REVIEW VERDICT: REJECT
+```
