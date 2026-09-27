@@ -4541,3 +4541,28 @@ Implemented task: T104. Targeted backend unit tests, frontend unit tests, contra
 
 REVIEW VERDICT: REJECT
 ```
+
+## Rejected implement tick - 2026-09-27 12:49 +04
+
+Codex rejected the last implement attempt and working tree was reverted. Reviewer verdict:
+
+```
+Implemented task IDs: T103 and T104. Both were marked done prematurely.
+
+Test results:
+
+- Backend unit: 237 passed
+- Backend contract: 15 passed
+- Frontend unit: 86 passed
+- Playwright locale test: 1 passed
+- Frontend typecheck: passed
+- Backend build: passed
+
+No Odoo core edit, hard-coded entitlement/trial value, accounting nondeterminism, native Odoo UI leak, or obvious cross-tenant exposure was introduced.
+
+1. T104 is not wired end-to-end. Nothing in `frontend/src` invokes `PATCH /api/accounts/me/locale` when the user changes locale; `setUserLocale()` still only changes a cookie. The new proxy is used only by tests, so a real locale switch is never persisted to `Account.preferred_locale`.
+2. T103 does not satisfy its stated browser e2e acceptance criteria. The Playwright test never uses a browser page, the application UI, logout, or actual client-state clearing, and never asserts the resulting `<html lang>`/`dir`. It directly calls internal helpers against a fake backend, allowing the missing production locale-switch wiring to pass.
+3. Therefore both `[X] T103` and `[X] T104` in `tasks.md` are premature.
+
+REVIEW VERDICT: REJECT
+```
