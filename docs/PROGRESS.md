@@ -4513,3 +4513,17 @@ Implemented task: T104. Test suites pass: backend 243/243, frontend 79/79, plus 
 
 REVIEW VERDICT: REJECT
 ```
+
+## Rejected implement tick - 2026-09-27 10:23 +04
+
+Codex rejected the last implement attempt and working tree was reverted. Reviewer verdict:
+
+```
+Implemented tasks: T104 plus T103 test coverage. Neither task was prematurely marked complete.
+
+Unit, typecheck, build, contract, and backend integration suites passed. The new T103 Playwright cases passed, but the full Playwright suite failed 5 of 7 tests.
+
+1. The global locale switcher sits outside a landmark in [layout.tsx](/home/hermesops/kemfai/frontend/src/app/layout.tsx:26), causing axe `region` violations across all five existing T030 accessibility tests. This breaks the mandatory accessibility/test gates; wrap or place [locale-switcher.tsx](/home/hermesops/kemfai/frontend/src/lib/i18n/locale-switcher.tsx:28) within an appropriate landmark and rerun the entire Playwright suite.
+
+REVIEW VERDICT: REJECT
+```
