@@ -4527,3 +4527,17 @@ Unit, typecheck, build, contract, and backend integration suites passed. The new
 
 REVIEW VERDICT: REJECT
 ```
+
+## Rejected implement tick - 2026-09-27 12:05 +04
+
+Codex rejected the last implement attempt and working tree was reverted. Reviewer verdict:
+
+```
+Implemented task: T104. Targeted backend unit tests, frontend unit tests, contract tests, frontend typecheck, and backend build all pass.
+
+1. T104 is not actually wired into any user locale switch. `setUserLocale()` contains the persistence call, but nothing in `frontend/src` invokes `setUserLocale`; therefore a user’s selection never reaches `PATCH /accounts/me/locale`.
+2. The required fresh-session behavior is untested. T103 remains unchecked and `frontend/tests/e2e/locale-persistence.spec.ts` does not exist. Unit tests only exercise mocked helpers, not logout, cleared client state, login, persisted locale, or RTL application. This fails T104’s explicit acceptance criterion and the mandatory Test/Acceptance gates.
+3. `tasks.md` marks T104 complete prematurely despite documenting that its defining cross-session acceptance test was not implemented or run.
+
+REVIEW VERDICT: REJECT
+```
