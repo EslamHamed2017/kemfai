@@ -4634,3 +4634,24 @@ Tests do not pass: unit suite has 5 failures; the focused provisioning integrati
 
 REVIEW VERDICT: REJECT
 ```
+
+## Rejected implement tick - 2026-09-28 15:35 +04
+
+Codex rejected the last implement attempt and working tree was reverted. Reviewer verdict:
+
+```
+Implemented tasks: T040 and T044.
+
+Verification:
+
+- Unit: 31 suites, 255 tests passed.
+- Integration: 23 suites, 188 tests passed; default run skipped four provisioning tests.
+- Focused real Postgres/MinIO/Odoo 18 provisioning: 4/4 passed.
+- Build and lint passed.
+- No core Odoo edits, hard-coded plan/trial values, native Odoo UI leakage, shared-database fallback, or obvious tenant leak found.
+- T040 is legitimately complete.
+
+1. T044 is prematurely marked complete. The processor commits `Tenant.status = Ready` before writing `tenant.provisioning.succeeded`. If that audit write fails, the catch block tries `Creating → Failed`, which cannot affect the already-`Ready` tenant. The job therefore fails while leaving a usable `Ready` tenant with no required success event and a misleading failure event. This violates T044’s explicit “on any failure mark Failed” and mandatory lifecycle-audit criteria. The Ready transition and success audit must commit atomically, with a regression test for success-audit failure.
+
+REVIEW VERDICT: REJECT
+```
