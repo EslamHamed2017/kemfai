@@ -380,7 +380,7 @@ tenant/workspace exists until the verification link is used, and the account can
     (FR-013, FR-014, SC-005); localized signup/verification error states render (FR-012).
   - **Roles**: Primary: Codex · Backup: Claude · Reviewer: Gemini
 
-- [ ] T103 [P] [US1] Integration/e2e test: a locale choice persists across a fresh login session, not merely an
+- [x] T103 [P] [US1] Integration/e2e test: a locale choice persists across a fresh login session, not merely an
   immediate dir re-render — log out, clear client-side-only state, log back in, and assert the previously chosen
   locale (not the browser default) is applied, in `frontend/tests/e2e/locale-persistence.spec.ts` (U2
   remediation — see analysis.md)
@@ -459,7 +459,7 @@ tenant/workspace exists until the verification link is used, and the account can
     enrolling.
   - **Roles**: Primary: Claude · Backup: Gemini · Reviewer: Codex
 
-- [ ] T104 [US1] Implement locale persistence: `PATCH /accounts/me/locale` (sets `Account.preferred_locale`) and
+- [x] T104 [US1] Implement locale persistence: `PATCH /accounts/me/locale` (sets `Account.preferred_locale`) and
   wire `next-intl`'s initial locale resolution to read it on login/session-refresh, extending T023's dir-aware
   layout to prefer the persisted Account value over browser-detected locale once authenticated, in
   `backend/api/src/modules/accounts/accounts.controller.ts` and `frontend/src/lib/i18n/` (U2 remediation — see
