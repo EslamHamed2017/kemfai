@@ -46,7 +46,7 @@ extract_task_id() {
 # judgment to the caller.
 extract_unique_task_marker() {
   local output="$1" ids count
-  ids=$(printf '%s\n' "$output" | grep -oE '^KEMFAI_TASK_ID: (T[0-9]{3}|NONE)$' | sed -E 's/^KEMFAI_TASK_ID: //')
+  ids=$(printf '%s\n' "$output" | grep -oE '^KEMFAI_TASK_ID: (T[0-9]{3}|NONE)$' | sed -E 's/^KEMFAI_TASK_ID: //' | sort -u)
   count=$(printf '%s\n' "$ids" | grep -c '^.\+$' || true)
   if [ -n "$ids" ] && [ "$count" -eq 1 ]; then
     printf '%s\n' "$ids"
