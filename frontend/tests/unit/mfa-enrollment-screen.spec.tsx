@@ -6,6 +6,7 @@ import ar from '../../src/locales/ar/common.json';
 const push = jest.fn();
 jest.mock('next/navigation', () => ({ useRouter: () => ({ push }) }));
 jest.mock('next-intl', () => ({
+  useLocale: () => 'en',
   useTranslations: (namespace: string) => (key: string) => `${namespace}.${key}`.split('.')
     .reduce<unknown>((value, part) => (value as Record<string, unknown>)[part], en),
 }));

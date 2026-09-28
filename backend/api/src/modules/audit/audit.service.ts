@@ -22,6 +22,13 @@ export interface AccountCreatedInput {
   occurredAt?: Date;
 }
 
+export interface AccountLocaleChangedInput {
+  accountId: string;
+  fromLocale: string | null;
+  toLocale: string;
+  occurredAt?: Date;
+}
+
 export interface AccountEmailVerifiedInput {
   accountId: string;
   occurredAt?: Date;
@@ -224,6 +231,27 @@ export class AuditService {
       occurredAt: input.occurredAt ?? new Date(),
       payload: {},
     });
+  }
+
+  /**
+   * T104 — `account.locale_changed`: the account holder changed their persisted UI
+   * locale preference (FR-024). Control-plane scope (tenantId null — the preference
+   * belongs to the account, pre-tenant). Payload records old→new for traceability.
+   */
+  async recordAccountLocaleChanged(
+    input: AccountLocaleChangedInput,
+    manager?: EntityManager,
+  ): Promise<void> {
+    await this.append({
+      actorType: AuditActorType.ACCOUNT,
+      actorId: input.accountId,
+      tenantId: null,
+      action: 'account.locale_changed',
+      subjectType: 'account',
+      subjectId: input.accountId,
+      occurredAt: input.occurredAt ?? new Date(),
+      payload: { from_locale: input.fromLocale, to_locale: input.toLocale },
+    }, manager);
   }
 
   async recordAccountMfaEnrolled(

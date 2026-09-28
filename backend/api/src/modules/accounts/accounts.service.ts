@@ -14,7 +14,7 @@ import { randomUUID } from 'node:crypto';
 import controlDataSource from '../../database/data-source';
 import { AuditService } from '../audit/audit.service';
 import { Plan } from '../entitlements/entities/plan.entity';
-import { Account } from './entities/account.entity';
+import { Account, Locale as AccountLocaleValue } from './entities/account.entity';
 import { EmailVerificationToken } from './entities/email-verification-token.entity';
 import { SignupRequestDto } from './dto/signup.request.dto';
 import { hashVerificationToken, mintVerificationToken } from './tokens/email-verification-token';
@@ -36,6 +36,11 @@ export interface SignupResult {
 
 export interface VerifyEmailResult {
   accountId: string;
+}
+
+/** T104 — read shape of `GET /accounts/me/locale` (null until the account chose one). */
+export interface PreferredLocaleResult {
+  locale: AccountLocaleValue | null;
 }
 
 /** Postgres unique-violation code — the DB-level anchor of signup idempotency (FR-023-style). */
@@ -106,8 +111,48 @@ export class AccountsService {
     @InjectQueue(QUEUE_TENANT_PROVISION)
     private readonly tenantProvisionQueue: Queue,
     @Inject(KEYCLOAK_USER_PROVISIONER)
+
     private readonly keycloakUsers: KeycloakUserProvisioner,
   ) {}
+
+  /**
+   * T104 — `PATCH /accounts/me/locale` (FR-024). Persists the preference on the caller's
+   * own Account row only. A validly-authenticated subject with no Account row (not a
+   * real state in the signup flow) is a logged no-op 200 rather than an information-
+   * leaking lookup error — the preference simply has nowhere to persist yet.
+   */
+  async setPreferredLocale(keycloakUserId: string, locale: AccountLocaleValue): Promise<void> {
+    // T104 — persistence and its mandatory `account.locale_changed` audit event commit or
+    // roll back TOGETHER (the T035 doctrine: a state flip and its audit trail are one
+    // transaction). This also removes the audit-skip-on-retry hazard: if the audit write
+    // fails, the preference write is rolled back too, so a retry re-attempts BOTH.
+    await controlDataSource.transaction(async (manager) => {
+      const accountRepo = manager.getRepository(Account);
+      const account = await accountRepo.findOne({ where: { keycloakUserId } });
+      if (!account) {
+        this.logger.warn(
+          `setPreferredLocale: no Account row for authenticated subject ${keycloakUserId}`,
+        );
+        return;
+      }
+      if (account.preferredLocale !== locale) {
+        const fromLocale = account.preferredLocale;
+        account.preferredLocale = locale;
+        await accountRepo.save(account);
+        await this.audit.recordAccountLocaleChanged(
+          { accountId: account.id, fromLocale, toLocale: locale },
+          manager,
+        );
+      }
+    });
+  }
+
+  /** T104 read side — the authenticated session's persisted locale, null until chosen. */
+  async getPreferredLocale(keycloakUserId: string): Promise<PreferredLocaleResult> {
+    const accountRepo = controlDataSource.getRepository(Account);
+    const account = await accountRepo.findOne({ where: { keycloakUserId } });
+    return { locale: account?.preferredLocale ?? null };
+  }
 
   async signup(input: SignupRequestDto): Promise<SignupResult> {
     const email = input.email.trim().toLowerCase();

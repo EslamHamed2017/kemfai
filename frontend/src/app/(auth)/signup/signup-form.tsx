@@ -5,6 +5,7 @@ import { useLocale, useTranslations } from 'next-intl';
 
 import { getBrowserApiClient } from '@/lib/api-client';
 import { classifySignupError, type SignupErrorKind } from './signup-error';
+import { LocaleSwitcher } from '@/components/locale-switcher';
 
 /**
  * Mirrors PASSWORD_MIN_LENGTH/PASSWORD_MAX_LENGTH in
@@ -62,6 +63,8 @@ export function SignupForm({ planId, billingCycle }: SignupFormProps) {
   if (succeeded) {
     return (
       <main dir={locale === 'ar' ? 'rtl' : 'ltr'}>
+      {/* T104/FR-024 — the locale switcher is available at EVERY onboarding step. */}
+      <LocaleSwitcher />
         <h1>{t('success.title')}</h1>
         <p>{t('success.body', { email })}</p>
       </main>
@@ -70,6 +73,8 @@ export function SignupForm({ planId, billingCycle }: SignupFormProps) {
 
   return (
     <main dir={locale === 'ar' ? 'rtl' : 'ltr'}>
+      {/* T104/FR-024 — locale switch available on EVERY screen state. */}
+      <LocaleSwitcher />
       <h1>{t('title')}</h1>
       <form onSubmit={handleSubmit} noValidate>
         <label htmlFor="signup-email" style={{ display: 'block' }}>

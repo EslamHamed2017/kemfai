@@ -207,6 +207,18 @@ paths:
               schema: { $ref: "#/components/schemas/CompanySetupIncompleteError" }
 
   /accounts/me/locale:
+    get:
+      tags: [accounts]
+      summary: >
+        Read the authenticated account's persisted locale preference — the initial-locale
+        resolution source for authenticated sessions (T104 read side; FR-024, U2 remediation)
+      responses:
+        "200":
+          description: The persisted preference; null until the account has chosen one
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PreferredLocaleResponse" }
+        "401": { description: Not authenticated }
     patch:
       tags: [accounts]
       summary: >
@@ -521,6 +533,13 @@ components:
         message: { type: string }
         setupComplete: { type: boolean, enum: [false] }
 
+    PreferredLocaleResponse:
+      type: object
+      required: [locale]
+      properties:
+        locale:
+          nullable: true
+          enum: [en, ar, null]
     LocaleUpdateRequest:
       type: object
       required: [locale]

@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
+import { LocaleSwitcher } from '@/components/locale-switcher';
 
 type Status = 'idle' | 'enrolling' | 'setup' | 'confirming' | 'complete' | 'error';
 
@@ -46,6 +47,8 @@ export function MfaEnrollmentScreen({ returnedFromSetup = false }: { returnedFro
 
   return (
     <main aria-labelledby="mfa-title">
+      {/* T104/FR-024 — the locale switcher is available at EVERY onboarding step. */}
+      <LocaleSwitcher />
       <h1 id="mfa-title">{t('title')}</h1>
       <p>{t('description')}</p>
       <p>{t('optional')}</p>

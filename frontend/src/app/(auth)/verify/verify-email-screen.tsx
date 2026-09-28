@@ -4,6 +4,7 @@ import { useEffect, useState, type FormEvent } from 'react';
 import { useTranslations } from 'next-intl';
 
 import { getBrowserApiClient } from '@/lib/api-client';
+import { LocaleSwitcher } from '@/components/locale-switcher';
 
 type VerificationStatus = 'verifying' | 'success' | 'invalid';
 type ResendStatus = 'idle' | 'sending' | 'sent' | 'error';
@@ -66,6 +67,8 @@ export function VerifyEmailScreen({ token }: VerifyEmailScreenProps) {
   if (status === 'verifying') {
     return (
       <main aria-live="polite">
+      {/* T104/FR-024 — the locale switcher is available at EVERY onboarding step. */}
+      <LocaleSwitcher />
         <p>{t('verifying')}</p>
       </main>
     );
@@ -74,6 +77,8 @@ export function VerifyEmailScreen({ token }: VerifyEmailScreenProps) {
   if (status === 'success') {
     return (
       <main>
+      {/* T104/FR-024 — locale switch available on EVERY screen state. */}
+      <LocaleSwitcher />
         <h1>{t('success.title')}</h1>
         <p>{t('success.body')}</p>
         <a href="/auth/login?returnTo=%2Fmfa">
@@ -85,6 +90,8 @@ export function VerifyEmailScreen({ token }: VerifyEmailScreenProps) {
 
   return (
     <main>
+      {/* T104/FR-024 — locale switch available on EVERY screen state. */}
+      <LocaleSwitcher />
       <div data-testid="verify-invalid-message">
         <h1>{t('invalid.title')}</h1>
         <p>{t('invalid.body')}</p>

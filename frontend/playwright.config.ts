@@ -1,7 +1,7 @@
 import { defineConfig, devices } from '@playwright/test';
 
 const PORT = 3411;
-const baseURL = `http://127.0.0.1:${PORT}`;
+const baseURL = `http://localhost:${PORT}`;
 
 /**
  * T030 — dedicated Playwright suite for EN/AR-RTL geometry, flow-order, and
@@ -26,10 +26,18 @@ export default defineConfig({
       use: { ...devices['Desktop Chrome'] },
     },
   ],
-  webServer: {
-    command: `node_modules/.bin/next dev --port ${PORT}`,
-    url: baseURL,
-    reuseExistingServer: !process.env.CI,
-    timeout: 120_000,
-  },
-});
+  webServer: [
+    {
+      command: 'node tests/e2e/support/stub-api.js',
+      url: 'http://127.0.0.1:4100/accounts/me/locale',
+      reuseExistingServer: !process.env.CI,
+      timeout: 30_000,
+    },
+    {
+      command: `if [ -f .env.e2e ]; then set -a; . ./.env.e2e; set +a; fi; exec node_modules/.bin/next dev --port ${PORT}`,
+      url: baseURL,
+      reuseExistingServer: !process.env.CI,
+      timeout: 120_000,
+    },
+  ],
+  });

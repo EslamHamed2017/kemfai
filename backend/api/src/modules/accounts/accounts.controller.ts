@@ -1,7 +1,10 @@
-import { Body, Controller, HttpCode, HttpStatus, Post } from '@nestjs/common';
+import { Body, Controller, Get, HttpCode, HttpStatus, Patch, Post, Req } from '@nestjs/common';
 import { Public } from '../../common/decorators/public.decorator';
 import { RequireFeatureFlag } from '../../common/decorators/feature-flag.decorator';
-import { AccountsService, SignupResult, VerifyEmailResult } from './accounts.service';
+import { AuthenticatedRequest } from '../../common/guards/bearer-auth.guard';
+import { AccountsService, PreferredLocaleResult, SignupResult, VerifyEmailResult } from './accounts.service';
+import { Locale as AccountLocale } from './entities/account.entity';
+import { LocaleUpdateRequestDto } from './dto/locale-update.request.dto';
 import { SignupRequestDto } from './dto/signup.request.dto';
 import { VerifyEmailRequestDto } from './dto/verify-email.request.dto';
 import { ResendVerificationRequestDto } from './dto/resend-verification.request.dto';
@@ -58,5 +61,32 @@ export class AccountsController {
   @HttpCode(HttpStatus.ACCEPTED)
   resendVerification(@Body() dto: ResendVerificationRequestDto): Promise<void> {
     return this.accounts.resendVerification(dto.email);
+  }
+
+  /**
+   * T104 — persists the authenticated account's locale preference (FR-024, U2 remediation).
+   * Identity comes exclusively from the verified bearer token's `sub` (req.auth) — a caller
+   * can only ever change its own account. Body validation is the global ValidationPipe's
+   * contract-wide 422 (LocaleUpdateRequestDto), so this handler sees only 'en' | 'ar'.
+   * 200 with an empty body per contracts/openapi.yaml; unknown-account no-op is logged.
+   */
+  @Patch('me/locale')
+  @HttpCode(HttpStatus.OK)
+  setPreferredLocale(
+    @Req() req: AuthenticatedRequest,
+    @Body() dto: LocaleUpdateRequestDto,
+  ): Promise<void> {
+    return this.accounts.setPreferredLocale(req.auth.keycloakUserId, dto.locale as AccountLocale);
+  }
+
+  /**
+   * T104 read side — the initial-locale resolution source for authenticated sessions
+   * (next-intl prefers this value over browser detection once logged in). Same bearer
+   * identity rules; `locale` is null until the account has expressed a preference.
+   */
+  @Get('me/locale')
+  @HttpCode(HttpStatus.OK)
+  getPreferredLocale(@Req() req: AuthenticatedRequest): Promise<PreferredLocaleResult> {
+    return this.accounts.getPreferredLocale(req.auth.keycloakUserId);
   }
 }

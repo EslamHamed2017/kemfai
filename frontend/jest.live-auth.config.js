@@ -2,5 +2,5 @@ const nextJest = require('next/jest');
 
 module.exports = nextJest({ dir: './' })({
   testEnvironment: 'node',
-  testMatch: ['<rootDir>/tests/integration/live-auth.integration.spec.ts'],
+  testMatch: ['<rootDir>/tests/integration/*.integration.spec.ts'],
 });

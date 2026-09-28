@@ -19,6 +19,7 @@ jest.mock('../../src/lib/api-client/browser', () => ({
 // transforms for that whole chain is out of scope here, so this exercises the
 // real EN message catalog through a minimal stand-in for `useTranslations`.
 jest.mock('next-intl', () => ({
+  useLocale: () => 'en',
   useTranslations:
     (namespace: string) =>
     (key: string): string => {

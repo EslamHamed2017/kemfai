@@ -1,6 +1,7 @@
 const cookieStore = new Map<string, string>();
 
 jest.mock('next/headers', () => ({
+  headers: async () => new Headers({ 'accept-language': 'en-US,en;q=0.9' }),
   cookies: async () => ({
     get: (name: string) => {
       const value = cookieStore.get(name);

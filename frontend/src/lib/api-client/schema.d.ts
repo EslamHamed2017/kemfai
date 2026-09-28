@@ -529,7 +529,34 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        get?: never;
+        /** Read the authenticated account's persisted locale preference — the initial-locale resolution source for authenticated sessions (T104 read side; FR-024, U2 remediation) */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description The persisted preference; null until the account has chosen one */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["PreferredLocaleResponse"];
+                    };
+                };
+                /** @description Not authenticated */
+                401: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
         put?: never;
         post?: never;
         delete?: never;
@@ -1198,6 +1225,10 @@ export interface components {
             message: string;
             /** @enum {boolean} */
             setupComplete: false;
+        };
+        PreferredLocaleResponse: {
+            /** @enum {unknown|null} */
+            locale: "en" | "ar" | null;
         };
         LocaleUpdateRequest: {
             /** @enum {string} */

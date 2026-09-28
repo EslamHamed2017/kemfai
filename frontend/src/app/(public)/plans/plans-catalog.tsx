@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { useLocale, useTranslations } from 'next-intl';
 
 import { getBrowserApiClient, type components } from '@/lib/api-client';
+import { LocaleSwitcher } from '@/components/locale-switcher';
 
 type PlanSummary = components['schemas']['PlanSummary'];
 type BillingCycle = 'monthly' | 'annual';
@@ -33,6 +34,8 @@ export function PlansCatalog() {
 
   return (
     <main dir={locale === 'ar' ? 'rtl' : 'ltr'}>
+      {/* T104 — production locale switch inside the page's landmarked content (FR-024; keeps T030 geometry intact). */}
+      <LocaleSwitcher />
       <h1>{t('title')}</h1>
       <p>{t('intro')}</p>
 
