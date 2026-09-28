@@ -4586,3 +4586,18 @@ REVIEW VERDICT: ACCEPT
 REVIEW_EXIT=0
 COMPLETE
 ```
+
+## Rejected implement tick - 2026-09-28 13:10 +04
+
+Codex rejected the last implement attempt and working tree was reverted. Reviewer verdict:
+
+```
+Implemented task: **T044**. Its checkbox remains unchecked, so `tasks.md` was not marked done prematurely. Build and lint pass, but tests do not.
+
+1. The new provisioning integration suite fails all three tests during Nest dependency injection. Importing `ODOO_RPC_CLIENT` from `odoo-rpc.module.ts` creates a circular dependency, leaving the injection token unresolved. The broader unit suite also regresses for the same reason.
+2. Concurrent provisioning is unsafe: one worker can mark a tenant `Ready`, then a slower worker can overwrite it to `Creating` or `Failed`. The status updates lack locking or guarded state transitions, violating idempotency and the “no partially usable workspace” acceptance criterion.
+3. `recordAttempt()` executes outside the failure-handling `try`. If its database update or attempted-event audit fails, the tenant is not marked `Failed` and no `tenant.provisioning.failed` event is emitted.
+4. The processor falls back to hard-coded, publicly known Odoo master/admin passwords when environment variables are absent. Provisioning must fail closed when privileged credentials are missing.
+
+REVIEW VERDICT: REJECT
+```
