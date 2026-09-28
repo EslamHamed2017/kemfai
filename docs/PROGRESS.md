@@ -4617,3 +4617,20 @@ Unit tests passed: 32 suites, 250 tests. Build passed. The targeted integration 
 
 REVIEW VERDICT: REJECT
 ```
+
+## Rejected implement tick - 2026-09-28 14:30 +04
+
+Codex rejected the last implement attempt and working tree was reverted. Reviewer verdict:
+
+```
+Implemented task: T044. `tasks.md` remains unchecked, so it was not marked done prematurely.
+
+Tests do not pass: unit suite has 5 failures; the focused provisioning integration suite has 2 failures. Build passes, but lint also fails in changed files.
+
+1. `OdooRpcService` cannot resolve its RPC-client dependency because the injection token is imported circularly from `odoo-rpc.module.ts`. `AppModule` cannot initialize, breaking both existing tests and the new provisioning tests.
+2. `tenant.provisioning.attempted` is emitted outside the `try/catch`. If that audit write fails, the tenant remains permanently `Creating`, violating the required failure transition and audit behavior.
+3. `installModules()` silently accepts missing requested `kemfai_*` addons: it installs whatever `search_read` returns and can mark the tenant `Ready` even when required addons were not found or installed.
+4. The new integration tests provide no passing proof of T044’s acceptance criteria because application initialization fails; their cleanup additionally dereferences `app` after setup failure, causing a second test error.
+
+REVIEW VERDICT: REJECT
+```
