@@ -4655,3 +4655,18 @@ Verification:
 
 REVIEW VERDICT: REJECT
 ```
+
+## Rejected implement tick - 2026-09-28 23:15 +04
+
+Codex rejected the last implement attempt and working tree was reverted. Reviewer verdict:
+
+```
+Implemented task: T044. It remains correctly unchecked in `tasks.md`.
+
+Tests: all 31 Jest suites passed (258 tests), and the API build passed. Lint failed on pre-existing account-related files, not this change.
+
+1. Provisioning is not concurrency-safe. `claimForProcessing()` accepts every status except `Ready`, so multiple workers can simultaneously “claim” a `Creating` tenant. The `databaseExists()` then `createDatabase()` sequence is a TOCTOU race, and concurrent workers may also install Odoo modules simultaneously. This violates T044’s individually idempotent provisioning requirement and Constitution Principle VII.
+2. The tests do not exercise concurrent attempts or a real Odoo/MinIO/database path. The mock-only suite cannot prove exactly one database/company or safe recovery under concurrent retries, leaving the acceptance-critical defect above undetected.
+
+REVIEW VERDICT: REJECT
+```
