@@ -4601,3 +4601,19 @@ Implemented task: **T044**. Its checkbox remains unchecked, so `tasks.md` was no
 
 REVIEW VERDICT: REJECT
 ```
+
+## Rejected implement tick - 2026-09-28 13:27 +04
+
+Codex rejected the last implement attempt and working tree was reverted. Reviewer verdict:
+
+```
+Implemented task: T044, plus T040 integration coverage. Neither task was marked complete in `tasks.md`.
+
+Unit tests passed: 32 suites, 250 tests. Build passed. The targeted integration suite passed: 3 tests. Repository lint failed on pre-existing files unrelated to this diff.
+
+1. A worker crash after the `Pending/Failed → Creating` claim leaves the tenant permanently stuck in `Creating`. BullMQ’s retry then returns successfully because `claimForProcessing()` refuses `Creating`, so provisioning never resumes or records failure. This violates T044’s retry/idempotency and failure-state requirements.
+
+2. T044 explicitly requires all three lifecycle events to be independently asserted. The integration test checks `succeeded` and `failed`, but never asserts `tenant.provisioning.attempted`, its attempt number, or event ordering.
+
+REVIEW VERDICT: REJECT
+```
