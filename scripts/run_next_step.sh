@@ -175,10 +175,12 @@ for candidate in $EXECUTOR_ORDER; do
       # documented stdin mode, so the (potentially large) prompt is handed
       # over via its file-attachment flag (-f) instead of embedding it in
       # argv, where it could exceed MAX_ARG_STRLEN.
+      # -f attaches the file; the positional message must TELL the model to open it
+      # (verified live 2026-09-28: the old combined form made opencode treat the
+      # positional text as a second --file argument and fail with "File not found").
       OUT=$(timeout --signal=TERM --kill-after=30s "${EXECUTOR_TIMEOUT}s" \
         opencode run --auto -m zai-coding/glm-5.2 \
-          -f "$PROMPT_FILE" \
-          "Follow the complete task instructions in the attached file exactly." 2>&1)
+          "Read the file $PROMPT_FILE and follow its instructions exactly. That file IS the complete task." 2>&1)
       EC=$?
       ;;
     claude)
