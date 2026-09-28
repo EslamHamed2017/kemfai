@@ -87,6 +87,11 @@ esac
 # oversized argv/environment string.
 PROMPT_FILE="$PROMPT_TMP_DIR/executor_prompt.txt"
 {
+  if [ -s "$REPO/docs/REVIEW_LESSONS.md" ]; then
+    printf 'RECURRING REVIEW LESSONS — every item below is a real rejection reason from earlier tasks in this repo. Avoid ALL of them; they re-trigger rejections:\n\n'
+    cat "$REPO/docs/REVIEW_LESSONS.md"
+    printf '\n---\n'
+  fi
   if [ -n "${KEMFAI_ARBITER_RESOLUTION_FILE:-}" ] && [ -s "$KEMFAI_ARBITER_RESOLUTION_FILE" ]; then
     printf 'IMPORTANT: Codex, acting as independent technical arbiter, already resolved the blocking ambiguity for this SAME task. Implement EXACTLY this resolution; do not re-litigate or re-raise the same question:\n\n'
     cat "$KEMFAI_ARBITER_RESOLUTION_FILE"
