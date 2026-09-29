@@ -4670,3 +4670,15 @@ Tests: all 31 Jest suites passed (258 tests), and the API build passed. Lint fai
 
 REVIEW VERDICT: REJECT
 ```
+
+## Rejected implement tick - 2026-09-29 12:05 +04
+
+Codex rejected the last implement attempt and working tree was reverted. Reviewer verdict:
+
+```
+Implemented Task ID: T044. The code otherwise matches its acceptance criteria, and focused unit tests passed (18/18); build and changed-file lint passed. Real-service integration assertions passed (3/3).
+
+1. The new integration suite leaks its Nest/BullMQ resources because `moduleRef` is never retained and closed. Jest reports open handles and never exits; I had to terminate it (exit 130). The Test Gate therefore fails, and T044 was marked complete prematurely.
+
+REVIEW VERDICT: REJECT
+```
