@@ -4682,3 +4682,19 @@ Implemented Task ID: T044. The code otherwise matches its acceptance criteria, a
 
 REVIEW VERDICT: REJECT
 ```
+
+## Rejected implement tick - 2026-09-29 14:05 +04
+
+Codex rejected the last implement attempt and working tree was reverted. Reviewer verdict:
+
+```
+Implemented task: T044. Focused tests pass (24/24), full API tests pass (257/257), build passes, and changed files pass lint. However, `tasks.md` was marked complete prematurely.
+
+1. The required initial `res.company` bootstrap is not implemented or tested. `kemfai_tenant_core` remains an empty addon, and T047—the task that implements exactly this bootstrap—is still incomplete.
+2. Failure handling is broken: `tenant.provisioning.attempted` is emitted outside the `try` block. If that audit write fails, the tenant remains `Creating` instead of being marked `Failed` with `tenant.provisioning.failed`, violating T044’s “on any failure” requirement.
+3. Billing periods are incorrectly hard-coded as 30 and 365 days. A monthly period is not necessarily 30 days and an annual period is not always 365 days; this can generate wrong payment periods and violates configuration-over-hard-coding.
+4. Provisioning credentials silently fall back to publicly known development passwords in every environment. Missing production secrets therefore create tenant databases with predictable credentials instead of failing closed.
+5. The claimed create-if-not-exists idempotency is race-prone. Tenant, subscription, bucket, and Odoo database creation all use check-then-create operations without atomic conflict handling; concurrent workers can hit unique/existing-resource errors rather than converge successfully.
+
+REVIEW VERDICT: REJECT
+```
