@@ -4790,3 +4790,18 @@ Implemented task: T046. Unit tests pass (270/270), build and lint pass; targeted
 
 REVIEW VERDICT: REJECT
 ```
+
+## Rejected implement tick - 2026-09-30 16:27 +04
+
+Codex rejected the last implement attempt and working tree was reverted. Reviewer verdict:
+
+```
+Implemented task: T046. It was marked complete prematurely.
+
+Unit tests pass: 34 suites, 272 tests. Build and lint pass. Contract and integration suites do not pass because the configured PostgreSQL database is missing.
+
+1. `assignWorkspaceOwnerRole()` runs before the transaction that creates the subscription and marks the tenant `Ready`. If that transaction or success audit fails, provisioning marks the tenant `Failed` but leaves `WorkspaceOwner` and `tenant_id` active in Keycloak. The user can therefore pass subsequent role and tenant-scope checks despite unsuccessful provisioning. No compensation or test covers this post-assignment failure path.
+2. The mandatory test gate is not green. Both `npm run test:contract -- --runInBand` and `npm run test:integration -- --runInBand` fail against the missing `kemfai_t041_9c9933c82dbe` database, so the processor-level T046 acceptance test has not genuinely passed.
+
+REVIEW VERDICT: REJECT
+```
