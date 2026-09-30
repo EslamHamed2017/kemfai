@@ -4763,3 +4763,18 @@ Unit tests: 264 passed. Build and lint passed. Integration suite failed due a mi
 
 REVIEW VERDICT: REJECT
 ```
+
+## Rejected implement tick - 2026-09-30 14:05 +04
+
+Codex rejected the last implement attempt and working tree was reverted. Reviewer verdict:
+
+```
+Implemented task: T046. Unit tests pass (268/268), and build/lint pass. T046 was marked complete prematurely.
+
+1. T046 explicitly requires the Keycloak `tenant_id` custom attribute. The implementation assigns only the global `WorkspaceOwner` realm role and edits `tasks.md` to waive the original requirement. This contradicts both T046 and the auth topology in `research.md`.
+2. Role assignment occurs before the transaction that marks the tenant Ready and records success. If that transaction fails, the external role remains assigned while the tenant becomes Failed, potentially exposing a partially provisioned workspace. No compensation or readiness authorization gate prevents this.
+3. The changed provisioning integration suite is not green: 12/12 tests failed because the configured control database does not exist. Therefore the mandatory integration/test gate has not been demonstrated, including the claimed role-to-tenant guard behavior.
+4. No test proves that the assigned role/tenant binding is visible through actual `RoleGuard` and `TenantScopeGuard` requests, as T046 requires; the added test checks only a fake user’s global `realmRoles` array.
+
+REVIEW VERDICT: REJECT
+```
