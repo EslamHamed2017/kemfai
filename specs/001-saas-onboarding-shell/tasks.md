@@ -486,7 +486,7 @@ an initial company shell exists, the acting user is workspace owner, and no othe
 
 ### Tests for User Story 2
 
-- [ ] T040 [P] [US2] Integration test: N concurrent and sequential retries of the same verified-account
+- [X] T040 [P] [US2] Integration test: N concurrent and sequential retries of the same verified-account
   provisioning request yield exactly one Tenant row, one Odoo database, one initial Company, one MinIO bucket
   in `backend/api/test/integration/tenant-provisioning.integration-spec.ts`
   - **Dependencies**: T008

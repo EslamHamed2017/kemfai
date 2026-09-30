@@ -69,14 +69,17 @@ live('T044 live provisioning against real Postgres, MinIO and Odoo', () => {
       if (controlDataSource.isInitialized) await controlDataSource.destroy();
     }
   });
-  it('concurrent jobs and retry converge on exactly one tenant, subscription, bucket, database and company', async () => {
+  const CONCURRENCY = 4;
+  const SEQUENTIAL_RETRIES = 3;
+
+  it(`${CONCURRENCY} concurrent jobs then ${SEQUENTIAL_RETRIES} sequential retries converge on exactly one tenant, subscription, bucket, database and company`, async () => {
     const processor = new TenantProvisionProcessor(
       new AuditService(),
       new MinioStorageService(createMinioClient()),
       odoo,
     );
     const job = { data: { accountId: account.id } } as Job<{ accountId: string }>;
-    await Promise.all([processor.process(job), processor.process(job)]);
+    await Promise.all(Array.from({ length: CONCURRENCY }, () => processor.process(job)));
     const t = await controlDataSource
       .getRepository(Tenant)
       .findOneByOrFail({ accountId: account.id });
@@ -100,10 +103,24 @@ live('T044 live provisioning against real Postgres, MinIO and Odoo', () => {
         [[]],
       ),
     ).toBe(1);
-    await processor.process(job);
+    for (let i = 0; i < SEQUENTIAL_RETRIES; i += 1) {
+      await processor.process(job);
+    }
     expect(await controlDataSource.getRepository(Tenant).countBy({ accountId: account.id })).toBe(
       1,
     );
     expect(await controlDataSource.getRepository(Subscription).countBy({ tenantId: t.id })).toBe(1);
-  }, 180000);
+    expect(await minio.bucketExists(bucket!)).toBe(true);
+    expect(
+      await odoo.executeKw(
+        db!,
+        uid,
+        process.env.KEMFAI_TENANT_ADMIN_PASSWORD!,
+        'res.company',
+        'search_count',
+        [[]],
+      ),
+    ).toBe(1);
+    expect((await odoo.databaseList()).filter((name) => name === db)).toHaveLength(1);
+  }, 240000);
 });

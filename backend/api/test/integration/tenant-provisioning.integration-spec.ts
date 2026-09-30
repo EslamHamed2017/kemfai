@@ -155,8 +155,11 @@ describe('tenant provisioning control-plane transactions (T044)', () => {
     if (controlDataSource.isInitialized) await controlDataSource.destroy();
   });
 
-  it('serializes two concurrent jobs, one tenant/subscription/bucket/database/company and ordered lifecycle', async () => {
-    await Promise.all([run(), run()]);
+  const CONCURRENCY = 5;
+  const SEQUENTIAL_RETRIES = 5;
+
+  it(`serializes ${CONCURRENCY} concurrent jobs then ${SEQUENTIAL_RETRIES} sequential retries into one tenant/subscription/bucket/database/company and ordered lifecycle`, async () => {
+    await Promise.all(Array.from({ length: CONCURRENCY }, () => run()));
     const current = await tenant();
     expect(current.status).toBe(TenantStatus.READY);
     expect(current.provisioningAttempts).toBe(1);
@@ -174,6 +177,28 @@ describe('tenant provisioning control-plane transactions (T044)', () => {
       'tenant.provisioning.succeeded',
     ]);
     expect((await events())[0].payload.attempt_number).toBe(1);
+
+    // N sequential retries of the already-Ready request must remain no-ops: no new
+    // tenant/subscription/bucket/database/company and no additional lifecycle audit events.
+    for (let i = 0; i < SEQUENTIAL_RETRIES; i += 1) {
+      await run();
+    }
+    const afterRetries = await tenant();
+    expect(afterRetries.status).toBe(TenantStatus.READY);
+    expect(afterRetries.provisioningAttempts).toBe(1);
+    expect(await controlDataSource.getRepository(Tenant).countBy({ accountId: account.id })).toBe(
+      1,
+    );
+    expect(
+      await controlDataSource.getRepository(Subscription).countBy({ tenantId: afterRetries.id }),
+    ).toBe(1);
+    expect(buckets.size).toBe(1);
+    expect(databases.size).toBe(1);
+    expect(calls.filter((step) => step === 'company')).toHaveLength(1);
+    expect((await events()).map((event) => event.action)).toEqual([
+      'tenant.provisioning.attempted',
+      'tenant.provisioning.succeeded',
+    ]);
   });
   it.each(['bucket', 'bucket-complete', 'database', 'addon-list', 'company'])(
     'recovers on retry after %s failure',
@@ -192,6 +217,32 @@ describe('tenant provisioning control-plane transactions (T044)', () => {
       ]);
     },
   );
+  it('recovers after several consecutive sequential failures at the same step before eventually succeeding', async () => {
+    const attempts = 4;
+    for (let i = 0; i < attempts - 1; i += 1) {
+      failAt = 'bucket';
+      await expect(run()).rejects.toThrow('Tenant provisioning failed');
+      expect((await tenant()).status).toBe(TenantStatus.FAILED);
+    }
+    await run();
+    const current = await tenant();
+    expect(current.status).toBe(TenantStatus.READY);
+    expect(current.provisioningAttempts).toBe(attempts);
+    expect(await controlDataSource.getRepository(Tenant).countBy({ accountId: account.id })).toBe(
+      1,
+    );
+    expect(
+      await controlDataSource.getRepository(Subscription).countBy({ tenantId: current.id }),
+    ).toBe(1);
+    expect(buckets.size).toBe(1);
+    expect(databases.size).toBe(1);
+    const expectedEvents: string[] = [];
+    for (let i = 0; i < attempts - 1; i += 1) {
+      expectedEvents.push('tenant.provisioning.attempted', 'tenant.provisioning.failed');
+    }
+    expectedEvents.push('tenant.provisioning.attempted', 'tenant.provisioning.succeeded');
+    expect((await events()).map((event) => event.action)).toEqual(expectedEvents);
+  });
   it('treats an Odoo already-created database error as success after verification', async () => {
     failAt = 'database-complete';
     await run();
