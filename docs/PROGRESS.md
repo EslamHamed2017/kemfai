@@ -4711,3 +4711,19 @@ Independent Codex review inspected the actual tree and re-ran envless integratio
 Implemented authenticated `GET /tenants/me` provisioning status and `POST /tenants/me/provisioning-retry` for verified accounts. Ready/Creating and active jobs return 409 without enqueueing; Failed/Pending recovery uses account-row serialization and the original BullMQ job ID. Retained failed/completed jobs are retried atomically, concurrent requests do not duplicate the job, and queue failure leaves the tenant state unchanged. Responses expose only the account-owned tenant status and safe failure reason. Updated OpenAPI and isolated Jest Redis connections from the normal queue database.
 
 Verified on scratch PostgreSQL: API lint/build passed; unit 264/264, full integration 206/206 (one optional live test skipped), contract 20/20; `git diff --check` passed. Independent Codex review re-ran unit 264/264, focused T045 contract 9/9 and integration 9/9, lint/build, and inspected security/tenant boundaries. Verdict: `REVIEW VERDICT: ACCEPT`. T045 was marked complete only after the independent verdict.
+
+## Rejected implement tick - 2026-09-30 10:05 +04
+
+Codex rejected the last implement attempt and working tree was reverted. Reviewer verdict:
+
+```
+Implemented Task ID: T040. The only change is its checkbox.
+
+The existing targeted Jest suite passes: 9/9 tests. However, it is a pre-existing T044 test and does not meet T040’s acceptance criteria.
+
+1. `tenant-provisioning.integration-spec.ts` tests only two concurrent calls—not N concurrent and N sequential retries as explicitly required by T040 and `plan.md`.
+2. The test mocks Odoo and MinIO with in-memory sets, so it does not prove exactly one physical Odoo database, initial company, and MinIO bucket. The separate live test is skipped by default and also lacks the required N-way coverage.
+3. No T040 test implementation was added; only `tasks.md` changed. Marking T040 complete is premature and bypasses the mandatory Test and Acceptance gates.
+
+REVIEW VERDICT: REJECT
+```
