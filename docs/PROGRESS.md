@@ -4735,3 +4735,16 @@ After the prior rejected checkbox-only attempt, T040 gained N=4 concurrent and 3
 ## Accepted T041 - 2026-09-30 10:56 +04
 
 Added `backend/api/test/integration/tenant-isolation.integration-spec.ts`. With explicit live opt-in and a dedicated scratch control database, the test provisions two verified accounts through the real processor, confirms two distinct physical Odoo databases and MinIO buckets, and reads back different Odoo and MinIO marker values in each tenant. Cleanup removes only the newly created test resources. The live case passed in the implementer run and again in independent parent verification; the latter confirmed both databases and both buckets absent after teardown. Full API unit 264/264, default integration 207/207 (two opt-in live tests skipped by default), contract 20/20, lint/build, and staged diff check passed. Independent Codex review reran the T041 live case (1/1 in 54.17s), lint/build and diff check and returned `REVIEW VERDICT: ACCEPT`. T041 was marked complete only after this verdict. All test control databases were dropped.
+
+## Rejected implement tick - 2026-09-30 12:05 +04
+
+Codex rejected the last implement attempt and working tree was reverted. Reviewer verdict:
+
+```
+Implemented task: T046. Unit tests pass (38/38); build and lint pass. The full integration suite could not run because its configured PostgreSQL database was missing.
+
+1. WorkspaceOwner is granted before the final transaction marks the tenant Ready. If subscription creation, state update, or success-audit persistence then fails, Keycloak retains the owner role and `tenant_id` while the tenant becomes Failed. Existing guards do not require Tenant status `Ready`, creating a partially authorized workspace contrary to “on provisioning success.”
+2. The acceptance criterion requires the binding to work through subsequent `RoleGuard` and `TenantScopeGuard` checks, but no added test exercises those guards after assignment. The integration test only records a mocked method call. Marking T046 complete is premature.
+
+REVIEW VERDICT: REJECT
+```
