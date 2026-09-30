@@ -86,5 +86,45 @@
       "body": "Your account now requires your authenticator when you sign in."
     },
     "error": "We couldn't complete MFA setup. You can retry or skip for now."
+  },
+  "provisioning": {
+    "title": "Workspace setup",
+    "settingUp": "Setting up your workspace",
+    "waiting": "Your workspace is being prepared. This page checks progress automatically.",
+    "ready": {
+      "title": "Your workspace is ready",
+      "body": "Your workspace has been created. Company setup will be available when that step is released.",
+      "continue": "Review optional account security"
+    },
+    "failed": {
+      "title": "Workspace setup failed",
+      "body": "We could not finish setting up your workspace. You can retry safely or contact support."
+    },
+    "connection": {
+      "title": "Checking your workspace",
+      "body": "We could not check progress right now. We will keep trying.",
+      "offline": "You are offline. We will check again when your connection returns."
+    },
+    "retry": "Retry setup",
+    "retrying": "Requesting retry…",
+    "checkAgain": "Check again",
+    "conflict": "Another setup attempt is already running. Checking its progress.",
+    "retryError": "Could not request a retry. Please try again or contact support.",
+    "contactSupport": "Contact support by email",
+    "supportUnavailable": "Support contact is not configured. Please ask your organization administrator for assistance.",
+    "unauthorized": {
+      "title": "Session expired",
+      "body": "Sign in again to check your workspace."
+    },
+    "unverified": {
+      "title": "Verify your email",
+      "body": "Verify your email before accessing your workspace."
+    },
+    "missing": {
+      "title": "Workspace unavailable",
+      "body": "We could not find a workspace for this account. Sign in again or contact your administrator."
+    },
+    "signIn": "Sign in",
+    "verify": "Go to verification"
   }
 }

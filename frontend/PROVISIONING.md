@@ -1,0 +1,1 @@
+Set `SUPPORT_EMAIL` to a monitored support mailbox in the Next.js server environment before deployment. Without it the UI reports missing configuration rather than inventing a recipient. Playwright uses `support@example.test` as a test-only fixture.

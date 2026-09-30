@@ -34,7 +34,7 @@ export default defineConfig({
       timeout: 30_000,
     },
     {
-      command: `if [ -f .env.e2e ]; then set -a; . ./.env.e2e; set +a; fi; exec node_modules/.bin/next dev --port ${PORT}`,
+      command: `if [ -f .env.e2e ]; then set -a; . ./.env.e2e; set +a; fi; exec env SUPPORT_EMAIL=support@example.test node_modules/.bin/next dev --port ${PORT}`,
       url: baseURL,
       reuseExistingServer: !process.env.CI,
       timeout: 120_000,

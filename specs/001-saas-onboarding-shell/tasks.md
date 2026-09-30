@@ -508,7 +508,7 @@ an initial company shell exists, the acting user is workspace owner, and no othe
     cross-tenant-denial test.
   - **Roles**: Primary: Codex · Backup: GLM · Reviewer: Gemini
 
-- [ ] T043 [P] [US2] Playwright test: "setting up your workspace" loading state and actionable failure state
+- [X] T043 [P] [US2] Playwright test: "setting up your workspace" loading state and actionable failure state
   (retry/contact support) render correctly in EN/AR in `frontend/tests/e2e/us2-provisioning.spec.ts`
   - **Dependencies**: T023
   - **Acceptance Criteria**: Matches Acceptance Scenarios 2.3/2.4; no blank/frozen screen during polling
@@ -557,7 +557,7 @@ an initial company shell exists, the acting user is workspace owner, and no othe
     with no pre-populated financial data (out of scope for this slice).
   - **Roles**: Primary: GLM · Backup: Claude · Reviewer: Codex
 
-- [ ] T048 [P] [US2] Build the "setting up your workspace" provisioning poll/loading screen and failure/retry
+- [X] T048 [P] [US2] Build the "setting up your workspace" provisioning poll/loading screen and failure/retry
   screen in `frontend/src/app/(onboarding)/provisioning/page.tsx`
   - **Dependencies**: T024, T045
   - **Acceptance Criteria**: Matches Acceptance Scenarios 2.3/2.4; retry action calls
