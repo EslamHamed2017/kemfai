@@ -4727,3 +4727,11 @@ The existing targeted Jest suite passes: 9/9 tests. However, it is a pre-existin
 
 REVIEW VERDICT: REJECT
 ```
+
+## Accepted T040 by autonomous runner - 2026-09-30 10:11 +04
+
+After the prior rejected checkbox-only attempt, T040 gained N=4 concurrent and 3 sequential retry assertions. The independent reviewer returned `REVIEW VERDICT: ACCEPT` in `scripts/logs/20260930-1011.log`; the runner committed the reviewed change as `7ee70d6`. Evidence included a physical Odoo/MinIO live test 1/1, full API unit 264/264, integration 207/207, contract 20/20, lint/build. This entry records the existing approval; it does not re-approve the task.
+
+## Accepted T041 - 2026-09-30 10:56 +04
+
+Added `backend/api/test/integration/tenant-isolation.integration-spec.ts`. With explicit live opt-in and a dedicated scratch control database, the test provisions two verified accounts through the real processor, confirms two distinct physical Odoo databases and MinIO buckets, and reads back different Odoo and MinIO marker values in each tenant. Cleanup removes only the newly created test resources. The live case passed in the implementer run and again in independent parent verification; the latter confirmed both databases and both buckets absent after teardown. Full API unit 264/264, default integration 207/207 (two opt-in live tests skipped by default), contract 20/20, lint/build, and staged diff check passed. Independent Codex review reran the T041 live case (1/1 in 54.17s), lint/build and diff check and returned `REVIEW VERDICT: ACCEPT`. T041 was marked complete only after this verdict. All test control databases were dropped.

@@ -493,7 +493,7 @@ an initial company shell exists, the acting user is workspace owner, and no othe
   - **Acceptance Criteria**: Matches Acceptance Scenario 2.5 and plan.md's Idempotency test strategy exactly.
   - **Roles**: Primary: Codex · Backup: GLM · Reviewer: Gemini
 
-- [ ] T041 [P] [US2] Integration test: provision two tenants end-to-end and assert the two Odoo databases and
+- [X] T041 [P] [US2] Integration test: provision two tenants end-to-end and assert the two Odoo databases and
   two MinIO buckets are physically distinct in `backend/api/test/integration/tenant-isolation.integration-spec.ts`
   - **Dependencies**: T008
   - **Acceptance Criteria**: Matches Acceptance Scenario 2.2 and plan.md's Tenant Isolation "Data-level" test
