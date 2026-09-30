@@ -123,8 +123,16 @@ describe('TenantScopeGuard (T017, integration)', () => {
     );
     subscriptionB = sub[0].id;
 
-    tokenA = await keycloak.signAccessToken({ sub: KC_A });
-    tokenB = await keycloak.signAccessToken({ sub: KC_B });
+    tokenA = await keycloak.signAccessToken({
+      sub: KC_A,
+      roles: ['WorkspaceOwner'],
+      tenantId: tenantA,
+    });
+    tokenB = await keycloak.signAccessToken({
+      sub: KC_B,
+      roles: ['WorkspaceOwner'],
+      tenantId: tenantB,
+    });
   });
 
   afterEach(async () => {

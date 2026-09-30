@@ -1,6 +1,10 @@
 import { ExecutionContext, ForbiddenException, InternalServerErrorException } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { TenantScopeGuard } from './tenant-scope.guard';
+import { requireReadyWorkspaceOwner } from './workspace-owner-access';
+jest.mock('./workspace-owner-access', () => ({
+  requireReadyWorkspaceOwner: jest.fn().mockResolvedValue(undefined),
+}));
 import { TenantContextResolver } from '../tenant-context/tenant-context.resolver';
 import { TenantOwnershipRegistry } from '../tenant-context/tenant-ownership.registry';
 import {
@@ -44,7 +48,7 @@ function makeContext(req: TenantScopedRequest): ExecutionContext {
 
 function makeReflector(opts: { isPublic?: boolean; ownedRefs?: TenantOwnedResourceRef[] } = {}) {
   return {
-    getAllAndOverride: jest.fn().mockReturnValue(opts.isPublic ?? false),
+    getAllAndOverride: jest.fn(() => opts.isPublic ?? false),
     getAllAndMerge: jest.fn().mockReturnValue(opts.ownedRefs ?? []),
   } as unknown as Reflector;
 }
@@ -94,6 +98,16 @@ describe('TenantScopeGuard (T017)', () => {
   it('passes an authenticated request that references no tenant-owned thing', async () => {
     const f = makeFixture();
     await expect(f.guard.canActivate(makeContext(makeRequest()))).resolves.toBe(true);
+    expect(f.audit.append).not.toHaveBeenCalled();
+  });
+
+  it('requires a Ready owner for any tenant-bearing customer request', async () => {
+    const f = makeFixture();
+    const check = jest.mocked(requireReadyWorkspaceOwner);
+    check.mockRejectedValueOnce(new ForbiddenException('Workspace owner access denied'));
+    await expect(
+      f.guard.canActivate(makeContext(makeRequest({ params: { tenantId: TENANT_A } }))),
+    ).rejects.toThrow(ForbiddenException);
     expect(f.audit.append).not.toHaveBeenCalled();
   });
 

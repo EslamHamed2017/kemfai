@@ -9,6 +9,7 @@ export interface SignAccessTokenOptions {
   expiresIn?: string;
   /** Populates the standard Keycloak `realm_access.roles` claim (RoleGuard's input, T018). */
   roles?: string[];
+  tenantId?: string;
 }
 
 export interface FakeKeycloak {
@@ -45,7 +46,10 @@ export async function startFakeKeycloak(defaults: {
   return {
     jwksUri,
     async signAccessToken(options: SignAccessTokenOptions): Promise<string> {
-      const claims = options.roles ? { realm_access: { roles: options.roles } } : {};
+      const claims = {
+        ...(options.roles ? { realm_access: { roles: options.roles } } : {}),
+        ...(options.tenantId ? { tenant_id: options.tenantId } : {}),
+      };
       return new SignJWT(claims)
         .setProtectedHeader({ alg: 'RS256', kid })
         .setSubject(options.sub)

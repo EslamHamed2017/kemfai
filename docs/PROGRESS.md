@@ -4805,3 +4805,10 @@ Unit tests pass: 34 suites, 272 tests. Build and lint pass. Contract and integra
 
 REVIEW VERDICT: REJECT
 ```
+
+
+## Accepted T046 - 2026-09-30 18:57 +04
+
+- **T046 (WorkspaceOwner tenant binding): ACCEPT.** GPT implementation was reviewed independently by Codex (`REVIEW VERDICT: ACCEPT`). The signup flow persists Keycloak's generated user ID; provisioning grants the WorkspaceOwner role and `tenant_id` claim, compensates failed completion, and reconciles Ready retries. Workspace authorization requires a signed matching tenant claim, persisted ownership, and a Ready tenant.
+- Verification on fresh migrated scratch control DB: 267/267 unit, 213/213 integration (2 opt-in live Odoo/MinIO suites skipped), 20/20 contract; lint, build, and `git diff --check` pass. Targeted disposable-user Keycloak create/bind/read/revoke check also passed during implementation.
+- Failure-injection and signed-token integration coverage includes signup → provisioning → guards, cross-tenant denial, missing/mismatched claim, success-audit/final-commit failures, failed compensation, and retry recovery. No deployment or remote push as part of this acceptance.

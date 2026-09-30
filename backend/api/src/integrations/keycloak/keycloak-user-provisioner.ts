@@ -4,13 +4,10 @@
  * The accounts signup flow depends on this interface only — never on a concrete HTTP
  * client — so integration tests can substitute an in-memory fake (test/support) while the
  * real Admin REST implementation (admin-rest-keycloak-user-provisioner.ts) is unit-tested
- * against an in-process HTTP server. The user id is always pre-allocated by the caller
- * (Account.keycloakUserId) so the control-plane row and the Keycloak identity share one
- * stable identifier and compensation (deleteUser) is always addressable.
+ * against an in-process HTTP server. Keycloak assigns the canonical user ID on create;
+ * signup persists the returned Location ID before any verification or provisioning.
  */
 export interface CreateKeycloakUserInput {
-  /** Pre-allocated Account.keycloakUserId — Keycloak accepts a caller-supplied id on create. */
-  id: string;
   email: string;
   password: string;
   /** Keycloak required-action aliases; signup always demands ['VERIFY_EMAIL'] (FR-019). */
@@ -23,7 +20,9 @@ export interface KeycloakUserProvisioner {
    * already holds a user with the same email (409) and {@link KeycloakUnavailableError}
    * for every other failure — callers never see raw HTTP transport errors.
    */
-  createUser(input: CreateKeycloakUserInput): Promise<void>;
+  createUser(input: CreateKeycloakUserInput): Promise<string>;
+  assignWorkspaceOwner(id: string, tenantId: string): Promise<void>;
+  revokeWorkspaceOwner(id: string, tenantId: string): Promise<void>;
 
   /**
    * Best-effort compensation delete used only when a later step of the signup saga fails

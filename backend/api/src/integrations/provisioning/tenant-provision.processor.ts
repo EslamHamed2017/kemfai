@@ -15,6 +15,11 @@ import { MinioStorageService } from '../minio/minio-storage.service';
 import { OdooRpcService } from '../odoo-rpc/odoo-rpc.service';
 import { QUEUE_TENANT_PROVISION } from '../../common/queues/queue-names';
 import { initialPeriod } from './period';
+import {
+  KEYCLOAK_USER_PROVISIONER,
+  KeycloakUserProvisioner,
+} from '../keycloak/keycloak-user-provisioner';
+import { Inject, Logger } from '@nestjs/common';
 import { ProvisioningCredentials, provisioningCredentials } from './credentials';
 
 /** Dedicated session advisory lock serializes external operations across processes; the
@@ -24,10 +29,12 @@ import { ProvisioningCredentials, provisioningCredentials } from './credentials'
 @Processor(QUEUE_TENANT_PROVISION, { autorun: process.env.NODE_ENV !== 'test' })
 export class TenantProvisionProcessor extends WorkerHost {
   private readonly credentials: ProvisioningCredentials;
+  private readonly logger = new Logger(TenantProvisionProcessor.name);
   constructor(
     private readonly audit: AuditService,
     private readonly storage: MinioStorageService,
     private readonly odoo: OdooRpcService,
+    @Inject(KEYCLOAK_USER_PROVISIONER) private readonly keycloak: KeycloakUserProvisioner,
   ) {
     super();
     this.credentials = provisioningCredentials();
@@ -41,6 +48,7 @@ export class TenantProvisionProcessor extends WorkerHost {
     const runner = controlDataSource.createQueryRunner();
     await runner.connect();
     let tenantId: string | undefined;
+    let ownerBindingAttempted = false;
     let accountLock: QueryRunner | undefined;
     try {
       await runner.query('SELECT pg_advisory_lock(hashtextextended($1, 0))', [accountId]);
@@ -78,6 +86,7 @@ export class TenantProvisionProcessor extends WorkerHost {
         tenantId = tenant.id;
         if (tenant.status === TenantStatus.READY) {
           await this.verifySubscription(tenant, account);
+          await this.keycloak.assignWorkspaceOwner(account.keycloakUserId, tenant.id);
           return;
         }
         // Attempt state and audit commit together. An audit failure rolls this transaction back.
@@ -141,6 +150,10 @@ export class TenantProvisionProcessor extends WorkerHost {
             String(subscription.billingCycle) !== String(account!.selectedBillingCycle)
           )
             throw new Error('Subscription mismatch');
+          // All external resources and the subscription have been validated. Bind
+          // immediately before the final Ready + success-audit transaction commits.
+          ownerBindingAttempted = true;
+          await this.keycloak.assignWorkspaceOwner(account!.keycloakUserId, tenant!.id);
           await manager.getRepository(Tenant).update(tenant!.id, {
             odooDbName: db,
             status: TenantStatus.READY,
@@ -155,6 +168,15 @@ export class TenantProvisionProcessor extends WorkerHost {
       } catch (_error) {
         // Roll back the long-held row lock before writing the failure transition.
         if (accountLock?.isTransactionActive) await accountLock.rollbackTransaction();
+        if (ownerBindingAttempted && tenantId && account) {
+          try {
+            await this.keycloak.revokeWorkspaceOwner(account.keycloakUserId, tenantId);
+          } catch {
+            // Never log the remote exception: it can contain credentials. The DB
+            // failure transition is mandatory even when remote cleanup fails.
+            this.logger.warn('Workspace owner compensation failed; retry required');
+          }
+        }
         if (tenantId) {
           await this.transaction(runner, async (manager) => {
             await this.lockAccount(manager, accountId);

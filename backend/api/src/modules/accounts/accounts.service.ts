@@ -188,19 +188,30 @@ export class AccountsService {
 
     // Step 3 — Keycloak user creation; compensated on failure so neither side orphans.
     const createInput: CreateKeycloakUserInput = {
-      id: account.keycloakUserId,
       email,
       password: input.password,
       requiredActions: ['VERIFY_EMAIL'],
     };
     try {
-      await this.keycloakUsers.createUser(createInput);
+      account.keycloakUserId = await this.keycloakUsers.createUser(createInput);
     } catch (error) {
       this.logger.error(
         `Keycloak user creation failed for account ${account.id}; compensating the account row`,
         error as Error,
       );
       await this.bestEffortDeleteAccountRow(account.id);
+      throw new ServiceUnavailableException(SIGNUP_TEMPORARILY_UNAVAILABLE_MESSAGE);
+    }
+    // Persist Keycloak's canonical ID before issuing a verification link. If persistence
+    // fails, delete the actual remote user rather than the temporary local placeholder.
+    try {
+      await accountRepo.update(account.id, { keycloakUserId: account.keycloakUserId });
+    } catch (error) {
+      this.logger.error(
+        `Keycloak identity persistence failed for account ${account.id}`,
+        error as Error,
+      );
+      await this.compensateSignup(account);
       throw new ServiceUnavailableException(SIGNUP_TEMPORARILY_UNAVAILABLE_MESSAGE);
     }
 

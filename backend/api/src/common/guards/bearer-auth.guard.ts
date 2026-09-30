@@ -9,10 +9,11 @@ import { IS_PUBLIC_KEY } from '../decorators/public.decorator';
  * claim — the only trusted identity signal callers may key account/tenant/plan lookups on.
  * `auth.roles` carries the verified token's `realm_access.roles` claim (RoleGuard's input,
  * T018) — nothing else in the token payload is propagated, so a caller cannot smuggle a
- * tenant/plan override through the token itself.
+ * tenant/plan override through the token itself. The signed tenant_id is retained only for
+ * comparison with the control-plane tenant, never as a lookup override.
  */
 export interface AuthenticatedRequest extends Request {
-  auth: { keycloakUserId: string; roles: string[] };
+  auth: { keycloakUserId: string; roles: string[]; tenantId?: string | null };
 }
 
 const remoteJwksByUri = new Map<string, JWTVerifyGetKey>();
@@ -73,6 +74,7 @@ export class BearerAuthGuard implements CanActivate {
 
     let sub: string | undefined;
     let roles: string[] = [];
+    let tenantId: string | null = null;
     try {
       const { payload } = await jwtVerify(token, resolveJwks(jwksUri), {
         issuer,
@@ -80,6 +82,7 @@ export class BearerAuthGuard implements CanActivate {
         algorithms: ['RS256'],
       });
       sub = payload.sub;
+      tenantId = typeof payload['tenant_id'] === 'string' ? payload['tenant_id'] : null;
       const realmAccess = payload['realm_access'] as { roles?: unknown } | undefined;
       if (realmAccess && Array.isArray(realmAccess.roles)) {
         roles = realmAccess.roles.filter((role): role is string => typeof role === 'string');
@@ -92,7 +95,7 @@ export class BearerAuthGuard implements CanActivate {
       throw new UnauthorizedException('Access token is missing a subject claim');
     }
 
-    req.auth = { keycloakUserId: sub, roles };
+    req.auth = { keycloakUserId: sub, roles, tenantId };
     return true;
   }
 }

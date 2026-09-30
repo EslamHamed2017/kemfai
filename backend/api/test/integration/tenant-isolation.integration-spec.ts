@@ -11,12 +11,15 @@ import { createMinioClient, resolveMinioConfig } from '../../src/integrations/mi
 import { tenantBucketName } from '../../src/integrations/minio/tenant-bucket-naming';
 import { OdooRpcService } from '../../src/integrations/odoo-rpc/odoo-rpc.service';
 import { createOdooRpcClient } from '../../src/integrations/odoo-rpc/odoo-rpc-client';
+import { AdminRestKeycloakUserProvisioner } from '../../src/integrations/keycloak/admin-rest-keycloak-user-provisioner';
 import { TenantProvisionProcessor } from '../../src/integrations/provisioning/tenant-provision.processor';
 
 // The ordinary integration suite has no external-service dependency from this spec.
 const live = process.env.KEMFAI_LIVE_PROVISION === '1' ? describe : describe.skip;
 live('T041 physical tenant isolation (live Odoo + MinIO)', () => {
   const accounts: Account[] = [];
+  const keycloak = new AdminRestKeycloakUserProvisioner();
+  const keycloakUserIds: string[] = [];
   let plan: Plan | undefined;
   let initialDatabases: Set<string> | undefined;
   let initialBuckets: Set<string> | undefined;
@@ -53,18 +56,26 @@ live('T041 physical tenant isolation (live Odoo + MinIO)', () => {
       }),
     );
     const repo = controlDataSource.getRepository(Account);
-    for (let i = 0; i < 2; i += 1)
+    for (let i = 0; i < 2; i += 1) {
+      const email = `t041-${randomUUID()}@example.com`;
+      const id = await keycloak.createUser({
+        email,
+        password: randomUUID() + randomUUID(),
+        requiredActions: [],
+      });
+      keycloakUserIds.push(id);
       accounts.push(
         await repo.save(
           repo.create({
-            keycloakUserId: randomUUID(),
-            email: `t041-${randomUUID()}@example.com`,
+            keycloakUserId: id,
+            email,
             emailVerified: true,
             selectedPlanId: plan.id,
             selectedBillingCycle: BillingCycle.MONTHLY,
           }),
         ),
       );
+    }
   });
 
   afterAll(async () => {
@@ -109,6 +120,7 @@ live('T041 physical tenant isolation (live Odoo + MinIO)', () => {
           await attempt(() =>
             controlDataSource.query('DELETE FROM account WHERE id = $1', [account.id]),
           );
+        for (const id of keycloakUserIds) await attempt(() => keycloak.deleteUser(id));
         if (plan) {
           const planId = plan.id;
           await attempt(() => controlDataSource.query('DELETE FROM plan WHERE id = $1', [planId]));
@@ -128,6 +140,7 @@ live('T041 physical tenant isolation (live Odoo + MinIO)', () => {
       new AuditService(),
       new MinioStorageService(createMinioClient()),
       odoo,
+      keycloak,
     );
     for (const account of accounts)
       await processor.process({ data: { accountId: account.id } } as Job<{ accountId: string }>);

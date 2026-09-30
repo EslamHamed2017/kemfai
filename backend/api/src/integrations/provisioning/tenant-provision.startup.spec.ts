@@ -38,9 +38,9 @@ describe('T044 provisioning startup fails closed', () => {
     if (value === undefined) delete process.env[name];
     else process.env[name] = value;
 
-    expect(() => new TenantProvisionProcessor({} as never, {} as never, {} as never)).toThrow(
-      'Provisioning credentials are not configured',
-    );
+    expect(
+      () => new TenantProvisionProcessor({} as never, {} as never, {} as never, {} as never),
+    ).toThrow('Provisioning credentials are not configured');
     await expect(
       Test.createTestingModule({ imports: [TenantProvisionModule] })
         .overrideModule(QueuesModule)

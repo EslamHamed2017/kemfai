@@ -542,7 +542,7 @@ an initial company shell exists, the acting user is workspace owner, and no othe
   - **Acceptance Criteria**: Matches Acceptance Scenario 2.3 and the quickstart's retry-after-Ready 409 check.
   - **Roles**: Primary: GLM · Backup: Claude · Reviewer: Codex
 
-- [ ] T046 [US2] Assign the verifying Account the Workspace Owner role scoped to its Tenant in the
+- [X] T046 [US2] Assign the verifying Account the Workspace Owner role scoped to its Tenant in the
   `kemfai-customers` Keycloak realm (custom `tenant_id` attribute) on provisioning success, in
   `backend/api/src/integrations/provisioning/tenant-provision.processor.ts`
   - **Dependencies**: T044, T016

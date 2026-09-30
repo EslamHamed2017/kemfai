@@ -11,6 +11,7 @@ import { MinioStorageService } from '../../src/integrations/minio/minio-storage.
 import { createMinioClient, resolveMinioConfig } from '../../src/integrations/minio/minio-client';
 import { OdooRpcService } from '../../src/integrations/odoo-rpc/odoo-rpc.service';
 import { createOdooRpcClient } from '../../src/integrations/odoo-rpc/odoo-rpc-client';
+import { AdminRestKeycloakUserProvisioner } from '../../src/integrations/keycloak/admin-rest-keycloak-user-provisioner';
 import { TenantProvisionProcessor } from '../../src/integrations/provisioning/tenant-provision.processor';
 
 const live = process.env.KEMFAI_LIVE_PROVISION === '1' ? describe : describe.skip;
@@ -19,6 +20,8 @@ live('T044 live provisioning against real Postgres, MinIO and Odoo', () => {
   let plan: Plan;
   let bucket: string | undefined;
   let db: string | undefined;
+  let keycloakUserId: string | undefined;
+  const keycloak = new AdminRestKeycloakUserProvisioner();
   const client = createOdooRpcClient();
   const odoo = new OdooRpcService(client);
   const minio = new Client(resolveMinioConfig());
@@ -36,10 +39,16 @@ live('T044 live provisioning against real Postgres, MinIO and Odoo', () => {
       }),
     );
     const accounts = controlDataSource.getRepository(Account);
+    const email = `t044-${randomUUID()}@example.com`;
+    keycloakUserId = await keycloak.createUser({
+      email,
+      password: randomUUID() + randomUUID(),
+      requiredActions: [],
+    });
     account = await accounts.save(
       accounts.create({
-        keycloakUserId: randomUUID(),
-        email: `t044-${randomUUID()}@example.com`,
+        keycloakUserId,
+        email,
         emailVerified: true,
         selectedPlanId: plan.id,
         selectedBillingCycle: BillingCycle.MONTHLY,
@@ -66,6 +75,7 @@ live('T044 live provisioning against real Postgres, MinIO and Odoo', () => {
       if (db && (await odoo.databaseList()).includes(db))
         await client.call('db', 'drop', [process.env.KEMFAI_ODOO_MASTER_PASSWORD, db]);
     } finally {
+      if (keycloakUserId) await keycloak.deleteUser(keycloakUserId);
       if (controlDataSource.isInitialized) await controlDataSource.destroy();
     }
   });
@@ -77,6 +87,7 @@ live('T044 live provisioning against real Postgres, MinIO and Odoo', () => {
       new AuditService(),
       new MinioStorageService(createMinioClient()),
       odoo,
+      keycloak,
     );
     const job = { data: { accountId: account.id } } as Job<{ accountId: string }>;
     await Promise.all(Array.from({ length: CONCURRENCY }, () => processor.process(job)));

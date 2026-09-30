@@ -66,7 +66,7 @@ describe('BearerAuthGuard (T010)', () => {
     await expect(guard.canActivate(context)).resolves.toBe(true);
 
     const req = context.switchToHttp().getRequest<AuthenticatedRequest>();
-    expect(req.auth).toEqual({ keycloakUserId: 'user-abc', roles: [] });
+    expect(req.auth).toEqual({ keycloakUserId: 'user-abc', roles: [], tenantId: null });
   });
 
   it('exposes the realm_access.roles claim as req.auth.roles', async () => {
@@ -77,7 +77,11 @@ describe('BearerAuthGuard (T010)', () => {
     await expect(guard.canActivate(context)).resolves.toBe(true);
 
     const req = context.switchToHttp().getRequest<AuthenticatedRequest>();
-    expect(req.auth).toEqual({ keycloakUserId: 'user-abc', roles: ['Support', 'Other'] });
+    expect(req.auth).toEqual({
+      keycloakUserId: 'user-abc',
+      roles: ['Support', 'Other'],
+      tenantId: null,
+    });
   });
 
   it('rejects a validly signed token minted by a different issuer (wrong realm)', async () => {

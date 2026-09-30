@@ -45,13 +45,13 @@ describe('worker startup validation', () => {
       names.forEach((name) => {
         delete process.env[name];
       });
-      expect(() => new TenantProvisionProcessor({} as never, {} as never, {} as never)).toThrow(
-        'Provisioning credentials are not configured',
-      );
+      expect(
+        () => new TenantProvisionProcessor({} as never, {} as never, {} as never, {} as never),
+      ).toThrow('Provisioning credentials are not configured');
       process.env.NODE_ENV = 'production';
-      expect(() => new TenantProvisionProcessor({} as never, {} as never, {} as never)).toThrow(
-        'Provisioning credentials are not configured',
-      );
+      expect(
+        () => new TenantProvisionProcessor({} as never, {} as never, {} as never, {} as never),
+      ).toThrow('Provisioning credentials are not configured');
     } finally {
       names.forEach((name, index) => {
         if (saved[index] === undefined) delete process.env[name];

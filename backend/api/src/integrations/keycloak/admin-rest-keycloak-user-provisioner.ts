@@ -54,7 +54,7 @@ function resolveAdminTokenConfig(realm: string, baseUrl: string): AdminTokenConf
   const password = process.env.KEYCLOAK_ADMIN_PASSWORD;
   if (username && password) {
     return {
-      tokenUrl: `${baseUrl}/realms/${realm}/protocol/openid-connect/token`,
+      tokenUrl: `${baseUrl}/realms/master/protocol/openid-connect/token`,
       body: new URLSearchParams({
         grant_type: 'password',
         client_id: 'admin-cli',
@@ -120,7 +120,7 @@ export class AdminRestKeycloakUserProvisioner implements KeycloakUserProvisioner
     return process.env.KEYCLOAK_CUSTOMERS_REALM ?? 'kemfai-customers';
   }
 
-  async createUser(input: CreateKeycloakUserInput): Promise<void> {
+  async createUser(input: CreateKeycloakUserInput): Promise<string> {
     const token = await this.adminToken();
     let response: Response;
     try {
@@ -131,7 +131,6 @@ export class AdminRestKeycloakUserProvisioner implements KeycloakUserProvisioner
           'content-type': 'application/json',
         },
         body: JSON.stringify({
-          id: input.id,
           username: input.email,
           email: input.email,
           enabled: true,
@@ -149,6 +148,66 @@ export class AdminRestKeycloakUserProvisioner implements KeycloakUserProvisioner
     }
     if (!response.ok) {
       throw new KeycloakUnavailableError(`Keycloak user creation returned ${response.status}`);
+    }
+    const id = response.headers.get('location')?.match(/\/users\/([0-9a-f-]{36})$/i)?.[1];
+    if (!id)
+      throw new KeycloakUnavailableError('Keycloak user creation lacked a valid Location ID');
+    return id;
+  }
+
+  private async adminRequest(path: string, method = 'GET', body?: unknown): Promise<Response> {
+    try {
+      const response = await fetch(`${this.baseUrl()}/admin/realms/${this.realm()}${path}`, {
+        method,
+        headers: {
+          authorization: `Bearer ${await this.adminToken()}`,
+          ...(body === undefined ? {} : { 'content-type': 'application/json' }),
+        },
+        ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+        signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+      });
+      if (!response.ok)
+        throw new KeycloakUnavailableError(`Keycloak admin ${method} returned ${response.status}`);
+      return response;
+    } catch (error) {
+      if (error instanceof KeycloakUnavailableError) throw error;
+      throw new KeycloakUnavailableError('Keycloak admin request unreachable', error);
+    }
+  }
+  private async ownerRole(): Promise<{ id: string; name: string }> {
+    const role = (await (await this.adminRequest('/roles/WorkspaceOwner')).json()) as {
+      id?: string;
+      name?: string;
+    };
+    if (!role.id || role.name !== 'WorkspaceOwner')
+      throw new KeycloakUnavailableError('WorkspaceOwner role unavailable');
+    return { id: role.id, name: role.name };
+  }
+  async assignWorkspaceOwner(id: string, tenantId: string): Promise<void> {
+    const path = `/users/${encodeURIComponent(id)}`;
+    const user = (await (await this.adminRequest(path)).json()) as {
+      attributes?: Record<string, string[]>;
+    };
+    const existing = user.attributes?.tenant_id?.[0];
+    if (existing && existing !== tenantId)
+      throw new KeycloakUnavailableError('User already bound to another tenant');
+    const role = await this.ownerRole();
+    await this.adminRequest(path, 'PUT', {
+      attributes: { ...user.attributes, tenant_id: [tenantId] },
+    });
+    await this.adminRequest(`${path}/role-mappings/realm`, 'POST', [role]);
+  }
+  async revokeWorkspaceOwner(id: string, tenantId: string): Promise<void> {
+    const path = `/users/${encodeURIComponent(id)}`;
+    const role = await this.ownerRole();
+    await this.adminRequest(`${path}/role-mappings/realm`, 'DELETE', [role]);
+    const user = (await (await this.adminRequest(path)).json()) as {
+      attributes?: Record<string, string[]>;
+    };
+    if (user.attributes?.tenant_id?.[0] === tenantId) {
+      const attributes = { ...user.attributes };
+      delete attributes.tenant_id;
+      await this.adminRequest(path, 'PUT', { attributes });
     }
   }
 

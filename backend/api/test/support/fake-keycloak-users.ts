@@ -1,3 +1,4 @@
+import { randomUUID } from 'crypto';
 import {
   CreateKeycloakUserInput,
   KeycloakUserConflictError,
@@ -11,6 +12,8 @@ export interface FakeKeycloakUser {
   emailVerified: boolean;
   requiredActions: string[];
   hasOtpCredential: boolean;
+  attributes?: Record<string, string[]>;
+  roles?: string[];
 }
 
 /**
@@ -29,7 +32,7 @@ export class FakeKeycloakUsers implements KeycloakUserProvisioner {
   failNextBeginTotpEnrollment: Error | null = null;
   failNextHasActiveTotpCredential: Error | null = null;
 
-  async createUser(input: CreateKeycloakUserInput): Promise<void> {
+  async createUser(input: CreateKeycloakUserInput): Promise<string> {
     if (this.failNextCreate) {
       const error = this.failNextCreate;
       this.failNextCreate = null;
@@ -40,13 +43,33 @@ export class FakeKeycloakUsers implements KeycloakUserProvisioner {
         throw new KeycloakUserConflictError(input.email);
       }
     }
-    this.users.set(input.id, {
-      id: input.id,
+    const id = randomUUID();
+    this.users.set(id, {
+      id,
       email: input.email,
       emailVerified: false,
       requiredActions: [...input.requiredActions],
       hasOtpCredential: false,
+      attributes: {},
+      roles: [],
     });
+    return id;
+  }
+
+  async assignWorkspaceOwner(id: string, tenantId: string): Promise<void> {
+    const user = this.users.get(id);
+    if (!user) throw new KeycloakUnavailableError('Unknown user');
+    user.attributes ??= {};
+    user.attributes.tenant_id = [tenantId];
+    user.roles ??= [];
+    if (!user.roles.includes('WorkspaceOwner')) user.roles.push('WorkspaceOwner');
+  }
+
+  async revokeWorkspaceOwner(id: string, tenantId: string): Promise<void> {
+    const user = this.users.get(id);
+    if (!user) return;
+    user.roles = (user.roles ?? []).filter((role) => role !== 'WorkspaceOwner');
+    if (user.attributes?.tenant_id?.[0] === tenantId) delete user.attributes.tenant_id;
   }
 
   async deleteUser(id: string): Promise<void> {

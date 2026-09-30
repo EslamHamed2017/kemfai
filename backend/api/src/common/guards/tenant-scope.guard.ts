@@ -7,6 +7,7 @@ import {
 } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { IS_PUBLIC_KEY } from '../decorators/public.decorator';
+import { requireReadyWorkspaceOwner } from './workspace-owner-access';
 import { INTERNAL_ROLES } from '../decorators/roles.decorator';
 import { AuditService } from '../../modules/audit/audit.service';
 import { AuditActorType } from '../../modules/audit/entities/audit-event.entity';
@@ -85,12 +86,17 @@ export class TenantScopeGuard implements CanActivate {
       (ref) => ref.owningTenantId !== null && ref.owningTenantId !== tenantContext.callerTenantId,
     );
 
-    if (!violation) {
-      return true;
+    if (violation) {
+      await this.recordDenialOrFailClosed(req, tenantContext, violation);
+      throw new ForbiddenException('Request denied: tenant scope violation');
     }
 
-    await this.recordDenialOrFailClosed(req, tenantContext, violation);
-    throw new ForbiddenException('Request denied: tenant scope violation');
+    // Tenant-bearing customer routes are workspace surfaces even without @Roles.
+    // Unscoped onboarding/status routes (including /tenants/me) remain reachable.
+    if (references.length > 0) {
+      await requireReadyWorkspaceOwner(req);
+    }
+    return true;
   }
 
   /**

@@ -12,6 +12,7 @@ import { TenantScopedRequest } from '../tenant-context/tenant-context.model';
 import { collectTenantReferences } from '../tenant-context/collect-tenant-references';
 import { TenantOwnershipRegistry } from '../tenant-context/tenant-ownership.registry';
 import controlDataSource from '../../database/data-source';
+import { requireReadyWorkspaceOwner } from './workspace-owner-access';
 import {
   SupportAccessGrant,
   SupportAccessGranteeRole,
@@ -64,6 +65,16 @@ export class RoleGuard implements CanActivate {
       (role) => role !== SUPPORT_ROLE && callerRoles.includes(role),
     );
     if (nonSupportMatch) {
+      if (
+        requiredRoles.includes('WorkspaceOwner') &&
+        callerRoles.includes('WorkspaceOwner') &&
+        !requiredRoles.some(
+          (role) =>
+            role !== 'WorkspaceOwner' && role !== SUPPORT_ROLE && callerRoles.includes(role),
+        )
+      ) {
+        await requireReadyWorkspaceOwner(req);
+      }
       return true;
     }
 

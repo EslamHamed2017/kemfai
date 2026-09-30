@@ -25,7 +25,12 @@ interface FakeAdminServer {
   createStatus: number;
   tokenResponses: number;
   /** Current per-user state served by GET .../users/{id} (requiredActions preserved across PUTs). */
-  users: Map<string, { emailVerified: boolean; requiredActions: string[] }>;
+  users: Map<
+    string,
+    { emailVerified: boolean; requiredActions: string[]; attributes?: Record<string, string[]> }
+  >;
+  roles: Map<string, string[]>;
+  mappingStatus: number;
   /** Per-user OTP credential list served by GET .../users/{id}/credentials. */
   credentials: Map<string, Array<{ type: string }>>;
   getStatus: number;
@@ -43,6 +48,8 @@ async function startFakeAdminServer(): Promise<FakeAdminServer> {
     createStatus: 201,
     tokenResponses: 0,
     users: new Map(),
+    roles: new Map(),
+    mappingStatus: 204,
     credentials: new Map(),
     getStatus: 200,
     putStatus: 204,
@@ -72,6 +79,26 @@ async function startFakeAdminServer(): Promise<FakeAdminServer> {
       }
       if (req.method === 'POST' && req.url?.endsWith('/admin/realms/kemfai-customers/users')) {
         res.statusCode = state.createStatus;
+        if (state.createStatus === 201)
+          res.setHeader(
+            'location',
+            `${state.baseUrl}/admin/realms/kemfai-customers/users/${USER_INPUT.id}`,
+          );
+        res.end();
+        return;
+      }
+      if (req.url?.endsWith('/roles/WorkspaceOwner') && req.method === 'GET') {
+        res.setHeader('content-type', 'application/json');
+        res.end(
+          JSON.stringify({ id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', name: 'WorkspaceOwner' }),
+        );
+        return;
+      }
+      const mappingMatch = /\/users\/([^/]+)\/role-mappings\/realm$/.exec(req.url ?? '');
+      if (mappingMatch && ['POST', 'DELETE'].includes(req.method ?? '')) {
+        res.statusCode = state.mappingStatus;
+        if (state.mappingStatus === 204)
+          state.roles.set(mappingMatch[1], req.method === 'POST' ? ['WorkspaceOwner'] : []);
         res.end();
         return;
       }
@@ -111,6 +138,7 @@ async function startFakeAdminServer(): Promise<FakeAdminServer> {
         const body = JSON.parse(recorded.body ?? '{}') as {
           emailVerified?: boolean;
           requiredActions?: string[];
+          attributes?: Record<string, string[]>;
         };
         const existing = state.users.get(userMatch[1]) ?? {
           emailVerified: false,
@@ -119,6 +147,7 @@ async function startFakeAdminServer(): Promise<FakeAdminServer> {
         state.users.set(userMatch[1], {
           emailVerified: body.emailVerified ?? existing.emailVerified,
           requiredActions: body.requiredActions ?? existing.requiredActions,
+          attributes: body.attributes ?? existing.attributes,
         });
         res.statusCode = 204;
         res.end();
@@ -217,7 +246,6 @@ describe('AdminRestKeycloakUserProvisioner (T032, unit)', () => {
       );
       expect(createRequest?.authorization).toBe('Bearer token-1');
       expect(JSON.parse(createRequest?.body ?? '{}')).toEqual({
-        id: USER_INPUT.id,
         username: USER_INPUT.email,
         email: USER_INPUT.email,
         enabled: true,
@@ -534,5 +562,54 @@ describe('AdminRestKeycloakUserProvisioner (T032, unit)', () => {
         server.credentialsStatus = 200;
       }
     });
+  });
+});
+
+describe('WorkspaceOwner Admin REST binding (T046)', () => {
+  let server: FakeAdminServer;
+  let restore: () => void;
+  beforeEach(async () => {
+    server = await startFakeAdminServer();
+    restore = envWith({
+      KEYCLOAK_URL: server.baseUrl,
+      KEYCLOAK_USERS_CLIENT_ID: 'test-client',
+      KEYCLOAK_USERS_CLIENT_SECRET: 'test-secret',
+    });
+    server.users.set(USER_INPUT.id, {
+      emailVerified: true,
+      requiredActions: [],
+      attributes: { timezone: ['UTC'] },
+    });
+  });
+  afterEach(async () => {
+    restore();
+    await server.close();
+  });
+  it('persists tenant_id without dropping other attributes; maps role; idempotently rebinds; revokes both', async () => {
+    const client = new AdminRestKeycloakUserProvisioner();
+    await client.assignWorkspaceOwner(USER_INPUT.id, 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb');
+    await client.assignWorkspaceOwner(USER_INPUT.id, 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb');
+    expect(server.users.get(USER_INPUT.id)?.attributes).toEqual({
+      timezone: ['UTC'],
+      tenant_id: ['bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'],
+    });
+    expect(server.roles.get(USER_INPUT.id)).toEqual(['WorkspaceOwner']);
+    await expect(
+      client.assignWorkspaceOwner(USER_INPUT.id, 'cccccccc-cccc-4ccc-8ccc-cccccccccccc'),
+    ).rejects.toThrow(KeycloakUnavailableError);
+    await client.revokeWorkspaceOwner(USER_INPUT.id, 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb');
+    expect(server.roles.get(USER_INPUT.id)).toEqual([]);
+    expect(server.users.get(USER_INPUT.id)?.attributes).toEqual({ timezone: ['UTC'] });
+  });
+  it('fails binding when role mapping fails, and compensation clears partial attribute', async () => {
+    const client = new AdminRestKeycloakUserProvisioner();
+    server.mappingStatus = 503;
+    await expect(
+      client.assignWorkspaceOwner(USER_INPUT.id, 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'),
+    ).rejects.toThrow(KeycloakUnavailableError);
+    expect(server.users.get(USER_INPUT.id)?.attributes?.tenant_id).toBeDefined();
+    server.mappingStatus = 204;
+    await client.revokeWorkspaceOwner(USER_INPUT.id, 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb');
+    expect(server.users.get(USER_INPUT.id)?.attributes).toEqual({ timezone: ['UTC'] });
   });
 });

@@ -62,7 +62,7 @@ describe('AccountsService.signup (T032, unit)', () => {
   beforeEach(() => {
     insertShouldCollide = false;
     existingAccount = null;
-    createUser = jest.fn().mockResolvedValue(undefined);
+    createUser = jest.fn().mockResolvedValue('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa');
     deleteUser = jest.fn().mockResolvedValue(undefined);
     markEmailVerified = jest.fn().mockResolvedValue(undefined);
     recordAccountCreated = jest.fn().mockResolvedValue(undefined);
@@ -155,7 +155,6 @@ describe('AccountsService.signup (T032, unit)', () => {
     );
 
     expect(createUser).toHaveBeenCalledWith({
-      id: expect.any(String),
       email: 'owner@example.com',
       password: 'a-very-strong-password',
       requiredActions: ['VERIFY_EMAIL'],
@@ -276,7 +275,7 @@ describe('AccountsService.signup (T032, unit)', () => {
     await expect(service.signup(makeDto())).rejects.toThrow(ServiceUnavailableException);
     expect(createUser).toHaveBeenCalled();
     // The Keycloak user created in step 3 is deleted with the exact id it was created with.
-    expect(deleteUser).toHaveBeenCalledWith(createUser.mock.calls[0][0].id);
+    expect(deleteUser).toHaveBeenCalledWith(await createUser.mock.results[0].value);
     expect(accountRepo.delete).toHaveBeenCalledWith({ id: 'generated-id-1' });
     expect(queueAdd).not.toHaveBeenCalled();
   });
