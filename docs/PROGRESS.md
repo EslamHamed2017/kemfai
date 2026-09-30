@@ -4778,3 +4778,15 @@ Implemented task: T046. Unit tests pass (268/268), and build/lint pass. T046 was
 
 REVIEW VERDICT: REJECT
 ```
+
+## Rejected implement tick - 2026-09-30 14:17 +04
+
+Codex rejected the last implement attempt and working tree was reverted. Reviewer verdict:
+
+```
+Implemented task: T046. Unit tests pass (270/270), build and lint pass; targeted integration tests pass (17/17). However, T046 was marked complete prematurely.
+
+1. Production signup stores a preallocated UUID as `Account.keycloakUserId`, but real Keycloak ignores the submitted user `id` and generates another. `assignWorkspaceOwner(account.keycloakUserId, tenant.id)` therefore targets a nonexistent Keycloak user and permanently fails after the tenant becomes `Ready`. The new integration test explicitly acknowledges this defect, then bypasses it by searching Keycloak for the real ID and storing that ID directly—so it does not test the actual signup-to-provisioning path. Fix user creation to return and persist Keycloak’s real user ID, then test the complete path without this workaround.
+
+REVIEW VERDICT: REJECT
+```
