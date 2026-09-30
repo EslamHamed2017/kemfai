@@ -7,6 +7,7 @@ import { AccountsModule } from './modules/accounts/accounts.module';
 import { AuditModule } from './modules/audit/audit.module';
 import { EntitlementsModule } from './modules/entitlements/entitlements.module';
 import { IdempotencyModule } from './modules/idempotency/idempotency.module';
+import { TenantsModule } from './modules/tenants/tenants.module';
 import { PlansModule } from './modules/plans/plans.module';
 import { TenantContextModule } from './common/tenant-context/tenant-context.module';
 import { BearerAuthGuard } from './common/guards/bearer-auth.guard';
@@ -26,6 +27,7 @@ import { TrialExpirySweepModule } from './integrations/provisioning/trial-expiry
     EntitlementsModule,
     IdempotencyModule,
     PlansModule,
+    TenantsModule,
     AccountsModule,
     QueuesModule,
     TrialExpirySweepModule,

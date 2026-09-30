@@ -122,17 +122,31 @@ paths:
       summary: Poll current tenant provisioning status for the authenticated account (Acceptance Scenario 2.3)
       responses:
         "200":
+          description: Account-owned tenant status; tenantId is null until the worker creates the row
           content:
             application/json:
               schema: { $ref: "#/components/schemas/TenantStatus" }
+        "403": { description: Email is not verified }
+        "404": { description: No account for authenticated subject }
 
   /tenants/me/provisioning-retry:
     post:
       tags: [tenants]
       summary: Retry a failed provisioning attempt; idempotent, never duplicates tenant/db/company (FR-023)
       responses:
-        "202": { description: Retry enqueued }
-        "409": { description: Tenant already Ready or Creating — no-op with current status returned }
+        "202":
+          description: A retry is queued (or was already queued); status is Pending
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TenantStatus" }
+        "409":
+          description: Tenant already Ready or Creating (or job active) — no-op with current status returned
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TenantStatus" }
+        "403": { description: Email is not verified }
+        "404": { description: No account for authenticated subject }
+        "503": { description: Retry queue unavailable; tenant state remains unchanged }
 
   /companies/current/setup:
     get:
@@ -477,8 +491,9 @@ components:
 
     TenantStatus:
       type: object
+      required: [tenantId, status, failureReason]
       properties:
-        tenantId: { type: string, format: uuid }
+        tenantId: { type: string, format: uuid, nullable: true }
         status: { type: string, enum: [Pending, Creating, Ready, Failed] }
         failureReason: { type: string, nullable: true }
 

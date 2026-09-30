@@ -535,7 +535,7 @@ an initial company shell exists, the acting user is workspace owner, and no othe
     their respective points, each independently assertable in tests.
   - **Roles**: Primary: GLM · Backup: Claude · Reviewer: Codex
 
-- [ ] T045 [US2] Implement `GET /tenants/me` (poll `Pending|Creating|Ready|Failed`) and
+- [X] T045 [US2] Implement `GET /tenants/me` (poll `Pending|Creating|Ready|Failed`) and
   `POST /tenants/me/provisioning-retry` (409 no-op if already `Ready`/`Creating`) in
   `backend/api/src/modules/tenants/tenants.controller.ts`
   - **Dependencies**: T044
