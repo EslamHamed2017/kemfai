@@ -242,16 +242,19 @@ export class AuditService {
     input: AccountLocaleChangedInput,
     manager?: EntityManager,
   ): Promise<void> {
-    await this.append({
-      actorType: AuditActorType.ACCOUNT,
-      actorId: input.accountId,
-      tenantId: null,
-      action: 'account.locale_changed',
-      subjectType: 'account',
-      subjectId: input.accountId,
-      occurredAt: input.occurredAt ?? new Date(),
-      payload: { from_locale: input.fromLocale, to_locale: input.toLocale },
-    }, manager);
+    await this.append(
+      {
+        actorType: AuditActorType.ACCOUNT,
+        actorId: input.accountId,
+        tenantId: null,
+        action: 'account.locale_changed',
+        subjectType: 'account',
+        subjectId: input.accountId,
+        occurredAt: input.occurredAt ?? new Date(),
+        payload: { from_locale: input.fromLocale, to_locale: input.toLocale },
+      },
+      manager,
+    );
   }
 
   async recordAccountMfaEnrolled(
@@ -279,8 +282,11 @@ export class AuditService {
     }
   }
 
-  async recordTenantProvisioningAttempted(input: TenantProvisioningAttemptedInput): Promise<void> {
-    await this.append({
+  async recordTenantProvisioningAttempted(
+    input: TenantProvisioningAttemptedInput,
+    manager?: EntityManager,
+  ): Promise<void> {
+    const event: AuditEventInput = {
       actorType: AuditActorType.SYSTEM,
       actorId: null,
       tenantId: input.tenantId,
@@ -289,11 +295,16 @@ export class AuditService {
       subjectId: input.tenantId,
       occurredAt: input.occurredAt ?? new Date(),
       payload: { attempt_number: input.attemptNumber },
-    });
+    };
+    if (manager) await this.append(event, manager);
+    else await this.append(event);
   }
 
-  async recordTenantProvisioningSucceeded(input: TenantProvisioningSucceededInput): Promise<void> {
-    await this.append({
+  async recordTenantProvisioningSucceeded(
+    input: TenantProvisioningSucceededInput,
+    manager?: EntityManager,
+  ): Promise<void> {
+    const event: AuditEventInput = {
       actorType: AuditActorType.SYSTEM,
       actorId: null,
       tenantId: input.tenantId,
@@ -302,11 +313,16 @@ export class AuditService {
       subjectId: input.tenantId,
       occurredAt: input.occurredAt ?? new Date(),
       payload: { odoo_db_name: input.odooDbName },
-    });
+    };
+    if (manager) await this.append(event, manager);
+    else await this.append(event);
   }
 
-  async recordTenantProvisioningFailed(input: TenantProvisioningFailedInput): Promise<void> {
-    await this.append({
+  async recordTenantProvisioningFailed(
+    input: TenantProvisioningFailedInput,
+    manager?: EntityManager,
+  ): Promise<void> {
+    const event: AuditEventInput = {
       actorType: AuditActorType.SYSTEM,
       actorId: null,
       tenantId: input.tenantId,
@@ -315,7 +331,9 @@ export class AuditService {
       subjectId: input.tenantId,
       occurredAt: input.occurredAt ?? new Date(),
       payload: { failure_reason: input.failureReason },
-    });
+    };
+    if (manager) await this.append(event, manager);
+    else await this.append(event);
   }
 
   async recordCompanySetupCompleted(input: CompanySetupCompletedInput): Promise<void> {

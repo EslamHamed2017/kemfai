@@ -3,8 +3,9 @@
   "rootDir": "..",
   "testRegex": ".*\\.integration-spec\\.ts$",
   "transform": {
-    "^.+\\.(t|j)s$": "ts-jest"
+    "^.+\\.ts$": "ts-jest"
   },
+  "setupFiles": ["<rootDir>/test/setup-integration-env.js"],
   "testEnvironment": "node",
   "testTimeout": 30000
 }

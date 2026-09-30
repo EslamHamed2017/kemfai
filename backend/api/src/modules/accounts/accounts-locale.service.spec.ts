@@ -25,7 +25,10 @@ describe('AccountsService locale persistence (T104, unit)', () => {
     jest.spyOn(controlDataSource, 'transaction').mockImplementation(async (cb: any) => cb(manager));
     jest.spyOn(controlDataSource, 'getRepository').mockReturnValue(repo as any);
     const service = new AccountsService(
-      { recordAccountLocaleChanged: jest.fn() } as any, { add: jest.fn() } as any, { add: jest.fn() } as any, { createUser: jest.fn() } as any,
+      { recordAccountLocaleChanged: jest.fn() } as any,
+      { add: jest.fn() } as any,
+      { add: jest.fn() } as any,
+      { createUser: jest.fn() } as any,
     );
     await service.setPreferredLocale('k1', Locale.AR);
     expect(repo.findOne).toHaveBeenCalledWith({ where: { keycloakUserId: 'k1' } });
@@ -36,12 +39,16 @@ describe('AccountsService locale persistence (T104, unit)', () => {
     const account = { id: 'a1', keycloakUserId: 'k1', preferredLocale: Locale.EN } as Account;
     const repo = makeRepo(account);
     repo.findOne = jest.fn(async ({ where }: { where: { keycloakUserId: string } }) =>
-      where.keycloakUserId === 'k1' ? account : null);
+      where.keycloakUserId === 'k1' ? account : null,
+    );
     const manager = { getRepository: () => repo };
     jest.spyOn(controlDataSource, 'transaction').mockImplementation(async (cb: any) => cb(manager));
     jest.spyOn(controlDataSource, 'getRepository').mockReturnValue(repo as any);
     const service = new AccountsService(
-      { recordAccountLocaleChanged: jest.fn() } as any, { add: jest.fn() } as any, { add: jest.fn() } as any, { createUser: jest.fn() } as any,
+      { recordAccountLocaleChanged: jest.fn() } as any,
+      { add: jest.fn() } as any,
+      { add: jest.fn() } as any,
+      { createUser: jest.fn() } as any,
     );
     await expect(service.getPreferredLocale('k1')).resolves.toEqual({ locale: Locale.EN });
     await expect(service.getPreferredLocale('k2')).resolves.toEqual({ locale: null });
@@ -55,7 +62,10 @@ describe('AccountsService locale persistence (T104, unit)', () => {
     jest.spyOn(controlDataSource, 'getRepository').mockReturnValue(repo as any);
     const audit = { recordAccountLocaleChanged: jest.fn() };
     const service = new AccountsService(
-      audit as any, { add: jest.fn() } as any, { add: jest.fn() } as any, { createUser: jest.fn() } as any,
+      audit as any,
+      { add: jest.fn() } as any,
+      { add: jest.fn() } as any,
+      { createUser: jest.fn() } as any,
     );
 
     await service.setPreferredLocale('k1', Locale.AR); // real change en→ar
@@ -75,7 +85,10 @@ describe('AccountsService locale persistence (T104, unit)', () => {
     jest.spyOn(controlDataSource, 'transaction').mockImplementation(async (cb: any) => cb(manager));
     jest.spyOn(controlDataSource, 'getRepository').mockReturnValue(repo as any);
     const service = new AccountsService(
-      { recordAccountLocaleChanged: jest.fn() } as any, { add: jest.fn() } as any, { add: jest.fn() } as any, { createUser: jest.fn() } as any,
+      { recordAccountLocaleChanged: jest.fn() } as any,
+      { add: jest.fn() } as any,
+      { add: jest.fn() } as any,
+      { createUser: jest.fn() } as any,
     );
     await expect(service.setPreferredLocale('ghost', Locale.AR)).resolves.toBeUndefined();
     expect(repo.save).not.toHaveBeenCalled();

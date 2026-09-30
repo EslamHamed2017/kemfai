@@ -517,7 +517,7 @@ an initial company shell exists, the acting user is workspace owner, and no othe
 
 ### Implementation for User Story 2
 
-- [ ] T044 [US2] Implement the `tenant.provision` BullMQ processor: create-if-not-exists `Tenant` row; emit
+- [x] T044 [US2] Implement the `tenant.provision` BullMQ processor: create-if-not-exists `Tenant` row; emit
   `tenant.provisioning.attempted`; call `createTenantBucket(tenantId)` (MinIO, T025) to provision the tenant's
   MinIO bucket and set `Tenant.minio_bucket` — sequenced explicitly ahead of Odoo DB creation, per plan.md's
   Storage section and data-model.md's Tenant "Provisioning order" note (F1 remediation — see analysis.md) —
@@ -550,7 +550,7 @@ an initial company shell exists, the acting user is workspace owner, and no othe
     subsequent `RoleGuard`/`TenantScopeGuard` checks.
   - **Roles**: Primary: GLM · Backup: Claude · Reviewer: Codex
 
-- [ ] T047 [US2] Implement the `kemfai_tenant_core` Odoo addon's initial-company bootstrap (creates the one
+- [x] T047 [US2] Implement the `kemfai_tenant_core` Odoo addon's initial-company bootstrap (creates the one
   initial `res.company` per tenant database) in `backend/addons/kemfai_tenant_core/models/` and `data/`
   - **Dependencies**: T005
   - **Acceptance Criteria**: Installing the addon on a scratch tenant DB produces exactly one company record

@@ -19,11 +19,12 @@ import { Account } from './entities/account.entity';
 
 let app: INestApplication;
 let jwksServer: http.Server;
-let keycloakSub = 'locale-e2e-sub';
+const keycloakSub = 'locale-e2e-sub';
 const accountsById = new Map<string, Partial<Account>>();
 
 async function mintToken(overrides: Record<string, unknown> = {}): Promise<string> {
-  const { privateKey } = (globalThis as unknown as { __e2eKeys: { privateKey: KeyObject } }).__e2eKeys;
+  const { privateKey } = (globalThis as unknown as { __e2eKeys: { privateKey: KeyObject } })
+    .__e2eKeys;
   return new SignJWT({ realm_access: { roles: [] }, ...overrides })
     .setProtectedHeader({ alg: 'RS256', typ: 'JWT' })
     .setIssuer(process.env.KEYCLOAK_ISSUER!)
@@ -58,17 +59,24 @@ beforeAll(async () => {
 
   // 3) repository stubs (DB isolation per doctrine) — Account persistence under test;
   //    Tenant/AuditEvent backs the global TenantScopeGuard so it resolves cleanly.
-  const repoByTarget = new Map<string, any>();
   jest.spyOn(controlDataSource, 'transaction').mockImplementation(async (cb: any) =>
-    cb({ getRepository: (t: any) => jest.spyOn(controlDataSource,'getRepository').mock.calls ? (controlDataSource.getRepository as any)(t) : {} }));
+    cb({
+      getRepository: (t: any) =>
+        jest.spyOn(controlDataSource, 'getRepository').mock.calls
+          ? (controlDataSource.getRepository as any)(t)
+          : {},
+    }),
+  );
   jest.spyOn(controlDataSource, 'getRepository').mockImplementation((target: any) => {
-    const __name = typeof target === 'function' ? target.name : String(target);
     const name = typeof target === 'function' ? target.name : String(target);
     if (name === 'Account') {
       return {
         findOne: async ({ where }: any) =>
           [...accountsById.values()].find((a) => a.keycloakUserId === where.keycloakUserId) ?? null,
-        save: async (a: any) => { accountsById.set(a.id ?? 'a1', a); return a; },
+        save: async (a: any) => {
+          accountsById.set(a.id ?? 'a1', a);
+          return a;
+        },
       } as any;
     }
     if (name === 'Tenant') {
@@ -86,7 +94,13 @@ beforeAll(async () => {
     }
     // Generic fallback for every other repository (FeatureFlag, …) the global
     // guards/interceptors consult: absent rows, no behavior change.
-    return { findOne: async () => null, find: async () => [], save: async (e: any) => e, create: (e: any) => e, insert: async () => undefined } as any;
+    return {
+      findOne: async () => null,
+      find: async () => [],
+      save: async (e: any) => e,
+      create: (e: any) => e,
+      insert: async () => undefined,
+    } as any;
   });
 });
 
@@ -103,7 +117,10 @@ describe('PATCH/GET /accounts/me/locale (T104, HTTP integration)', () => {
   });
 
   it('401 without a bearer token', async () => {
-    await request(app.getHttpServer()).patch('/accounts/me/locale').send({ locale: 'ar' }).expect(401);
+    await request(app.getHttpServer())
+      .patch('/accounts/me/locale')
+      .send({ locale: 'ar' })
+      .expect(401);
   });
 
   it('401 with a forged (unsigned-against-JWKS) token', async () => {

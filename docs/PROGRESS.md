@@ -4698,3 +4698,10 @@ Implemented task: T044. Focused tests pass (24/24), full API tests pass (257/257
 
 REVIEW VERDICT: REJECT
 ```
+## Accepted T044 + T047 - 2026-09-30 08:59 +04
+
+Implemented idempotent `tenant.provision` worker with serialized account provisioning, PostgreSQL tenant/subscription records, MinIO bucket, isolated Odoo database, one-company bootstrap, calendar billing periods, and transactional audit/failure handling. The Odoo addon does not seed financial data. Production provisioning credentials fail closed; only isolated Jest setups use non-production placeholders.
+
+Verification after final changes: API lint and build passed; unit 262/262; contract 11/11; full integration 197/197 on isolated scratch PostgreSQL (optional live test skipped in this suite); explicit live concurrent/retry provisioning 1/1 on scratch PostgreSQL plus real MinIO and Odoo; Odoo scratch addon install passed with exactly one initial company and no addon warning/error; bootstrap hooks 3/3; `git diff --check` passed. The live test and scratch control database were cleaned up by their test/runner.
+
+Independent Codex review inspected the actual tree and re-ran envless integration, targeted provisioning tests, bootstrap tests, lint and build. Verdict: `REVIEW VERDICT: ACCEPT`. T044 and its required minimum T047 bootstrap were marked complete only after this verdict. No production credentials or values are stored in this entry.

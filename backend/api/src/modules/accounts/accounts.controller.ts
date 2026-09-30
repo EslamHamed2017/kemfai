@@ -2,7 +2,12 @@ import { Body, Controller, Get, HttpCode, HttpStatus, Patch, Post, Req } from '@
 import { Public } from '../../common/decorators/public.decorator';
 import { RequireFeatureFlag } from '../../common/decorators/feature-flag.decorator';
 import { AuthenticatedRequest } from '../../common/guards/bearer-auth.guard';
-import { AccountsService, PreferredLocaleResult, SignupResult, VerifyEmailResult } from './accounts.service';
+import {
+  AccountsService,
+  PreferredLocaleResult,
+  SignupResult,
+  VerifyEmailResult,
+} from './accounts.service';
 import { Locale as AccountLocale } from './entities/account.entity';
 import { LocaleUpdateRequestDto } from './dto/locale-update.request.dto';
 import { SignupRequestDto } from './dto/signup.request.dto';

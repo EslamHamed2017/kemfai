@@ -29,9 +29,17 @@ export class MinioStorageService {
     const bucket = tenantBucketName(tenantId);
     const exists = await this.client.bucketExists(bucket);
     if (!exists) {
-      await this.client.makeBucket(bucket);
+      try {
+        await this.client.makeBucket(bucket);
+      } catch (error) {
+        if (!(await this.client.bucketExists(bucket))) throw error;
+      }
     }
     return bucket;
+  }
+
+  async bucketExists(bucket: string): Promise<boolean> {
+    return this.client.bucketExists(bucket);
   }
 
   async getPresignedUploadUrl(

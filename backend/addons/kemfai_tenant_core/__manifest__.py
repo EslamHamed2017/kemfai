@@ -14,6 +14,7 @@ module (out of scope for Slice 1).
     "license": "LGPL-3",
     "depends": ["base"],
     "data": [],
+    "post_init_hook": "ensure_initial_company",
     "installable": True,
     "application": False,
     "auto_install": False,

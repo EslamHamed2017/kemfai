@@ -3,8 +3,9 @@
   "rootDir": "..",
   "testRegex": ".*\\.contract-spec\\.ts$",
   "transform": {
-    "^.+\\.(t|j)s$": "ts-jest"
+    "^.+\\.ts$": "ts-jest"
   },
+  "setupFiles": ["<rootDir>/test/setup-contract-env.js"],
   "testEnvironment": "node",
   "testTimeout": 30000
 }

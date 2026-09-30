@@ -111,7 +111,6 @@ export class AccountsService {
     @InjectQueue(QUEUE_TENANT_PROVISION)
     private readonly tenantProvisionQueue: Queue,
     @Inject(KEYCLOAK_USER_PROVISIONER)
-
     private readonly keycloakUsers: KeycloakUserProvisioner,
   ) {}
 

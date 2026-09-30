@@ -2,7 +2,8 @@ import { Module } from '@nestjs/common';
 import { createOdooRpcClient } from './odoo-rpc-client';
 import { OdooRpcService } from './odoo-rpc.service';
 
-export const ODOO_RPC_CLIENT = Symbol('ODOO_RPC_CLIENT');
+import { ODOO_RPC_CLIENT } from './odoo-rpc.token';
+export { ODOO_RPC_CLIENT } from './odoo-rpc.token';
 
 /**
  * T026's Nest wiring point. Feature modules (e.g. T044 tenant provisioning) import this

@@ -16,6 +16,7 @@ import { FeatureFlagGuard } from './common/guards/feature-flag.guard';
 import { TrialWindowGuard } from './common/guards/trial-window.guard';
 import { IdempotencyKeyInterceptor } from './common/interceptors/idempotency.interceptor';
 import { QueuesModule } from './common/queues/queues.module';
+import { TenantProvisionModule } from './integrations/provisioning/tenant-provision.module';
 import { TrialExpirySweepModule } from './integrations/provisioning/trial-expiry-sweep.module';
 
 @Module({
@@ -28,6 +29,7 @@ import { TrialExpirySweepModule } from './integrations/provisioning/trial-expiry
     AccountsModule,
     QueuesModule,
     TrialExpirySweepModule,
+    TenantProvisionModule,
   ],
   controllers: [AppController],
   providers: [

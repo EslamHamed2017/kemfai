@@ -54,4 +54,11 @@ if grep -iE "error|critical|traceback|warning" "$LOG_FILE"; then
   exit 1
 fi
 
+company_count=$(docker exec "$DB_CONTAINER" psql -U "$DB_USER" -d "$TEST_DB" -Atc "SELECT count(*) FROM res_company;")
+if [ "$company_count" != "1" ]; then
+  echo "FAIL: expected exactly one initial res.company; found $company_count" >&2
+  exit 1
+fi
+
+echo "PASS: tenant addon installed with exactly one initial res.company."
 echo "PASS: all kemfai_* addons installed cleanly with zero errors/warnings."

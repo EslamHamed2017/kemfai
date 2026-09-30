@@ -1,5 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { ODOO_RPC_CLIENT } from './odoo-rpc.module';
+import { ODOO_RPC_CLIENT } from './odoo-rpc.token';
 import type { OdooRpcClientLike } from './odoo-rpc-client';
 
 /**
@@ -13,6 +13,30 @@ import type { OdooRpcClientLike } from './odoo-rpc-client';
 @Injectable()
 export class OdooRpcService {
   constructor(@Inject(ODOO_RPC_CLIENT) private readonly client: OdooRpcClientLike) {}
+
+  async databaseList(): Promise<string[]> {
+    const result = await this.client.call('db', 'list', []);
+    if (!Array.isArray(result) || result.some((item) => typeof item !== 'string'))
+      throw new Error('Invalid Odoo database list');
+    return result as string[];
+  }
+
+  async createDatabase(
+    master: string,
+    database: string,
+    login: string,
+    password: string,
+  ): Promise<void> {
+    const result = await this.client.call('db', 'create_database', [
+      master,
+      database,
+      false,
+      'en_US',
+      password,
+      login,
+    ]);
+    if (result !== true) throw new Error('Odoo database creation failed');
+  }
 
   async authenticate(database: string, login: string, password: string): Promise<number> {
     const uid = await this.client.call('common', 'login', [database, login, password]);
