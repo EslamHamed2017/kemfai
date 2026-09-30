@@ -4748,3 +4748,18 @@ Implemented task: T046. Unit tests pass (38/38); build and lint pass. The full i
 
 REVIEW VERDICT: REJECT
 ```
+
+## Rejected implement tick - 2026-09-30 12:21 +04
+
+Codex rejected the last implement attempt and working tree was reverted. Reviewer verdict:
+
+```
+Implemented task: T046. It is not complete, and `tasks.md` correctly remains unchecked.
+
+Unit tests: 264 passed. Build and lint passed. Integration suite failed due a missing configured PostgreSQL database, so integration success is unproven.
+
+1. T046 explicitly requires the Keycloak `tenant_id` custom attribute. The implementation only assigns the realm-level `WorkspaceOwner` role; it never writes the tenant ID or configures a token mapper. The required tenant-scoped role binding therefore does not exist.
+2. Tests only fake role assignment. They do not verify the real Keycloak Admin REST requests, `tenant_id` persistence/token claims, or subsequent `RoleGuard`/`TenantScopeGuard` behavior. The integration suite did not pass.
+
+REVIEW VERDICT: REJECT
+```
