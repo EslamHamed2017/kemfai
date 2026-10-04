@@ -4905,3 +4905,16 @@ omitting `step` or `values` provably fails CompanySetupStepInput validation.
 
 Gates: targeted contract spec 10/10 pass; full contract suite 30/30 pass
 (4 suites); lint clean; build clean. T049 marked [X] in tasks.md.
+
+## Rejected implement tick - 2026-10-04 12:05 +04
+
+Codex rejected the last implement attempt and working tree was reverted. Reviewer verdict:
+
+```
+Implemented task: T042. The contract suite passes: 5 suites, 40 tests.
+
+1. T042 is incomplete. `/companies/current/setup` is never called with a second tenant’s token, and no `tenant_access.denied_cross_tenant` audit event is asserted for that surface. Recording hypothetical 403/404 statuses against OpenAPI is not a cross-tenant denial test.
+2. `tasks.md` was marked complete prematurely. Its acceptance criterion requires both named customer-facing surfaces to have a real cross-tenant-denial test.
+
+REVIEW VERDICT: REJECT
+```
