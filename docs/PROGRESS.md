@@ -5020,3 +5020,28 @@ Implemented tasks: T054 and T050. The targeted integration tests pass 20/20; con
 
 REVIEW VERDICT: REJECT
 ```
+
+## Rejected implement tick - 2026-10-04 19:06 +04
+
+Codex rejected the last implement attempt and working tree was reverted. Reviewer verdict:
+
+```
+Implemented task: **T054**. It does not satisfy acceptance criteria, and `tasks.md` was marked done prematurely.
+
+Tests run:
+
+- Unit: 300/300 passed.
+- T054 HTTP integration: 21/21 passed.
+- Contract: 38/38 passed.
+- Lint and build passed.
+
+No core Odoo edits, hard-coded plan/trial limits, native Odoo UI leakage, accounting nondeterminism, or obvious cross-tenant routing leak found.
+
+1. Real Odoo compatibility is broken. `res.company.search_read` returns Many2one fields as `[id, display_name]`, but the service treats `country`, `base_currency`, and `industry` as scalar IDs and places those arrays inside `id in [...]` domains. Consequently saved country/currency/industry values disappear from GET/PUT responses, violating Scenarios 3.3 and 3.4. The fake Odoo incorrectly returns scalar IDs, so all passing persistence tests conceal the defect.
+
+2. T054’s explicit expired-trial acceptance condition has no route-level test. The new HTTP suite seeds only Active subscriptions and never proves that an unpaid past-window tenant is denied on `PUT /companies/current/setup`, including raw replay. The generic guard unit test is not proof that this endpoint’s actual guard wiring behaves as required.
+
+3. `tasks.md` marks T054 complete despite the broken real-Odoo resume behavior and missing trial-window acceptance coverage.
+
+REVIEW VERDICT: REJECT
+```
