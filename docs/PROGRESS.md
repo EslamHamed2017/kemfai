@@ -5137,3 +5137,26 @@ Tests: unit, contract, mocked integration, build, lint, Python validation, and O
 
 REVIEW VERDICT: REJECT
 ```
+
+## Rejected implement tick - 2026-10-05 03:06 +04
+
+Codex rejected the last implement attempt and working tree was reverted. Reviewer verdict:
+
+```
+Implemented task: T054. `tasks.md` was marked complete prematurely.
+
+Tests run:
+
+- API unit: 275 passed
+- Contract: 37 passed
+- Mocked HTTP integration: 16 passed
+- Build and lint: passed
+- Live Odoo suite: skipped
+- Odoo addon tests: could not run because Odoo is unavailable
+
+1. Country changes can crash instead of validating existing VAT. `_kemfai_resolve_step_values()` stores `country.id`, but `kemfai_save_setup_step()` later treats that integer as a record and reads `effective_country.code`. This breaks FR-026/configuration-gap handling and returns a generic 500.
+2. The live Odoo tests—including persistence and real concurrent row-lock behavior—were skipped, while the test itself explicitly says a skipped run is insufficient to mark T054 complete. The mocked integration duplicates the intended behavior and cannot prove the addon works.
+3. No runnable Odoo addon test covers the changed `res.company` implementation. The existing Python test only tests helper logic and cannot load here without Odoo.
+
+REVIEW VERDICT: REJECT
+```
