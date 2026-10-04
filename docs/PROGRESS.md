@@ -4845,3 +4845,17 @@ databases created during this work were dropped afterward.
 
 Out of scope for T053 (left for later tasks as tasked): the JSON-RPC-facing `GET`/`PUT /companies/current/setup`
 endpoint (T054), wizard-state/resume/concurrency behavior (T051), and the frontend wizard (T056).
+
+## Rejected implement tick - 2026-10-04 08:12 +04
+
+Codex rejected the last implement attempt and working tree was reverted. Reviewer verdict:
+
+```
+Implemented task: T054. Targeted integration tests pass 11/11; unit tests pass 267/267; build and lint pass. The task was nevertheless marked complete prematurely.
+
+1. Acceptance Scenario 3.5 is not implemented. The API never exposes the selected country’s configured VAT rule or `vat_format_hint`, so the frontend cannot present country-specific fields, guidance, or validation without forbidden hard-coding.
+2. Acceptance Scenario 3.6/FR-012 is not satisfied. Validation failures return generic English-only strings with no stable error code, field identifier, or localization key. The frontend cannot reliably produce field-level EN/AR errors.
+3. The tests mask both omissions with an in-memory Odoo fake and assert only HTTP status codes. They do not prove the required country-specific validation metadata or localized field-error contract.
+
+REVIEW VERDICT: REJECT
+```
