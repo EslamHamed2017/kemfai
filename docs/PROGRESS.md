@@ -5122,3 +5122,18 @@ Implemented Task ID: T054. Unit tests, HTTP integration (26/26), tenant-isolatio
 
 REVIEW VERDICT: REJECT
 ```
+
+## Rejected implement tick - 2026-10-05 01:31 +04
+
+Codex rejected the last implement attempt and working tree was reverted. Reviewer verdict:
+
+```
+Implemented task: T054. `tasks.md` was marked complete prematurely.
+
+Tests: unit, contract, mocked integration, build, lint, Python validation, and Odoo installation smoke tests pass. The live Odoo concurrency suite was skipped: 2 tests skipped.
+
+1. Neither endpoint requires `WorkspaceOwner`; without `@Roles('WorkspaceOwner')`, any authenticated tenant user can read or modify company setup, violating the owner-only acceptance scenarios and authorization requirements.
+2. The only real Odoo/PostgreSQL concurrency tests were skipped. The suite itself explicitly states that a skipped run is insufficient to complete T054, so atomic last-write-wins behavior remains unverified.
+
+REVIEW VERDICT: REJECT
+```
