@@ -15,8 +15,16 @@ describe('FeatureFlag migration + entity (T099)', () => {
   });
 
   afterEach(async () => {
-    await controlDataSource.query('DELETE FROM "feature_flag"');
-    await controlDataSource.query('DELETE FROM "feature"');
+    // Never delete the permanently-shipped module gate rows (module.accounts,
+    // module.company_setup) — they are seeded once by their own migrations, which never
+    // re-run, so deleting them here would leave the platform's feature-flag rows gone for
+    // every suite that runs afterward in the same test process (repeatability lesson).
+    await controlDataSource.query(
+      `DELETE FROM "feature_flag" WHERE "feature_key" NOT IN ('module.accounts', 'module.company_setup')`,
+    );
+    await controlDataSource.query(
+      `DELETE FROM "feature" WHERE "key" NOT IN ('module.accounts', 'module.company_setup')`,
+    );
   });
 
   afterAll(async () => {

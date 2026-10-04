@@ -4,9 +4,12 @@ import { ContractCoverage, OpenApiContractValidator } from '../support/openapi-c
  * T049 — contract test for the US3 company-setup wizard endpoints against the committed
  * `specs/001-saas-onboarding-shell/contracts/openapi.yaml`. Per the arbiter resolution
  * (2026-10-04) this suite is strictly contract-level: it drives OpenApiContractValidator
- * and ContractCoverage directly against the committed document. The production wizard
- * surface is T054/T055 and is deliberately NOT implemented here, so no HTTP server is
- * booted and no Odoo RPC is performed. Status conformance is the complete contract
+ * and ContractCoverage directly against the committed document, never booting an HTTP
+ * server or performing Odoo RPC. The real step-save/resume/validation business logic is
+ * T054/T055's responsibility and is deliberately NOT implemented here. (T042 separately
+ * registers a flag-gated `GET /companies/current/setup` stub, purely to exercise the
+ * guard chain and cross-tenant-denial audit for that surface end to end — this file is
+ * unaffected by and unrelated to that stub.) Status conformance is the complete contract
  * assertion for every response whose body schema the contract does not yet declare
  * (PUT 200/422/409 and POST complete 200/422); where a schema IS declared (GET 200 →
  * CompanySetupState) the example body is validated against it.

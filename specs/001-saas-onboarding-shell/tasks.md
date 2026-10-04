@@ -500,7 +500,7 @@ an initial company shell exists, the acting user is workspace owner, and no othe
     strategy (physical, not merely logical, separation).
   - **Roles**: Primary: Codex · Backup: GLM · Reviewer: Gemini
 
-- [ ] T042 [P] [US2] Contract test: cross-tenant denial on `GET /tenants/me` and `GET /companies/current/setup`
+- [X] T042 [P] [US2] Contract test: cross-tenant denial on `GET /tenants/me` and `GET /companies/current/setup`
   using a second tenant's account token, asserting 403/404 plus a `tenant_access.denied_cross_tenant` audit
   event, in `backend/api/test/contract/tenant-isolation.contract-spec.ts`
   - **Dependencies**: T017

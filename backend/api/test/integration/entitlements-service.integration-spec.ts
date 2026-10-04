@@ -27,8 +27,16 @@ describe('EntitlementsService (T010)', () => {
     await controlDataSource.query('DELETE FROM "account"');
     await controlDataSource.query('DELETE FROM "plan_feature_entitlement"');
     await controlDataSource.query('DELETE FROM "plan_setting"');
-    await controlDataSource.query('DELETE FROM "feature_flag"');
-    await controlDataSource.query('DELETE FROM "feature"');
+    // Never delete the permanently-shipped module gate rows (module.accounts,
+    // module.company_setup) — they are seeded once by their own migrations, which never
+    // re-run, so deleting them here would leave the platform's feature-flag rows gone for
+    // every suite that runs afterward in the same test process (repeatability lesson).
+    await controlDataSource.query(
+      `DELETE FROM "feature_flag" WHERE "feature_key" NOT IN ('module.accounts', 'module.company_setup')`,
+    );
+    await controlDataSource.query(
+      `DELETE FROM "feature" WHERE "key" NOT IN ('module.accounts', 'module.company_setup')`,
+    );
     await controlDataSource.query('DELETE FROM "plan"');
   });
 
@@ -75,13 +83,15 @@ describe('EntitlementsService (T010)', () => {
     expect(result.features).toEqual([{ key: feature.key, enabled: true, limitValue: 250 }]);
     expect(result.trialWindowDays).toBe(30);
     expect(result.autoRestrictUnpaid).toBe(false);
-    // Feature flags are platform-wide (T099), and since T032 the platform permanently
-    // ships the `module.accounts` gate row via migration. This test creates no flags, so
-    // the only row that may legitimately appear is that shipped platform gate (in its
-    // shipped, disabled state) — never any test-created flag.
+    // Feature flags are platform-wide (T099), and the platform permanently ships a growing
+    // set of module gate rows via migration (`module.accounts` since T032, `module.company_setup`
+    // since T042). This test creates no flags, so the only rows that may legitimately appear
+    // are those shipped platform gates (in their shipped, disabled state) — never a
+    // test-created flag.
+    const shippedDisabledKeys = ['module.accounts', 'module.company_setup'];
     expect(result.featureFlags).toEqual(
       result.featureFlags.filter(
-        (flag) => flag.key === 'module.accounts' && flag.enabled === false,
+        (flag) => shippedDisabledKeys.includes(flag.key) && flag.enabled === false,
       ),
     );
   });
@@ -142,14 +152,17 @@ describe('EntitlementsService (T010)', () => {
 
     const result = await service.getEntitlementSet(plan.id);
 
-    // This test's own flag must be exposed; the T032 platform-shipped `module.accounts`
-    // gate (migration-seeded, disabled) may also legitimately appear platform-wide.
+    // This test's own flag must be exposed; the platform-shipped `module.accounts`/
+    // `module.company_setup` gates (migration-seeded, disabled) may also legitimately
+    // appear platform-wide.
     expect(result.featureFlags).toEqual(
       expect.arrayContaining([{ key: 'module.checklist-flag-test', enabled: false }]),
     );
     expect(
       result.featureFlags.every((flag) =>
-        ['module.checklist-flag-test', 'module.accounts'].includes(flag.key),
+        ['module.checklist-flag-test', 'module.accounts', 'module.company_setup'].includes(
+          flag.key,
+        ),
       ),
     ).toBe(true);
   });

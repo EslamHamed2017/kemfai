@@ -4932,3 +4932,51 @@ Implemented task: T042. Its contract test genuinely passes, as do the full contr
 
 REVIEW VERDICT: REJECT
 ```
+
+## T042 implement tick — 2026-10-04 (arbiter-resolved)
+
+Implemented task: T042, strictly per the independent arbiter resolution recorded against this task
+(2026-10-04): registered the real `GET /companies/current/setup` route
+(`backend/api/src/modules/company-setup/company-setup.controller.ts`, `.module.ts`) with
+controller-level `@RequireFeatureFlag('module.company_setup')` and `@EnforceTrialWindow()`, wired
+into `AppModule` after the existing `TenantsModule`. A new migration
+(`1789850000000-SeedCompanySetupFeatureFlag.ts`) seeds the `module.company_setup` Feature/FeatureFlag
+rows with `enabled=false`, mirroring `module.accounts`'s existing pattern — no hard-coded bypass; T054
+or release configuration may flip it later by a pure data change. The handler itself is a placeholder
+stub (`{ currentStep: 'country', setupComplete: false, values: {} }`, matching T049's own contract
+example) — PUT/complete remain entirely out of scope (T054/T055, still unchecked).
+
+`backend/api/test/contract/tenant-isolation.contract-spec.ts` boots the real `AppModule` against real
+Postgres/fake-Keycloak (no schema-only `ContractCoverage` shortcut) and proves: (1) Tenant A's token
+plus a spoofed `x-tenant-id: Tenant B` header against both `GET /tenants/me` and
+`GET /companies/current/setup` is denied 403 with an awaited `tenant_access.denied_cross_tenant` audit
+row for each; (2) with the flag at its shipped default (disabled), same-tenant access gets 404; (3)
+once enabled, an elapsed-trial tenant with no `Active` Subscription gets 403; (4) an `Active`
+Subscription reaches the handler regardless of elapsed time; (5) a non-expired trial also reaches the
+handler. `TenantScopeGuard` running before `FeatureFlagGuard`/`TrialWindowGuard` in `app.module.ts`'s
+guard chain means the cross-tenant assertions hold regardless of the flag's state.
+
+**Pre-existing repeatability defect found and fixed while implementing this task**: four integration
+spec files (`entitlements-service`, `feature-flag-migration`, `entitlements-migration`,
+`dev-quickstart-seed`) unconditionally `DELETE FROM "feature"`/`"feature_flag"` with no `WHERE`
+clause in their `afterEach`/`afterAll`. Since migrations never re-run once applied, this silently
+destroyed the migration-seeded `module.accounts` row (and would have destroyed the new
+`module.company_setup` row identically) for every suite running afterward in the same test process —
+exactly the "destructive and non-repeatable... must restore/preserve the seeded singleton" defect
+class previously found in T009's `entitlement_default` handling. Fixed all four to scope their
+deletes to exclude the permanently-shipped module-gate keys, and fixed two assertions
+(`entitlements-service`) and two sub-counts (`dev-quickstart-seed`) that had hard-coded "only
+`module.accounts` may exist platform-wide" / exact-row-count expectations to instead scope by key, so
+they remain correct regardless of how many platform module gates are shipped. Separately,
+`dev-quickstart-seed` deliberately flips `module.accounts` to `enabled=true` (T032's dev convenience) —
+now that the row survives cleanup, that flip would otherwise leak into every later suite in the same
+process; added an `afterAll` restoring it to `false` once this file's own assertions of that flip are
+done.
+
+Gates: targeted contract spec 6/6; full contract suite 36/36 (5 suites); unit suite 267/267 (34
+suites); full integration suite 213/213 (2 opt-in live Odoo/MinIO suites skipped), run twice
+consecutively against the same already-migrated control DB with identical results; lint and build
+clean; `git diff --check` clean. Control DB's `feature_flag` table verified restored to its shipped
+baseline (`module.accounts`, `module.company_setup` both `enabled=false`) after the work. T042 marked
+`[X]` in tasks.md. T054/T055 remain unimplemented and unchecked. No deployment or remote push as part
+of this task.

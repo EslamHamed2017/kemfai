@@ -9,6 +9,7 @@ import { EntitlementsModule } from './modules/entitlements/entitlements.module';
 import { IdempotencyModule } from './modules/idempotency/idempotency.module';
 import { TenantsModule } from './modules/tenants/tenants.module';
 import { PlansModule } from './modules/plans/plans.module';
+import { CompanySetupModule } from './modules/company-setup/company-setup.module';
 import { TenantContextModule } from './common/tenant-context/tenant-context.module';
 import { BearerAuthGuard } from './common/guards/bearer-auth.guard';
 import { TenantScopeGuard } from './common/guards/tenant-scope.guard';
@@ -28,6 +29,7 @@ import { TrialExpirySweepModule } from './integrations/provisioning/trial-expiry
     IdempotencyModule,
     PlansModule,
     TenantsModule,
+    CompanySetupModule,
     AccountsModule,
     QueuesModule,
     TrialExpirySweepModule,

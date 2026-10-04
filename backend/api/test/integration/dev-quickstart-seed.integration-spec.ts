@@ -25,14 +25,28 @@ describe('Dev/quickstart seed (T015)', () => {
   afterEach(async () => {
     // Only clean tables this suite's fixture (the seed) writes — entitlement_default is
     // deliberately never deleted here (T009 review lesson: the migration-seeded singleton
-    // must stay intact for suites that assert it).
+    // must stay intact for suites that assert it). Same reasoning now applies to the
+    // permanently-shipped module gate Features (module.accounts, module.company_setup):
+    // they are seeded once by their own migrations, which never re-run, so deleting them
+    // here would leave the platform's feature-flag rows gone for every suite that runs
+    // afterward in the same test process.
     await controlDataSource.query('DELETE FROM "plan_feature_entitlement"');
     await controlDataSource.query('DELETE FROM "plan_setting"');
     await controlDataSource.query('DELETE FROM "plan"');
-    await controlDataSource.query('DELETE FROM "feature"');
+    await controlDataSource.query(
+      `DELETE FROM "feature" WHERE "key" NOT IN ('module.accounts', 'module.company_setup')`,
+    );
   });
 
   afterAll(async () => {
+    // The seed deliberately flips `module.accounts` to enabled=true as a dev convenience
+    // (T032) — a real side effect of the production seed script, not a test fixture. Left
+    // as-is, that leaks into every suite that runs afterward in the same test process and
+    // expects the shipped migration default (disabled). Restore it once this file's own
+    // tests (which assert that exact flip) are done.
+    await controlDataSource.query(
+      'UPDATE "feature_flag" SET "enabled" = false WHERE "feature_key" = \'module.accounts\'',
+    );
     if (controlDataSource.isInitialized) {
       await controlDataSource.destroy();
     }
@@ -62,7 +76,13 @@ describe('Dev/quickstart seed (T015)', () => {
     expect(settings[0].trial_window_days).toBeNull();
     expect(settings[0].auto_restrict_unpaid).toBeNull();
 
-    const features = await controlDataSource.query('SELECT * FROM "feature"');
+    // Scoped to the seed's own keys (not a bare table count) so this assertion is
+    // independent of however many other platform module gates (e.g. module.company_setup)
+    // happen to be shipped via migration alongside this seed's four keys.
+    const features = await controlDataSource.query(
+      `SELECT * FROM "feature" WHERE "key" = ANY($1)`,
+      [['module.accounting', 'module.invoicing', 'limit.users', 'module.accounts']],
+    );
     expect(features).toHaveLength(4);
     for (const feature of features) {
       expect(['module', 'limit']).toContain(feature.kind);
@@ -100,15 +120,19 @@ describe('Dev/quickstart seed (T015)', () => {
     await runDevQuickstartSeed(controlDataSource);
     await runDevQuickstartSeed(controlDataSource);
 
+    // Both the "features" and "flags" sub-counts are scoped to the seed's own keys (not
+    // bare table counts), so this stays accurate regardless of however many other platform
+    // module gates (e.g. module.company_setup) are shipped via migration alongside them.
     const counts = await controlDataSource.query(`
       SELECT
         (SELECT count(*) FROM "plan") AS plans,
         (SELECT count(*) FROM "plan" WHERE "published") AS published_plans,
         (SELECT count(*) FROM "plan_setting") AS settings,
         (SELECT count(*) FROM "plan_feature_entitlement") AS entitlements,
-        (SELECT count(*) FROM "feature") AS features,
+        (SELECT count(*) FROM "feature" WHERE "key" IN
+          ('module.accounting', 'module.invoicing', 'limit.users', 'module.accounts')) AS features,
         (SELECT count(*) FROM "entitlement_default") AS defaults,
-        (SELECT count(*) FROM "feature_flag") AS flags
+        (SELECT count(*) FROM "feature_flag" WHERE "feature_key" = 'module.accounts') AS flags
     `);
     expect(counts[0]).toEqual({
       plans: '1',
