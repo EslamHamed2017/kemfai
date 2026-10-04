@@ -5110,3 +5110,15 @@ Implemented task: T054. Unit tests (291/291), HTTP integration tests (20/20), te
 
 REVIEW VERDICT: REJECT
 ```
+
+## Rejected implement tick - 2026-10-05 01:06 +04
+
+Codex rejected the last implement attempt and working tree was reverted. Reviewer verdict:
+
+```
+Implemented Task ID: T054. Unit tests, HTTP integration (26/26), tenant-isolation contract tests (6/6), build, and lint pass. The live Odoo test is environment-gated and was not executed. `tasks.md` was marked complete prematurely.
+
+1. Concurrency handling is still broken. `company.setup_wizard_version + 1` is a non-atomic read-modify-write. Two genuinely simultaneous Odoo transactions can both read version N, both write N+1, and both API requests can report `stale: false`, silently losing the required stale-session indication. The tests only perform sequential `await` saves—even the test named “concurrent”—so they do not exercise this race. Use an atomic database increment/row lock and add a genuinely parallel real-Odoo test.
+
+REVIEW VERDICT: REJECT
+```
