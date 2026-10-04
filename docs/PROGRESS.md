@@ -4814,3 +4814,34 @@ REVIEW VERDICT: REJECT
 - Failure-injection and signed-token integration coverage includes signup → provisioning → guards, cross-tenant denial, missing/mismatched claim, success-audit/final-commit failures, failed compensation, and retry recovery. No deployment or remote push as part of this acceptance.
 
 - 2026-09-30: T043 + T048 (US2) — ACCEPTed by independent Codex reviewer. Authenticated EN/AR provisioning screen now polls account-owned tenant status, shows Pending/Creating/Ready/Failed and recoverable connection states, and offers a safe retry and a configured support-email link. Same-origin BFF uses the Redis-backed session without exposing its bearer token; Jest 85/85, full Playwright EN/AR suite 10/10, TypeScript and production build passed. `SUPPORT_EMAIL` must be configured to a monitored mailbox before deployment; no production deployment or GitHub push in this task. Phase 4 is 8/9; T042 remains blocked as written because `/tenants/me` is self-scoped and `/companies/current/setup` is not implemented yet.
+
+## T053 (US3 — kemfai_company_setup addon) — 2026-10-04
+
+Implemented the `kemfai_company_setup` Odoo addon: `res.company` gains `country`, `legal_name`, `trade_name`,
+`base_currency`, `fiscal_year_start_month`/`fiscal_year_start_day`, `vat_tax_registration`, `industry`,
+`accounting_setup_template`, `setup_wizard_step`, `setup_complete`, `setup_completed_at` (data-model.md's Company
+table, verbatim field names). Added a new `kemfai.company.setup.country.rule` model (one row per launch country,
+holding the VAT/tax-registration format regex) plus `security/ir.model.access.csv`. Country-dependent validation
+logic lives in a pure-Python `validation.py` (`validate_vat_tax_registration`) wired into `res.company` via an
+`@api.constrains` on `country`/`vat_tax_registration`: a country with no configured rule raises a distinguishable
+`KEMFAI_CONFIG_GAP` error (never silently accepts the value); a configured country with a non-matching value
+raises `KEMFAI_VAT_FORMAT`.
+
+**Pre-existing bug found and fixed while implementing this task**: the addon's root `__init__.py` was empty and
+never imported the `models` package, so Odoo's loader (`load_openerp_module`) never executed any model file for
+this addon — the models silently never registered. This is the first task in the project to define an actual Odoo
+model class (`kemfai_tenant_core` only ships plain hook functions), so the gap had not surfaced before. Fixed by
+adding `from . import models` to the addon's `__init__.py`.
+
+**Tests**: (1) `tests/test_validation.py` — 6/6 pure-Python unit tests against `validation.py`, no live registry
+needed (mirrors `kemfai_tenant_core`'s `hooks.py`/`test_bootstrap.py` pattern). (2) Live scratch-install smoke test
+(`backend/addons/test-install.sh`) against the real `odoo:18`/`kemfai-db` containers — all four `kemfai_*` addons
+install cleanly with zero errors/warnings (had to give the new `country` field an explicit `string='Setup
+Country'` label to resolve an Odoo duplicate-label warning against the native `country_id`, which the script's
+warning-grep correctly caught). (3) A live `odoo shell` script against a scratch DB with both addons installed
+exercised the real constraint end-to-end: no rule configured → `KEMFAI_CONFIG_GAP`; rule configured + non-matching
+value → `KEMFAI_VAT_FORMAT`; rule configured + matching value → persists. All three passed. All scratch/debug
+databases created during this work were dropped afterward.
+
+Out of scope for T053 (left for later tasks as tasked): the JSON-RPC-facing `GET`/`PUT /companies/current/setup`
+endpoint (T054), wizard-state/resume/concurrency behavior (T051), and the frontend wizard (T056).

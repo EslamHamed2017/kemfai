@@ -623,7 +623,7 @@ confirm every field persists, RTL fully mirrors, and no native Odoo UI/URL/termi
 
 ### Implementation for User Story 3
 
-- [ ] T053 [US3] Implement the `kemfai_company_setup` Odoo addon: fields on `res.company` (country, legal_name,
+- [X] T053 [US3] Implement the `kemfai_company_setup` Odoo addon: fields on `res.company` (country, legal_name,
   trade_name, base_currency, fiscal_year_start_month/day, vat_tax_registration, industry,
   accounting_setup_template, setup_wizard_step, setup_complete, setup_completed_at) plus a per-country
   validation-rule table, in `backend/addons/kemfai_company_setup/models/`

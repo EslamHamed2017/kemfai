@@ -14,7 +14,9 @@ state. No native Odoo Settings UI is exposed to customers.
     "author": "KEMFAI",
     "license": "LGPL-3",
     "depends": ["base"],
-    "data": [],
+    "data": [
+        "security/ir.model.access.csv",
+    ],
     "installable": True,
     "application": False,
     "auto_install": False,
