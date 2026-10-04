@@ -5098,3 +5098,15 @@ Verification: build, lint, and 15 mocked route tests passed. The real-Odoo integ
 
 REVIEW VERDICT: REJECT
 ```
+
+## Rejected implement tick - 2026-10-05 00:28 +04
+
+Codex rejected the last implement attempt and working tree was reverted. Reviewer verdict:
+
+```
+Implemented task: T054. Unit tests (291/291), HTTP integration tests (20/20), tenant-isolation contract tests (6/6), build, and lint pass.
+
+1. Concurrent-session stale detection is unreliable. It compares Odoo’s second-resolution `write_date`, so multiple saves within the same second return `stale: false`, silently violating the mandatory concurrent-wizard acceptance criterion. The tests conceal this by manually setting `write_date` to 2030 instead of testing real same-second writes. T054 was therefore marked complete prematurely.
+
+REVIEW VERDICT: REJECT
+```
