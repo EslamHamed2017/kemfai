@@ -5082,3 +5082,19 @@ Implemented task: T054. Its automated gates pass, including the live Odoo 18 con
 
 REVIEW VERDICT: REJECT
 ```
+
+## Rejected implement tick - 2026-10-04 23:05 +04
+
+Codex rejected the last implement attempt and working tree was reverted. Reviewer verdict:
+
+```
+Implemented task: **T054**. It was marked complete prematurely.
+
+Verification: build, lint, and 15 mocked route tests passed. The real-Odoo integration suite was skipped because `KEMFAI_LIVE_PROVISION=1` was not enabled; all 6 tests were skipped.
+
+1. Resume logic violates FR-027 and Scenario 3.4. The service advances from the submitted step without checking earlier stored fields. Submitting `identity` before `country`, for example, reports `currency` instead of the actual first incomplete step, `country`.
+2. Required concurrency behavior is missing. The spec requires an updated-at check and a visible stale-session indicator; the API performs unconditional writes and exposes no version token or conflict indication.
+3. No passing real-Odoo test proves the JSON-RPC implementation. The only runnable tests use a fake RPC service, while the added live suite was entirely skipped and does not cover every wizard step even when enabled.
+
+REVIEW VERDICT: REJECT
+```
