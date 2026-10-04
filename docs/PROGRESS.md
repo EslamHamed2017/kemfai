@@ -4994,3 +4994,17 @@ Implemented task: T050. No core Odoo edits or obvious tenant-isolation/security 
 
 REVIEW VERDICT: REJECT
 ```
+
+## Rejected implement tick - 2026-10-04 15:55 +04
+
+Codex rejected the last implement attempt and working tree was reverted. Reviewer verdict:
+
+```
+Implemented tasks: T054 and T050. The targeted integration tests passed 11/11, tenant-isolation contract tests passed 6/6, unit tests passed 267/267, and build/lint passed. No core Odoo edits, tenant leak, native UI exposure, hard-coded entitlement values, or missing feature gate found.
+
+1. T054 is incomplete: changing the country after saving a VAT number bypasses service validation. The resulting Odoo constraint failure becomes an unstructured 500 instead of the required localized 422 or configuration-gap 409.
+2. VAT patterns are defined and enforced as Python regexes in Odoo, but the API independently executes them using JavaScript `RegExp`. Valid configured Python patterns can behave differently or throw in JavaScript, producing incorrect validation or a 500. The fake-Odoo tests mask this incompatibility.
+3. T054 was therefore marked done prematurely. T050’s tests pass, but they do not cover either failing real-Odoo path above.
+
+REVIEW VERDICT: REJECT
+```
