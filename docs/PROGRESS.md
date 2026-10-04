@@ -4918,3 +4918,17 @@ Implemented task: T042. The contract suite passes: 5 suites, 40 tests.
 
 REVIEW VERDICT: REJECT
 ```
+
+## Rejected implement tick - 2026-10-04 15:06 +04
+
+Codex rejected the last implement attempt and working tree was reverted. Reviewer verdict:
+
+```
+Implemented task: T042. Its contract test genuinely passes, as do the full contract suite (35/35), unit suite (267/267), lint, and build. However, marking T042 complete is premature because the supporting production implementation violates mandatory gates.
+
+1. The newly exposed `GET /companies/current/setup` route lacks the explicitly required `TrialWindowGuard` enforcement. Past-window unpaid tenants can call it, violating T054/FR-030a.
+
+2. The executor exposed an incomplete Company Setup module without a configuration-driven feature-flag gate, violating Constitution Principle VI. Pulling part of unchecked T054 into production does not make the partial module shippable.
+
+REVIEW VERDICT: REJECT
+```
