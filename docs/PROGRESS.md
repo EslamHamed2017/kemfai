@@ -5058,3 +5058,14 @@ Implemented task: T054. Unit tests passed (279/279), targeted HTTP integration t
 
 REVIEW VERDICT: REJECT
 ```
+
+## Rejected implement tick - 2026-10-04 20:06 +04
+
+Codex rejected the last implement attempt and working tree was reverted. Reviewer verdict:
+
+```
+Implemented task: T054. The pure-Python tests (30/30), service tests (14/14), HTTP integration tests (34/34), build, and lint pass. However, the HTTP suite uses mini-Odoo rather than the actual ORM path.
+
+1. Real Odoo country-change validation is broken: `_kemfai_resolve_step_values()` stores the new country as an integer Many2one ID, then passes that ID to `validate_vat_tax_registration()`, while `_kemfai_vat_rules_by_code()` keys rules by country code. Changing country after saving VAT therefore incorrectly returns `CONFIG_GAP` even when the new country has a configured rule. The mini-Odoo double stores country codes directly, so its passing test masks this production defect. T054’s country-specific validation acceptance criterion is unmet, and marking T054 `[X]` is premature.
+REVIEW VERDICT: REJECT
+```
