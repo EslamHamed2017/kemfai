@@ -5045,3 +5045,16 @@ No core Odoo edits, hard-coded plan/trial limits, native Odoo UI leakage, accoun
 
 REVIEW VERDICT: REJECT
 ```
+
+## Rejected implement tick - 2026-10-04 19:20 +04
+
+Codex rejected the last implement attempt and working tree was reverted. Reviewer verdict:
+
+```
+Implemented task: T054. Unit tests passed (279/279), targeted HTTP integration tests passed (24/24), and build/lint passed. The task was marked done prematurely.
+
+1. Concurrency handling is missing. The spec requires last-write-wins per field plus an `updated_at` check and a visible stale-data indicator for concurrent wizard sessions. The API performs unconditional whole-step writes with no version token, conflict/staleness detection, or indicator.
+2. VAT validation is nondeterministic across layers. Odoo defines `vat_regex` as a Python regex, but the API evaluates it using JavaScript `RegExp`. Valid Python constructs such as `\A...\Z` can compile in JavaScript with different semantics and incorrectly return 422 instead of validating consistently or producing a 409 configuration-gap. The tests cover only a Python pattern that throws in JavaScript, not semantic incompatibility.
+
+REVIEW VERDICT: REJECT
+```
