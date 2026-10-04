@@ -5008,3 +5008,15 @@ Implemented tasks: T054 and T050. The targeted integration tests passed 11/11, t
 
 REVIEW VERDICT: REJECT
 ```
+
+## Rejected implement tick - 2026-10-04 17:06 +04
+
+Codex rejected the last implement attempt and working tree was reverted. Reviewer verdict:
+
+```
+Implemented tasks: T054 and T050. The targeted integration tests pass 20/20; contract tests pass 16/16; API unit tests pass 267/267; Python validation tests pass 13/13; build and lint pass.
+
+1. T054 is prematurely marked complete. `accountingSetupTemplate` accepts any non-empty string, but Odoo defines only `standard` as valid. An invalid value reaches `res.company.write`, causing an unmapped Odoo error/500 instead of the required localized field-level 422. The integration suite never exercises the accounting-setup, currency, fiscal-year, industry, or successful identity persistence paths, so it misses this defect.
+
+REVIEW VERDICT: REJECT
+```
