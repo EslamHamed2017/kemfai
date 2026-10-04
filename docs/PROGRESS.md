@@ -4980,3 +4980,17 @@ clean; `git diff --check` clean. Control DB's `feature_flag` table verified rest
 baseline (`module.accounts`, `module.company_setup` both `enabled=false`) after the work. T042 marked
 `[X]` in tasks.md. T054/T055 remain unimplemented and unchecked. No deployment or remote push as part
 of this task.
+
+## Rejected implement tick - 2026-10-04 15:45 +04
+
+Codex rejected the last implement attempt and working tree was reverted. Reviewer verdict:
+
+```
+Implemented task: T050. No core Odoo edits or obvious tenant-isolation/security violations were introduced.
+
+1. The new test never executed: Jest reported 1 suite and all 4 tests skipped. Therefore its behavior has not genuinely passed the Test Gate.
+2. The test bypasses the API/BFF and calls Odoo directly. It does not verify the required configuration-gap HTTP 409 or Scenario 3.6’s localized field-level error.
+3. T050 was marked complete prematurely despite those unmet acceptance criteria.
+
+REVIEW VERDICT: REJECT
+```
