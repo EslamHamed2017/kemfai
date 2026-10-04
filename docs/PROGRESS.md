@@ -4871,3 +4871,16 @@ and terminal-finish probes. All four previous fail-open blockers resolved.
 Only standalone infrastructure T114 completed; original onboarding tasks unchanged.
 No product/accounting/legal/locked-baseline changes or deploy/push.
 Product T049 smoke is a separate pending gate.
+
+## Rejected implement tick - 2026-10-04 10:50 +04
+
+Codex rejected the last implement attempt and working tree was reverted. Reviewer verdict:
+
+```
+Implemented task: T049. Its contract suite passes: 11/11 targeted tests and 31/31 full contract tests; build and lint also pass. The T049 checkbox itself is supported by the literal acceptance criteria.
+
+1. The executor implemented and exposed T054/T055 production endpoints without those Task IDs being authorized or completed, violating “NO TASK ID → NO IMPLEMENTATION.” The incomplete module is registered globally without a feature-flag gate.
+2. The production implementation uses invalid Odoo `search_read` fields (`country.code`, `base_currency.name`, `industry.name`). Odoo only accepts actual model field names there; Many2one values must be read normally and resolved separately. The scripted fake explicitly invents support for these dotted fields, so passing tests conceal a real-runtime failure.
+
+REVIEW VERDICT: REJECT
+```
