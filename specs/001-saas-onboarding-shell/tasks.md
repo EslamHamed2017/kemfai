@@ -579,7 +579,7 @@ confirm every field persists, RTL fully mirrors, and no native Odoo UI/URL/termi
 
 ### Tests for User Story 3
 
-- [ ] T049 [P] [US3] Contract test: `GET`/`PUT /companies/current/setup` and
+- [X] T049 [P] [US3] Contract test: `GET`/`PUT /companies/current/setup` and
   `POST /companies/current/setup/complete` against `contracts/openapi.yaml` in
   `backend/api/test/contract/company-setup.contract-spec.ts`
   - **Dependencies**: T022

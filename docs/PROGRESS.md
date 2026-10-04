@@ -4884,3 +4884,24 @@ Implemented task: T049. Its contract suite passes: 11/11 targeted tests and 31/3
 
 REVIEW VERDICT: REJECT
 ```
+
+## T049 accepted-path implement tick - 2026-10-04 (contract-only per arbiter)
+
+Implemented task: T049 strictly as the arbiter resolved (2026-10-04): a pure
+contract-level suite at `backend/api/test/contract/company-setup.contract-spec.ts`
+driving `OpenApiContractValidator` + `ContractCoverage` directly against the committed
+`specs/001-saas-onboarding-shell/contracts/openapi.yaml`. No production controller,
+service, module, route, feature flag, Odoo adapter, or AppModule entry was added or
+modified (T054/T055 remain unimplemented and unchecked; `src/modules/company-setup/`
+still holds only `.gitkeep`); no Odoo RPC of any kind.
+
+Coverage recorded and asserted full for exactly the documented codes: GET
+/companies/current/setup 200 (body `{ currentStep: "country", setupComplete: false,
+values: {} }` validated against CompanySetupState), PUT /companies/current/setup
+200/422/409, POST /companies/current/setup/complete 200/422 (bodies `undefined`
+where the contract declares no response schema). PUT request body
+`{ step: "country", values: { country: "AE" } }` passes validateRequestBody;
+omitting `step` or `values` provably fails CompanySetupStepInput validation.
+
+Gates: targeted contract spec 10/10 pass; full contract suite 30/30 pass
+(4 suites); lint clean; build clean. T049 marked [X] in tasks.md.
