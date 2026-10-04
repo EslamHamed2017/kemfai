@@ -21,6 +21,21 @@ LOG="$LOG_DIR/$(TZ=Asia/Dubai date +%Y%m%d-%H%M).log"
 PROMPT_TMP_DIR=$(mktemp -d)
 trap 'rm -rf "$PROMPT_TMP_DIR"' EXIT
 
+# FINAL-RESPONSE BOUNDARY (20261004-0830 incident fix): governance
+# (extract_task_id / classify_executor_signal / pin checks) may ever see ONLY
+# the executor's final assistant response -- never the tool/command/log
+# transcript around it. opencode's default formatted output interleaves tool
+# results (which can quote stale Decision-Request text from state files) with
+# intermediate assistant messages and the final answer in one blob; feeding
+# that blob to governance once misclassified a real T049 change as a
+# TECH_QUESTION and rolled it back before review. The glm executor therefore
+# runs with `--format json` (documented raw JSON events) and
+# scripts/extract_final_response.py deterministically isolates the final
+# assistant text at this boundary; anything malformed, ambiguous, or missing
+# fails CLOSED (no classification, no review, no commit) while the full raw
+# stream is retained in the log for diagnostics.
+EXTRACTOR="$REPO/scripts/extract_final_response.py"
+
 cd "$REPO"
 
 # --- decide next stage ---
@@ -109,6 +124,12 @@ PROMPT_FILE="$PROMPT_TMP_DIR/executor_prompt.txt"
 # OpenCode may return exit 0 even when the provider reports a quota/stream error,
 # so both the exit code AND output text are checked. Every failed executor is
 # rolled back before the next provider starts, preventing mixed partial edits.
+# The FINAL-RESPONSE BOUNDARY is enforced here: after a candidate exits, RAW_OUT
+# (the complete captured stream) is preserved in the log and handed to the
+# deterministic extractor; only the extracted FINAL assistant response ever
+# continues into $OUT and the governance paths below. A candidate that exits 0
+# without a trustworthy final response FAILS CLOSED exactly like any other
+# executor failure.
 EXECUTOR_TIMEOUT=${KEMFAI_EXECUTOR_TIMEOUT:-1800}
 EXECUTOR_ORDER="claude glm" # fixed policy: Claude primary, GLM fallback; Codex reviews only
 EXECUTOR=""
@@ -168,6 +189,7 @@ for candidate in $EXECUTOR_ORDER; do
     continue
   fi
   echo "[$TS] trying executor: $candidate (timeout ${EXECUTOR_TIMEOUT}s)" | tee -a "$LOG"
+  RAW_OUT=""
   set +e
   case "$candidate" in
     glm)
@@ -178,16 +200,21 @@ for candidate in $EXECUTOR_ORDER; do
       # -f attaches the file; the positional message must TELL the model to open it
       # (verified live 2026-09-28: the old combined form made opencode treat the
       # positional text as a second --file argument and fail with "File not found").
-      OUT=$(timeout --signal=TERM --kill-after=30s "${EXECUTOR_TIMEOUT}s" \
-        opencode run --auto -m zai-coding/glm-5.2 \
+      # `--format json` emits the documented raw JSON event stream so the
+      # final assistant response can be isolated deterministically from all
+      # tool/command/intermediate transcript noise (see EXTRACTOR note above).
+      RAW_OUT=$(timeout --signal=TERM --kill-after=30s "${EXECUTOR_TIMEOUT}s" \
+        opencode run --auto -m zai-coding/glm-5.2 --format json \
           "Read the file $PROMPT_FILE and follow its instructions exactly. That file IS the complete task." 2>&1)
       EC=$?
       ;;
     claude)
       # `claude -p` with no positional prompt argument reads the prompt from
       # stdin ("useful for pipes" per --help) -- so the prompt never has to
-      # be a single argv string regardless of size.
-      OUT=$(timeout --signal=TERM --kill-after=30s "${EXECUTOR_TIMEOUT}s" \
+      # be a single argv string regardless of size. With --output-format text
+      # the CLI prints ONLY the final response, so the captured text already
+      # satisfies the final-response boundary (no extraction step needed).
+      RAW_OUT=$(timeout --signal=TERM --kill-after=30s "${EXECUTOR_TIMEOUT}s" \
         claude -p \
           --permission-mode acceptEdits \
           --allowedTools 'Read,Write,Edit,Glob,Grep,Bash' \
@@ -195,17 +222,56 @@ for candidate in $EXECUTOR_ORDER; do
       EC=$?
       ;;
     *)
-      OUT="unknown executor: $candidate"
+      RAW_OUT="unknown executor: $candidate"
       EC=64
       ;;
   esac
   set -e
 
-  if [ $EC -eq 0 ] && ! provider_failed_in_output "$OUT"; then
+  # Preserve the FULL raw stream for diagnostics regardless of outcome --
+  # the log must always show what the executor actually produced, even when
+  # none of it is governable.
+  {
+    echo "[$TS] raw executor output ($candidate; full stream retained for diagnostics only, NEVER governable):"
+    printf '%s\n' "$RAW_OUT"
+    echo "[$TS] end raw executor output ($candidate)"
+  } >> "$LOG"
+
+  # --- final-response boundary: isolate the governable final assistant text ---
+  FINAL_OUT=""
+  if [ $EC -eq 0 ]; then
+    RAW_FILE="$PROMPT_TMP_DIR/${candidate}.raw_output"
+    FINAL_FILE="$PROMPT_TMP_DIR/${candidate}.final_response"
+    printf '%s\n' "$RAW_OUT" > "$RAW_FILE"
+    if [ "$candidate" = "glm" ]; then
+      set +e
+      EXTRACT_NOTE=$(python3 "$EXTRACTOR" "$RAW_FILE" "$FINAL_FILE" 2>&1)
+      EXTRACT_EC=$?
+      set -e
+    else
+      # claude -p --output-format text already emits only the final response.
+      EXTRACT_NOTE=""
+      EXTRACT_EC=0
+      cat "$RAW_FILE" > "$FINAL_FILE"
+      [ -s "$FINAL_FILE" ] || EXTRACT_EC=3
+    fi
+    if [ $EXTRACT_EC -ne 0 ]; then
+      echo "[$TS] executor $candidate produced no governable final response — failing closed (no classification, no review, no commit); raw stream retained above" | tee -a "$LOG"
+      [ -n "$EXTRACT_NOTE" ] && printf '%s\n' "$EXTRACT_NOTE" | tee -a "$LOG"
+    else
+      [ -n "$EXTRACT_NOTE" ] && echo "[$TS] final-response isolation ($candidate): $EXTRACT_NOTE" | tee -a "$LOG"
+      FINAL_OUT=$(cat "$FINAL_FILE")
+    fi
+  fi
+
+  # Provider-failure detection is diagnostics (cooldown circuit-breaking), so
+  # it inspects the RAW stream; it never feeds governance classification.
+  if [ $EC -eq 0 ] && [ -n "$FINAL_OUT" ] && ! provider_failed_in_output "$RAW_OUT"; then
     EXECUTOR="$candidate"
     export KEMFAI_EXECUTOR="$EXECUTOR"
     rm -f "$COOLDOWN_DIR/$candidate.until"
     echo "[$TS] executor succeeded: $EXECUTOR" | tee -a "$LOG"
+    OUT="$FINAL_OUT"
     break
   fi
 
@@ -214,11 +280,12 @@ for candidate in $EXECUTOR_ORDER; do
   else
     echo "[$TS] executor $candidate unavailable/failed (exit $EC)" | tee -a "$LOG"
   fi
-  if provider_failed_in_output "$OUT"; then
-    cooldown=$(mark_provider_cooldown "$candidate" "$OUT")
+  if provider_failed_in_output "$RAW_OUT"; then
+    cooldown=$(mark_provider_cooldown "$candidate" "$RAW_OUT")
     echo "[$TS] circuit breaker set for $candidate (${cooldown}s)" | tee -a "$LOG"
   fi
   EC=75
+  OUT=""
   rollback_partial_executor_work
 done
 
@@ -233,7 +300,12 @@ if [ -n "$EXECUTOR" ] && [ "$(git rev-parse HEAD)" != "$BASE_HEAD" ]; then
   git reset --mixed "$BASE_HEAD" >/dev/null
 fi
 
-echo "$OUT" | tee -a "$LOG" >/dev/null
+if [ -n "$EXECUTOR" ]; then
+  {
+    echo "[$TS] governable final response ($EXECUTOR; this and ONLY this is parsed for governance):"
+    printf '%s\n' "$OUT"
+  } | tee -a "$LOG" >/dev/null
+fi
 echo "[$TS] executor: ${EXECUTOR:-none}; exit: $EC" | tee -a "$LOG"
 
 # --- governance: task-id contract, tech-question interception, owner escalation ---

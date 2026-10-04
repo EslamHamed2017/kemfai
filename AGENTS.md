@@ -103,6 +103,17 @@ different or unknown task id):
    resumes on the next fire via the persisted state, never via owner ping.
 
 Governance hardening in `scripts/lib_governance.sh`:
+- **Final-response boundary**: governance (task-id extraction, signal
+  classification, pin checks) may ever see ONLY an executor's final
+  assistant response — never tool/command/log transcript output. The GLM
+  (opencode) executor runs with `--format json` and
+  `scripts/extract_final_response.py` deterministically isolates the final
+  assistant text at the boundary; the full raw stream is retained in the log
+  for diagnostics only. Malformed/ambiguous/missing final responses fail
+  closed (no classification, no review, no commit). This closed the
+  2026-10-04 incident where a tool result quoting stale
+  `recovery_job_state.md` Decision-Request text triggered a spurious
+  TECH_QUESTION and rolled back a real T049 change before review.
 - **Keyed state**: `last_rejection.txt`/`last_resolution.txt` are written
   atomically with a `KEMFAI_STATE_TASK_ID` header and only ever read back
   after validating that header against the currently pinned task in

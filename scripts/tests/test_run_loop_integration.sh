@@ -23,6 +23,7 @@ new_scratch_repo() {
   local dir="$SCRATCH_ROOT/$name"
   mkdir -p "$dir/scripts" "$dir/docs" "$dir/.specify/memory" "$dir/specs/001-saas-onboarding-shell"
   cp "$REAL_REPO/scripts/lib_governance.sh" "$dir/scripts/"
+  cp "$REAL_REPO/scripts/extract_final_response.py" "$dir/scripts/"
   cp "$REAL_REPO/scripts/run_next_step.sh" "$dir/scripts/"
   cp "$REAL_REPO/scripts/run_loop.sh" "$dir/scripts/"
   cp "$REAL_REPO/scripts/codex_review.sh" "$dir/scripts/"
@@ -696,5 +697,163 @@ assert_eq "scenario AE: exits 0" "0" "$FIRE_EC"
 assert_not_contains "scenario AE: repeated identical markers are never normalized" "$FIRE_OUT" "normalizing the task id"
 assert_contains "scenario AE: repeated identical markers remain a pin violation" "$FIRE_OUT" "KEMFAI_RESULT: PIN_VIOLATION"
 assert_contains "scenario AE: SAME pinned task eventually accepted on retry" "$FIRE_OUT" "LOOP: task T036 accepted"
+
+# ---------------------------------------------------------------------------
+# Scenarios AF-AK: final-response boundary isolation on the GLM (opencode)
+# executor path. Regression context (scripts/logs/20261004-0830.log): the
+# runner used to feed the WHOLE opencode transcript -- tool outputs quoting
+# stale recovery_job_state.md Decision-Request text plus intermediate
+# assistant text plus the final answer -- into extract_task_id and
+# classify_executor_signal. That produced a spurious TECH_QUESTION and rolled
+# back a real T049 change before review. Only the executor's FINAL assistant
+# response is governable; tool/command/log output never is.
+# ---------------------------------------------------------------------------
+
+echo ""
+echo "== Scenario AF: GLM tool/intermediate Decision-Request noise must NOT block a clean final T049 from review =="
+REPO_AF=$(new_scratch_repo scenario_af)
+STATE_AF=$(mktemp -d)
+printf 'FAIL\nFAIL\n' > "$STATE_AF/claude_sequence.txt"
+printf 'DR_NOISE_ACCEPT\nDR_NOISE_ACCEPT\n' > "$STATE_AF/opencode_sequence.txt"
+printf 'ACCEPT\n' > "$STATE_AF/review_sequence.txt"
+
+run_fire "$REPO_AF" "$STATE_AF" TASKS=1 ATTEMPTS=2 ARBITER_AFTER=99 MOCK_TASK_ID=T049
+
+assert_eq "scenario AF: exits 0" "0" "$FIRE_EC"
+assert_contains "scenario AF: independent review actually ran" "$FIRE_OUT" "running independent Codex review"
+assert_contains "scenario AF: the real T049 change reaches review and is accepted" "$FIRE_OUT" "LOOP: task T049 accepted"
+assert_not_contains "scenario AF: Decision-Request noise from tool output never becomes a TECH_QUESTION" "$FIRE_OUT" "(TECH_QUESTION)"
+assert_not_contains "scenario AF: never stops for owner attention on quoted noise" "$FIRE_OUT" "stop=owner_escalation"
+assert_not_contains "scenario AF: never a pin violation" "$FIRE_OUT" "KEMFAI_RESULT: PIN_VIOLATION"
+
+# ---------------------------------------------------------------------------
+echo ""
+echo "== Scenario AG: a genuine final-response KEMFAI_TECH_QUESTION from GLM is still honored =="
+REPO_AG=$(new_scratch_repo scenario_ag)
+STATE_AG=$(mktemp -d)
+printf 'FAIL\nFAIL\n' > "$STATE_AG/claude_sequence.txt"
+printf 'TECH_QUESTION\nACCEPT\n' > "$STATE_AG/opencode_sequence.txt"
+printf 'ACCEPT\n' > "$STATE_AG/review_sequence.txt"
+
+run_fire "$REPO_AG" "$STATE_AG" TASKS=1 ATTEMPTS=2 ARBITER_AFTER=5 MOCK_TASK_ID=T036
+
+assert_eq "scenario AG: exits 0" "0" "$FIRE_EC"
+assert_contains "scenario AG: genuine tech question in the FINAL response is intercepted as TECH_QUESTION" \
+  "$FIRE_OUT" "setback #1 for task T036 (TECH_QUESTION)"
+assert_not_contains "scenario AG: never stops for owner attention on an ordinary technical question" \
+  "$FIRE_OUT" "stop=owner_escalation"
+assert_contains "scenario AG: SAME task retried and accepted" "$FIRE_OUT" "LOOP: task T036 accepted"
+
+# ---------------------------------------------------------------------------
+echo ""
+echo "== Scenario AH: a genuine final-response KEMFAI_OWNER_ESCALATION from GLM is still honored =="
+REPO_AH=$(new_scratch_repo scenario_ah)
+STATE_AH=$(mktemp -d)
+printf 'FAIL\n' > "$STATE_AH/claude_sequence.txt"
+printf 'OWNER_ESCALATION\n' > "$STATE_AH/opencode_sequence.txt"
+
+run_fire "$REPO_AH" "$STATE_AH" TASKS=1 ATTEMPTS=2 ARBITER_AFTER=99 MOCK_TASK_ID=T036
+
+assert_eq "scenario AH: exits 0" "0" "$FIRE_EC"
+assert_contains "scenario AH: real-category escalation in the FINAL response stops for owner attention" \
+  "$FIRE_OUT" "stop=owner_escalation"
+assert_not_contains "scenario AH: the escalation attempt is never silently accepted" \
+  "$FIRE_OUT" "KEMFAI_RESULT: ACCEPTED"
+assert_contains "scenario AH: docs/PROGRESS.md records the classified category" \
+  "$(cat "$REPO_AH/docs/PROGRESS.md")" "ACCOUNTING_TAX"
+
+# ---------------------------------------------------------------------------
+echo ""
+echo "== Scenario AI: GLM reporting a mismatched task id against the pin is rejected (pin-first preserved) =="
+REPO_AI=$(new_scratch_repo scenario_ai)
+STATE_AI=$(mktemp -d)
+mkdir -p "$REPO_AI/scripts/.state"
+printf 'T036\n' > "$REPO_AI/scripts/.state/current_task.txt"
+printf 'FAIL\nFAIL\n' > "$STATE_AI/claude_sequence.txt"
+printf 'OTHER_TASK\nACCEPT\n' > "$STATE_AI/opencode_sequence.txt"
+printf 'ACCEPT\n' > "$STATE_AI/review_sequence.txt"
+
+run_fire "$REPO_AI" "$STATE_AI" TASKS=1 ATTEMPTS=2 ARBITER_AFTER=99 MOCK_TASK_ID=T036
+
+assert_eq "scenario AI: exits 0" "0" "$FIRE_EC"
+assert_contains "scenario AI: mismatched GLM task id is still flagged PIN_VIOLATION" "$FIRE_OUT" "KEMFAI_RESULT: PIN_VIOLATION"
+assert_not_contains "scenario AI: never treated as an owner escalation" "$FIRE_OUT" "stop=owner_escalation"
+assert_contains "scenario AI: SAME pinned task eventually accepted on retry" "$FIRE_OUT" "LOOP: task T036 accepted"
+
+# ---------------------------------------------------------------------------
+echo ""
+echo "== Scenario AJ: GLM stream with no final response fails CLOSED (no classification, no review, no commit) =="
+REPO_AJ=$(new_scratch_repo scenario_aj)
+STATE_AJ=$(mktemp -d)
+printf 'FAIL\n' > "$STATE_AJ/claude_sequence.txt"
+printf 'NO_FINAL_TEXT\n' > "$STATE_AJ/opencode_sequence.txt"
+printf 'ACCEPT\n' > "$STATE_AJ/review_sequence.txt"
+
+run_fire "$REPO_AJ" "$STATE_AJ" TASKS=1 ATTEMPTS=1 ARBITER_AFTER=99 MOCK_TASK_ID=T036
+
+assert_eq "scenario AJ: fail-closed surfaces as a runner error (exit 4), never a silent success" "4" "$FIRE_EC"
+assert_contains "scenario AJ: the loop reports the runner failure" "$FIRE_OUT" "runner failed"
+assert_not_contains "scenario AJ: independent review never runs on an ungovernable stream" "$FIRE_OUT" "running independent Codex review"
+assert_not_contains "scenario AJ: no signal is ever classified from raw output" "$FIRE_OUT" "KEMFAI_RESULT: TECH_QUESTION"
+assert_not_contains "scenario AJ: no pin-violation classification either" "$FIRE_OUT" "KEMFAI_RESULT: PIN_VIOLATION"
+assert_not_contains "scenario AJ: nothing is ever accepted" "$FIRE_OUT" "KEMFAI_RESULT: ACCEPTED"
+assert_eq "scenario AJ: partial executor work is fully rolled back (clean tree, no commit)" \
+  "" "$(git -C "$REPO_AJ" status --porcelain)"
+assert_not_contains "scenario AJ: docs/PROGRESS.md records nothing" "$(cat "$REPO_AJ/docs/PROGRESS.md")" "OWNER ESCALATION"
+AF_LOG=$(ls -t "$REPO_AJ/scripts/logs"/*.log 2>/dev/null | head -1)
+assert_file_exists "scenario AJ: the raw stream log is retained for diagnostics" "$AF_LOG"
+assert_contains "scenario AJ: the raw (ungovernable) output was preserved in the log" \
+  "$(cat "$AF_LOG" 2>/dev/null)" "raw executor output"
+assert_contains "scenario AJ: the fail-closed decision itself is logged" \
+  "$(cat "$AF_LOG" 2>/dev/null)" "no governable final response"
+
+# ---------------------------------------------------------------------------
+echo ""
+echo "== Scenario AK: unpinned valid GLM final response (T049) is resolvable and accepted =="
+REPO_AK=$(new_scratch_repo scenario_ak)
+STATE_AK=$(mktemp -d)
+printf 'FAIL\n' > "$STATE_AK/claude_sequence.txt"
+printf 'ACCEPT\n' > "$STATE_AK/opencode_sequence.txt"
+printf 'ACCEPT\n' > "$STATE_AK/review_sequence.txt"
+
+run_fire "$REPO_AK" "$STATE_AK" TASKS=1 ATTEMPTS=1 ARBITER_AFTER=99 MOCK_TASK_ID=T049
+
+assert_eq "scenario AK: exits 0" "0" "$FIRE_EC"
+assert_contains "scenario AK: an unpinned valid T049 final response is resolved to T049 (not UNKNOWN) and accepted" \
+  "$FIRE_OUT" "LOOP: task T049 accepted"
+assert_not_contains "scenario AK: no false pin violation" "$FIRE_OUT" "KEMFAI_RESULT: PIN_VIOLATION"
+assert_not_contains "scenario AK: no false tech question" "$FIRE_OUT" "(TECH_QUESTION)"
+
+# ---------------------------------------------------------------------------
+echo ""
+echo "== Scenario AL: TRUNCATED GLM stream (no terminal step_finish(stop), trailing corrupt line) fails CLOSED =="
+# Independent-review rejection (2026-10-04): the extractor used to accept a
+# truncated stream as a governable final response, letting incomplete executor
+# output reach review/commit. A stream that does not end with exactly one
+# terminal step_finish(reason="stop") closing the text-bearing final message
+# is ungovernable: fail closed, roll back, keep the raw stream in the log.
+REPO_AL=$(new_scratch_repo scenario_al)
+STATE_AL=$(mktemp -d)
+printf 'FAIL\n' > "$STATE_AL/claude_sequence.txt"
+printf 'TRUNCATED_STREAM\n' > "$STATE_AL/opencode_sequence.txt"
+printf 'ACCEPT\n' > "$STATE_AL/review_sequence.txt"
+
+run_fire "$REPO_AL" "$STATE_AL" TASKS=1 ATTEMPTS=1 ARBITER_AFTER=99 MOCK_TASK_ID=T049
+
+assert_eq "scenario AL: fail-closed surfaces as a runner error (exit 4), never a silent success" "4" "$FIRE_EC"
+assert_contains "scenario AL: the loop reports the runner failure" "$FIRE_OUT" "runner failed"
+assert_not_contains "scenario AL: independent review never runs on a truncated stream" "$FIRE_OUT" "running independent Codex review"
+assert_not_contains "scenario AL: no signal is ever classified from a truncated stream" "$FIRE_OUT" "KEMFAI_RESULT: TECH_QUESTION"
+assert_not_contains "scenario AL: no pin-violation classification either" "$FIRE_OUT" "KEMFAI_RESULT: PIN_VIOLATION"
+assert_not_contains "scenario AL: truncated work is never accepted" "$FIRE_OUT" "KEMFAI_RESULT: ACCEPTED"
+assert_not_contains "scenario AL: no task is ever recorded accepted" "$FIRE_OUT" "LOOP: task T049 accepted"
+assert_eq "scenario AL: partial executor work is fully rolled back (clean tree, no commit)" \
+  "" "$(git -C "$REPO_AL" status --porcelain)"
+AL_LOG=$(ls -t "$REPO_AL/scripts/logs"/*.log 2>/dev/null | head -1)
+assert_file_exists "scenario AL: the raw truncated stream log is retained for diagnostics" "$AL_LOG"
+assert_contains "scenario AL: the raw (ungovernable) output was preserved in the log" \
+  "$(cat "$AL_LOG" 2>/dev/null)" "raw executor output"
+assert_contains "scenario AL: the fail-closed decision itself is logged" \
+  "$(cat "$AL_LOG" 2>/dev/null)" "no governable final response"
 
 print_summary

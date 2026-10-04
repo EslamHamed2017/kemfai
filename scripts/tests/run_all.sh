@@ -12,6 +12,11 @@ bash "$HERE/test_lib_governance.sh"
 [ $? -eq 0 ] || FAIL=1
 
 echo ""
+echo "########## test_extract_final_response.sh ##########"
+bash "$HERE/test_extract_final_response.sh"
+[ $? -eq 0 ] || FAIL=1
+
+echo ""
 echo "########## test_run_loop_integration.sh ##########"
 bash "$HERE/test_run_loop_integration.sh"
 [ $? -eq 0 ] || FAIL=1

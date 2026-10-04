@@ -10,6 +10,15 @@
 #   Anywhere else, at most one of (full line, >=8 chars of real content):
 #     KEMFAI_TECH_QUESTION: <ordinary technical ambiguity needing arbitration>
 #     KEMFAI_OWNER_ESCALATION: <material scope/accounting/legal/locked-baseline>
+#
+# FINAL-RESPONSE BOUNDARY (20261004-0830 incident fix): every function below
+# that takes executor OUTPUT (extract_task_id, extract_unique_task_marker,
+# classify_executor_signal, extract_legacy_decision_request) must be fed ONLY
+# the executor's final assistant response -- never a tool/command/log
+# transcript. Callers enforce this at the executor boundary
+# (scripts/run_next_step.sh + scripts/extract_final_response.py); a tool
+# result quoting stale Decision-Request text once produced a spurious
+# TECH_QUESTION and rolled back a real T049 change before review.
 set -uo pipefail
 
 # extract_task_id OUTPUT
@@ -31,9 +40,13 @@ extract_task_id() {
 # extract_unique_task_marker OUTPUT
 # Scans the ENTIRE output (any line, not just the mandated first line) for
 # full-line "KEMFAI_TASK_ID: T###" or "KEMFAI_TASK_ID: NONE" markers. Prints
-# the id and returns 0 only if EXACTLY ONE marker occurrence appears anywhere;
+# the id and returns 0 only if EXACTLY ONE marker OCCURRENCE appears anywhere;
 # prints nothing and returns 1 for zero markers or any repeated/multiple markers,
-# even when repeated occurrences carry the same value. This backs
+# even when repeated occurrences carry the same value. (Occurrence semantics,
+# not distinct-value semantics: the old sort -u implementation collapsed two
+# identical markers into "one" and normalized output that the contract below
+# explicitly declares ambiguous -- a pre-existing defect fixed alongside the
+# final-response boundary work, in the fail-closed direction.) This backs
 # the narrow real-output hardening: a normally-compliant model occasionally
 # emits its KEMFAI_TASK_ID marker after some preamble instead of as the
 # literal first line. That is still a contract violation and must not be
@@ -45,14 +58,12 @@ extract_task_id() {
 # "exactly one occurrence or nothing," leaving all ambiguity/mismatch
 # judgment to the caller.
 extract_unique_task_marker() {
-  local output="$1" ids count
-  ids=$(printf '%s\n' "$output" | grep -oE '^KEMFAI_TASK_ID: (T[0-9]{3}|NONE)$' | sed -E 's/^KEMFAI_TASK_ID: //' | sort -u)
-  count=$(printf '%s\n' "$ids" | grep -c '^.\+$' || true)
-  if [ -n "$ids" ] && [ "$count" -eq 1 ]; then
-    printf '%s\n' "$ids"
-    return 0
-  fi
-  return 1
+  local output="$1" matches count
+  matches=$(printf '%s\n' "$output" | grep -oE '^KEMFAI_TASK_ID: (T[0-9]{3}|NONE)$' || true)
+  [ -n "$matches" ] || return 1
+  count=$(printf '%s\n' "$matches" | grep -c '^.\+$' || true)
+  [ "$count" -eq 1 ] || return 1
+  printf '%s\n' "$matches" | sed -E 's/^KEMFAI_TASK_ID: //'
 }
 
 # extract_marker OUTPUT PREFIX

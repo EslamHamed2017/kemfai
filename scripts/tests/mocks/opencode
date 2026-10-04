@@ -1,16 +1,27 @@
 #!/usr/bin/env bash
-# Deterministic mock of the `opencode` CLI (GLM fallback) for KEMFAI
-# governance tests. Not expected to be invoked while the claude mock
-# succeeds, but present for safety and to keep fallback wiring testable.
-# The real invocation passes the (potentially large) prompt via `-f <file>`
-# (opencode's documented file-attachment flag) rather than embedding it in
-# argv; capture that file's content the same way the claude mock captures
-# stdin, so tests can assert on what was actually fed to the fallback path.
+# Deterministic mock of the `opencode` CLI (GLM executor) for KEMFAI
+# governance tests. Behavior is driven by MOCK_STATE_DIR files prepared by the
+# test, consumed one line per invocation via opencode_sequence.txt (mirrors
+# the claude mock).
+#
+# Honors the REAL opencode CLI output contract (verified live against
+# opencode 1.18.x `run --format json`, raw NDJSON events):
+#   - when invoked with `--format json` it emits NDJSON events
+#     (step_start / tool_use / text / step_finish) exactly like the real CLI;
+#   - without it, it emits a human-formatted transcript like the real CLI's
+#     default format -- including, for the DR_NOISE_ACCEPT mode, the exact
+#     production-incident shape from scripts/logs/20261004-0830.log where a
+#     tool result quoting stale recovery_job_state.md Decision-Request text
+#     preceded the final KEMFAI_TASK_ID line.
+# The (potentially large) prompt arrives via `-f <file>` (opencode's
+# documented file-attachment flag); the mock captures it so tests can assert
+# on what was actually fed to the executor.
 set -euo pipefail
 STATE="${MOCK_STATE_DIR:-}"
 REPO_DIR="${MOCK_REPO_DIR:?MOCK_REPO_DIR not set}"
 
 args=("$@")
+FORMAT_JSON=0
 for ((i=0; i<${#args[@]}; i++)); do
   if [ "${args[$i]}" = "-f" ] || [ "${args[$i]}" = "--file" ]; then
     ATTACHED_FILE="${args[$((i+1))]}"
@@ -19,8 +30,153 @@ for ((i=0; i<${#args[@]}; i++)); do
       cp "$ATTACHED_FILE" "$STATE/opencode_prompt_file.txt" 2>/dev/null || true
     fi
   fi
+  if [ "${args[$i]}" = "--format" ] && [ "${args[$((i+1))]:-}" = "json" ]; then
+    FORMAT_JSON=1
+  fi
 done
 
-echo "mock opencode change" >> "$REPO_DIR/mock_file.txt"
-echo "KEMFAI_TASK_ID: ${MOCK_TASK_ID:-T036}"
-echo "Implemented via GLM fallback."
+IDX=0
+if [ -n "$STATE" ]; then
+  IDX_FILE="$STATE/opencode_index.txt"
+  SEQ_FILE="$STATE/opencode_sequence.txt"
+  [ -f "$IDX_FILE" ] && IDX=$(cat "$IDX_FILE")
+  MODE=$(sed -n "$((IDX+1))p" "$SEQ_FILE" 2>/dev/null || true)
+  echo $((IDX+1)) > "$IDX_FILE"
+fi
+[ -n "${MODE:-}" ] || MODE="ACCEPT"
+
+TASK_ID="${MOCK_TASK_ID:-T036}"
+
+# Stale-state noise quoted verbatim from the production incident: an old
+# recovery_job_state.md read whose content contains Decision-Request text.
+RECOVERY_NOISE='T044 1 REJECTED
+3. Decision-marker parsing is only prefix-matched. Lines such as DECISION REQUEST: TECHNICALITY or markers without the required summary are honored despite not matching the exact protocol.
+Decision Request: should VAT be prorated mid-cycle?
+Required next action: re-implement Phase A from clean HEAD.'
+
+case "$MODE" in
+  ACCEPT)
+    echo "mock opencode change" >> "$REPO_DIR/mock_file.txt"
+    FINAL_TEXT="KEMFAI_TASK_ID: $TASK_ID
+Implemented via GLM fallback."
+    TOOL_OUTPUTS=("11/11 tests pass; lint clean")
+    ;;
+  DR_NOISE_ACCEPT)
+    # The exact 20261004-0830 incident shape: stale Decision-Request text in
+    # a TOOL result and in an INTERMEDIATE assistant message, with a clean
+    # final first-line task marker that must reach review untouched.
+    echo "mock opencode change" >> "$REPO_DIR/mock_file.txt"
+    FINAL_TEXT="KEMFAI_TASK_ID: $TASK_ID
+
+Executed the next genuinely unblocked task; contract test added and passing."
+    TOOL_OUTPUTS=("$RECOVERY_NOISE" " M specs/001-saas-onboarding-shell/tasks.md
+?? backend/api/test/contract/company-setup.contract-spec.ts")
+    INTERMEDIATE_TEXT="State files are stale (T044-era); nothing pins a retry task. Noting the prior Decision Request: which column stores the bilingual plan name was already settled -- continuing without a new one."
+    ;;
+  TECH_QUESTION)
+    echo "mock opencode change" >> "$REPO_DIR/mock_file.txt"
+    FINAL_TEXT="KEMFAI_TASK_ID: $TASK_ID
+Ambiguity found while implementing.
+KEMFAI_TECH_QUESTION: Which column holds the bilingual display name?"
+    TOOL_OUTPUTS=("read tasks.md")
+    ;;
+  OWNER_ESCALATION)
+    FINAL_TEXT="KEMFAI_TASK_ID: $TASK_ID
+This changes billing behavior for existing customers.
+KEMFAI_OWNER_ESCALATION: New plan tier changes billing behavior"
+    TOOL_OUTPUTS=("read tasks.md")
+    ;;
+  OTHER_TASK)
+    echo "mock opencode change" >> "$REPO_DIR/mock_file.txt"
+    FINAL_TEXT="KEMFAI_TASK_ID: T099
+Implemented a different task than the one pinned."
+    TOOL_OUTPUTS=("read tasks.md")
+    ;;
+  NO_FINAL_TEXT)
+    # Session ends after tool calls with no final assistant text -- the
+    # boundary must fail closed (no classification, no review, no commit).
+    echo "mock opencode change" >> "$REPO_DIR/mock_file.txt"
+    FINAL_TEXT=""
+    TOOL_OUTPUTS=("partial work; session cut before a final answer")
+    ;;
+  MALFORMED_STREAM)
+    # Exit 0 but the stream is garbage -- fail closed.
+    echo "mock opencode change" >> "$REPO_DIR/mock_file.txt"
+    FINAL_TEXT=""
+    TOOL_OUTPUTS=()
+    ;;
+  TRUNCATED_STREAM)
+    # Independent-review regression (2026-10-04): exit 0, repo touched, and a
+    # final-LOOKING text event is emitted, but the stream is cut before the
+    # terminal step_finish(stop) and ends with a corrupt trailing line -- the
+    # exact shape the reviewer reproduced being accepted as a governable
+    # T049. The boundary must fail closed: no classification, no review, no
+    # commit, full rollback, raw stream retained in the log.
+    echo "mock opencode change" >> "$REPO_DIR/mock_file.txt"
+    FINAL_TEXT="KEMFAI_TASK_ID: $TASK_ID
+Final-looking text from a stream truncated before its terminal event."
+    TOOL_OUTPUTS=("read tasks.md")
+    ;;
+  *)
+    echo "KEMFAI_TASK_ID: NONE"
+    echo "Unrecognized mock mode: $MODE"
+    exit 0
+    ;;
+esac
+
+json_escape() {
+  # Full JSON string literal (including surrounding quotes) via stdlib.
+  python3 -c 'import json,sys; sys.stdout.write(json.dumps(sys.argv[1]))' "$1"
+}
+
+emit() { printf '%s\n' "$1"; }
+
+if [ "$FORMAT_JSON" = "1" ]; then
+  # Real opencode `--format json` NDJSON event stream (live-verified shape).
+  emit '{"type":"step_start","timestamp":1,"sessionID":"ses_mock","part":{"id":"prt_s1","messageID":"msg_1","sessionID":"ses_mock","type":"step-start"}}'
+  if [ "${#TOOL_OUTPUTS[@]}" -gt 0 ]; then
+    emit "{\"type\":\"tool_use\",\"timestamp\":2,\"sessionID\":\"ses_mock\",\"part\":{\"type\":\"tool\",\"tool\":\"bash\",\"callID\":\"call_1\",\"state\":{\"status\":\"completed\",\"input\":{\"command\":\"cat scripts/.state/recovery_job_state.md\"},\"output\":$(json_escape "${TOOL_OUTPUTS[0]}"),\"metadata\":{\"exit\":0},\"title\":\"read state\"},\"id\":\"prt_t1\",\"sessionID\":\"ses_mock\",\"messageID\":\"msg_1\"}}"
+    emit '{"type":"step_finish","timestamp":3,"sessionID":"ses_mock","part":{"id":"prt_f1","reason":"tool-calls","messageID":"msg_1","sessionID":"ses_mock","type":"step-finish","tokens":{"total":10}}}'
+  fi
+  if [ -n "${INTERMEDIATE_TEXT:-}" ]; then
+    emit '{"type":"step_start","timestamp":4,"sessionID":"ses_mock","part":{"id":"prt_s2","messageID":"msg_2","sessionID":"ses_mock","type":"step-start"}}'
+    emit "{\"type\":\"text\",\"timestamp\":5,\"sessionID\":\"ses_mock\",\"part\":{\"id\":\"prt_x1\",\"messageID\":\"msg_2\",\"sessionID\":\"ses_mock\",\"type\":\"text\",\"text\":$(json_escape "$INTERMEDIATE_TEXT")}}"
+    if [ "${#TOOL_OUTPUTS[@]}" -gt 1 ]; then
+      emit "{\"type\":\"tool_use\",\"timestamp\":6,\"sessionID\":\"ses_mock\",\"part\":{\"type\":\"tool\",\"tool\":\"bash\",\"callID\":\"call_2\",\"state\":{\"status\":\"completed\",\"input\":{\"command\":\"git status --porcelain\"},\"output\":$(json_escape "${TOOL_OUTPUTS[1]}"),\"metadata\":{\"exit\":0},\"title\":\"git status\"},\"id\":\"prt_t2\",\"sessionID\":\"ses_mock\",\"messageID\":\"msg_2\"}}"
+    fi
+    emit '{"type":"step_finish","timestamp":7,"sessionID":"ses_mock","part":{"id":"prt_f2","reason":"tool-calls","messageID":"msg_2","sessionID":"ses_mock","type":"step-finish","tokens":{"total":10}}}'
+  fi
+  if [ -n "$FINAL_TEXT" ]; then
+    emit '{"type":"step_start","timestamp":8,"sessionID":"ses_mock","part":{"id":"prt_s3","messageID":"msg_3","sessionID":"ses_mock","type":"step-start"}}'
+    emit "{\"type\":\"text\",\"timestamp\":9,\"sessionID\":\"ses_mock\",\"part\":{\"id\":\"prt_x3\",\"messageID\":\"msg_3\",\"sessionID\":\"ses_mock\",\"type\":\"text\",\"text\":$(json_escape "$FINAL_TEXT")}}"
+    if [ "$MODE" = "TRUNCATED_STREAM" ]; then
+      # No terminal step_finish(stop): the stream ends mid-message with a
+      # corrupt line, exactly like a capture cut mid-write.
+      emit 'truncated mid-stream: not a valid json event'
+    else
+      emit '{"type":"step_finish","timestamp":10,"sessionID":"ses_mock","part":{"id":"prt_f3","reason":"stop","messageID":"msg_3","sessionID":"ses_mock","type":"step-finish","tokens":{"total":10}}}'
+    fi
+  fi
+else
+  # Default formatted transcript, mirroring the real CLI's human output.
+  if [ "$MODE" = "MALFORMED_STREAM" ]; then
+    printf 'total garbage, not a real transcript\nunparseable binary-ish noise\n'
+    exit 0
+  fi
+  printf '\033[0m\n> build · glm-5.2\n\033[0m\n'
+  printf '\033[0m→ \033[0mRead /tmp/tmp.mock/executor_prompt.txt\n'
+  if [ "${#TOOL_OUTPUTS[@]}" -gt 0 ]; then
+    printf '\033[0m$ \033[0mcat scripts/.state/recovery_job_state.md\n'
+    printf '%s\n' "${TOOL_OUTPUTS[0]}"
+  fi
+  if [ -n "${INTERMEDIATE_TEXT:-}" ]; then
+    printf '\033[0m\n%s\n\033[0m\n' "$INTERMEDIATE_TEXT"
+    if [ "${#TOOL_OUTPUTS[@]}" -gt 1 ]; then
+      printf '\033[0m$ \033[0mgit status --porcelain\n'
+      printf '%s\n' "${TOOL_OUTPUTS[1]}"
+    fi
+  fi
+  if [ -n "$FINAL_TEXT" ]; then
+    printf '\033[0m\n%s\n' "$FINAL_TEXT"
+  fi
+fi

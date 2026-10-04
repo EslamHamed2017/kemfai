@@ -31,6 +31,12 @@ case "$MODE" in
     echo "KEMFAI_TASK_ID: $TASK_ID"
     echo "Implemented the task."
     ;;
+  FAIL)
+    # Simulated provider/executor failure: nonzero exit, no task output, no
+    # change -- forces the loop to fall through to the GLM (opencode) path.
+    echo "mock claude unavailable (simulated provider failure)"
+    exit 1
+    ;;
   TECH_QUESTION)
     echo "mock change $IDX" >> "$REPO_DIR/mock_file.txt"
     echo "KEMFAI_TASK_ID: $TASK_ID"

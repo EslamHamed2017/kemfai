@@ -4859,3 +4859,15 @@ Implemented task: T054. Targeted integration tests pass 11/11; unit tests pass 2
 
 REVIEW VERDICT: REJECT
 ```
+
+
+## T114 infrastructure recovery — independently accepted
+
+Independent Codex review: /home/hermesops/kemfai-runner-repair-review-final.log
+Final verdict: REVIEW VERDICT: ACCEPT. Reviewer executed 360 governance checks
+(76/89/195), shell syntax, extractor compilation, diff whitespace validation,
+and adversarial truncated/malformed-tail, identity, event-type, interleaving
+and terminal-finish probes. All four previous fail-open blockers resolved.
+Only standalone infrastructure T114 completed; original onboarding tasks unchanged.
+No product/accounting/legal/locked-baseline changes or deploy/push.
+Product T049 smoke is a separate pending gate.
