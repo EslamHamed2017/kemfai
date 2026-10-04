@@ -5069,3 +5069,16 @@ Implemented task: T054. The pure-Python tests (30/30), service tests (14/14), HT
 1. Real Odoo country-change validation is broken: `_kemfai_resolve_step_values()` stores the new country as an integer Many2one ID, then passes that ID to `validate_vat_tax_registration()`, while `_kemfai_vat_rules_by_code()` keys rules by country code. Changing country after saving VAT therefore incorrectly returns `CONFIG_GAP` even when the new country has a configured rule. The mini-Odoo double stores country codes directly, so its passing test masks this production defect. T054’s country-specific validation acceptance criterion is unmet, and marking T054 `[X]` is premature.
 REVIEW VERDICT: REJECT
 ```
+
+## Rejected implement tick - 2026-10-04 22:06 +04
+
+Codex rejected the last implement attempt and working tree was reverted. Reviewer verdict:
+
+```
+Implemented task: T054. Its automated gates pass, including the live Odoo 18 constraint smoke. However, T054 was marked complete prematurely.
+
+1. `GET`/`PUT /companies/current/setup` has no `@Roles('WorkspaceOwner')`. Because `RoleGuard` explicitly permits handlers without role metadata, any authenticated tenant-linked identity can read or mutate company setup, violating the Workspace Owner permission boundary.
+2. Required-field validation is incomplete. Requests such as `{step:"identity",values:{}}`, identity with only `tradeName`, or `{step:"fiscal_year",values:{}}` return 200 instead of the field-level localized 422 required by Acceptance Scenario 3.6. Existing tests omit these cases.
+
+REVIEW VERDICT: REJECT
+```
