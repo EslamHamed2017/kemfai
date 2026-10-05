@@ -632,7 +632,7 @@ confirm every field persists, RTL fully mirrors, and no native Odoo UI/URL/termi
     defined blocks with a configuration-gap signal rather than accepting the value (Edge Cases).
   - **Roles**: Primary: GLM · Backup: Claude · Reviewer: Codex
 
-- [ ] T054 [US3] Implement `GET`/`PUT /companies/current/setup` (step save, resume at first incomplete step,
+- [x] T054 [US3] Implement `GET`/`PUT /companies/current/setup` (step save, resume at first incomplete step,
   country-specific validation, configuration-gap 409) via Odoo JSON-RPC, guarded by `TrialWindowGuard` (T101) so
   a past-window unpaid tenant is denied identically to the other two FR-030a onboarding surfaces, in
   `backend/api/src/modules/company-setup/company-setup.controller.ts` and `.service.ts`
