@@ -2,16 +2,17 @@ import { ContractCoverage, OpenApiContractValidator } from '../support/openapi-c
 
 /**
  * T049 — contract test for the US3 company-setup wizard endpoints against the committed
- * `specs/001-saas-onboarding-shell/contracts/openapi.yaml`. Per the arbiter resolution
- * (2026-10-04) this suite is strictly contract-level: it drives OpenApiContractValidator
- * and ContractCoverage directly against the committed document, never booting an HTTP
- * server or performing Odoo RPC. The real step-save/resume/validation business logic is
- * T054/T055's responsibility and is deliberately NOT implemented here. (T042 separately
- * registers a flag-gated `GET /companies/current/setup` stub, purely to exercise the
- * guard chain and cross-tenant-denial audit for that surface end to end — this file is
- * unaffected by and unrelated to that stub.) Status conformance is the complete contract
+ * `specs/001-saas-onboarding-shell/contracts/openapi.yaml`. Strictly contract-level: it
+ * drives OpenApiContractValidator and ContractCoverage directly against the committed
+ * document, never booting an HTTP server or performing Odoo RPC — that live, real-Odoo
+ * proof lives in `backend/addons/kemfai_company_setup/tests/test_company_setup.py`
+ * (driven by `scripts/test_t054_live.sh`) and the real-HTTP harness under
+ * `test/integration/company-setup-live.integration-spec.ts`. T054 (2026-10-05) added the
+ * `baseVersion`/`version`/`stale` concurrency fields (arbiter resolution point 1) to
+ * `CompanySetupStepInput`/`CompanySetupState`; `POST /companies/current/setup/complete`
+ * remains T055's out-of-scope responsibility. Status conformance is the complete contract
  * assertion for every response whose body schema the contract does not yet declare
- * (PUT 200/422/409 and POST complete 200/422); where a schema IS declared (GET 200 →
+ * (PUT 422/409 and POST complete 200/422); where a schema IS declared (GET/PUT 200 →
  * CompanySetupState) the example body is validated against it.
  */
 describe('Company setup contract (T049, against contracts/openapi.yaml)', () => {
@@ -24,6 +25,8 @@ describe('Company setup contract (T049, against contracts/openapi.yaml)', () => 
         currentStep: 'country',
         setupComplete: false,
         values: {},
+        version: 0,
+        stale: false,
       });
     });
   });
@@ -34,6 +37,16 @@ describe('Company setup contract (T049, against contracts/openapi.yaml)', () => 
         validator.validateRequestBody('/companies/current/setup', 'put', {
           step: 'country',
           values: { country: 'AE' },
+        }),
+      ).not.toThrow();
+    });
+
+    it('accepts a save that carries baseVersion (T054 concurrency)', () => {
+      expect(() =>
+        validator.validateRequestBody('/companies/current/setup', 'put', {
+          step: 'country',
+          values: { country: 'AE' },
+          baseVersion: 3,
         }),
       ).not.toThrow();
     });
@@ -54,8 +67,24 @@ describe('Company setup contract (T049, against contracts/openapi.yaml)', () => 
   });
 
   describe('PUT /companies/current/setup responses', () => {
-    it('200: step saved, values preserved (Acceptance Scenario 3.3)', () => {
-      coverage.record('/companies/current/setup', 'put', 200, undefined);
+    it('200: step saved, values preserved, non-stale (Acceptance Scenario 3.3)', () => {
+      coverage.record('/companies/current/setup', 'put', 200, {
+        currentStep: 'identity',
+        setupComplete: false,
+        values: { country: 'AE' },
+        version: 1,
+        stale: false,
+      });
+    });
+
+    it('200: stale=true when another wizard session saved first (last-write-wins, Edge Case)', () => {
+      coverage.record('/companies/current/setup', 'put', 200, {
+        currentStep: 'identity',
+        setupComplete: false,
+        values: { country: 'AE' },
+        version: 2,
+        stale: true,
+      });
     });
 
     it('422: field-level validation failure (FR-026)', () => {

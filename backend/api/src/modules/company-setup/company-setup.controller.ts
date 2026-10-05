@@ -1,30 +1,44 @@
-import { Controller, Get } from '@nestjs/common';
+import { Body, Controller, Get, Put, Req } from '@nestjs/common';
 import { RequireFeatureFlag } from '../../common/decorators/feature-flag.decorator';
 import { EnforceTrialWindow } from '../../common/decorators/trial-window.decorator';
-
-interface CompanySetupState {
-  currentStep: string;
-  setupComplete: boolean;
-  values: Record<string, unknown>;
-}
+import { Roles } from '../../common/decorators/roles.decorator';
+import { TenantScopedRequest } from '../../common/tenant-context/tenant-context.model';
+import { CompanySetupService } from './company-setup.service';
+import {
+  CompanySetupStateDto,
+  CompanySetupStepRequestDto,
+} from './dto/company-setup-step.request.dto';
 
 /**
- * T042 (arbiter resolution, 2026-10-04): registers the real `GET /companies/current/setup`
- * route so the guard chain (TenantScopeGuard -> RoleGuard -> FeatureFlagGuard ->
- * TrialWindowGuard, app.module.ts) is exercised end to end, including a genuine
- * cross-tenant-denial audit assertion against this surface. `module.company_setup` ships
- * `enabled=false` (see the companion migration), so this stub stays hidden in every
- * environment until T054 lands the real step-save/resume/validation behavior and an owner
- * explicitly flips the flag. NO TASK ID -> NO IMPLEMENTATION: PUT /companies/current/setup
- * and POST /companies/current/setup/complete remain T054/T055's responsibility and are
- * intentionally absent here.
+ * T054: the real `GET`/`PUT /companies/current/setup` surface (contracts/openapi.yaml).
+ * Guarded identically for the documented UI-shaped call and a raw HTTP replay — only
+ * `WorkspaceOwner` may call this (`RoleGuard`, global `APP_GUARD`), only while
+ * `module.company_setup` is enabled (`FeatureFlagGuard`) and the tenant's trial window has
+ * not elapsed with auto-restriction resolved true (`TrialWindowGuard`) — both the latter
+ * guards are also global `APP_GUARD`s that act purely on these decorators. All step-save/
+ * resume/validation business logic lives in `CompanySetupService` and the
+ * `kemfai_company_setup` Odoo addon; this controller is pure routing + guard wiring.
  */
 @Controller('companies/current')
 export class CompanySetupController {
+  constructor(private readonly companySetup: CompanySetupService) {}
+
   @Get('setup')
+  @Roles('WorkspaceOwner')
   @RequireFeatureFlag('module.company_setup')
   @EnforceTrialWindow()
-  getSetup(): CompanySetupState {
-    return { currentStep: 'country', setupComplete: false, values: {} };
+  async getSetup(@Req() req: TenantScopedRequest): Promise<CompanySetupStateDto> {
+    return this.companySetup.getState(req);
+  }
+
+  @Put('setup')
+  @Roles('WorkspaceOwner')
+  @RequireFeatureFlag('module.company_setup')
+  @EnforceTrialWindow()
+  async putSetup(
+    @Req() req: TenantScopedRequest,
+    @Body() body: CompanySetupStepRequestDto,
+  ): Promise<CompanySetupStateDto> {
+    return this.companySetup.saveStep(req, body);
   }
 }

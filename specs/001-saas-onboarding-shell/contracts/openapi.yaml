@@ -166,7 +166,13 @@ paths:
           application/json:
             schema: { $ref: "#/components/schemas/CompanySetupStepInput" }
       responses:
-        "200": { description: Step saved, values preserved (Acceptance Scenario 3.3) }
+        "200":
+          description: >
+            Step saved, values preserved (Acceptance Scenario 3.3); `stale=true` if
+            another wizard session's save landed first (last-write-wins, Edge Case).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CompanySetupState" }
         "422": { description: Field-level validation failure, incl. country-specific VAT format (FR-026) }
         "409": { description: Country validation rule missing for this country — configuration gap, not silently accepted (Edge Cases) }
 
@@ -499,10 +505,24 @@ components:
 
     CompanySetupState:
       type: object
+      required: [currentStep, setupComplete, values, version, stale]
       properties:
         currentStep: { type: string }
         setupComplete: { type: boolean }
         values: { type: object, additionalProperties: true }
+        version:
+          type: integer
+          description: >
+            Current `res.company.setup_wizard_version` (T054 arbiter resolution point 1).
+            Pass this back as `baseVersion` on the next `PUT` to detect a concurrent save
+            from another wizard session.
+        stale:
+          type: boolean
+          description: >
+            `true` only on a `PUT` response whose `baseVersion` no longer matched the
+            locked `setup_wizard_version` at save time (last-write-wins: the save still
+            succeeded field-by-field). Always `false` on `GET` — there is no `baseVersion`
+            to compare on a read.
 
     CompanySetupStepInput:
       type: object
@@ -510,6 +530,13 @@ components:
       properties:
         step: { type: string }
         values: { type: object, additionalProperties: true }
+        baseVersion:
+          type: integer
+          nullable: true
+          description: >
+            The `version` this wizard session last read (T054 arbiter resolution point 1).
+            Omitted/null on a first save; the response's `stale` flag reports whether
+            another session's save landed first.
 
     CompanySettingsView:
       type: object

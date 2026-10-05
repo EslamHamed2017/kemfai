@@ -65,35 +65,57 @@ describe('EntitlementsService (T010)', () => {
   }
 
   it('resolves features, trialWindowDays, and autoRestrictUnpaid from an explicit PlanSetting override (no fallback)', async () => {
-    const plan = await createPlan('override-plan');
-    const feature = await createFeature('module.override-test');
-    await controlDataSource.getRepository(PlanFeatureEntitlement).save({
-      planId: plan.id,
-      featureKey: feature.key,
-      enabled: true,
-      limitValue: '250',
-    });
-    await controlDataSource
-      .getRepository(PlanSetting)
-      .save({ planId: plan.id, trialWindowDays: 30, autoRestrictUnpaid: false });
-
-    const result = await service.getEntitlementSet(plan.id);
-
-    expect(result.planId).toBe(plan.id);
-    expect(result.features).toEqual([{ key: feature.key, enabled: true, limitValue: 250 }]);
-    expect(result.trialWindowDays).toBe(30);
-    expect(result.autoRestrictUnpaid).toBe(false);
-    // Feature flags are platform-wide (T099), and the platform permanently ships a growing
-    // set of module gate rows via migration (`module.accounts` since T032, `module.company_setup`
-    // since T042). This test creates no flags, so the only rows that may legitimately appear
-    // are those shipped platform gates (in their shipped, disabled state) — never a
-    // test-created flag.
+    // This assertion requires both shipped module gates to be in their disabled shipped
+    // state. Another suite sharing this process/database (e.g. the T054 live HTTP harness)
+    // may leave `module.company_setup` enabled if it runs first, so this test must establish
+    // that state itself — rather than assume migration-seeded defaults survived — and restore
+    // whatever it found afterward, so it passes regardless of suite execution order.
     const shippedDisabledKeys = ['module.accounts', 'module.company_setup'];
-    expect(result.featureFlags).toEqual(
-      result.featureFlags.filter(
-        (flag) => shippedDisabledKeys.includes(flag.key) && flag.enabled === false,
-      ),
+    const priorFlagRows = await controlDataSource.query(
+      `SELECT feature_key, enabled FROM "feature_flag" WHERE feature_key = ANY($1)`,
+      [shippedDisabledKeys],
     );
+    await controlDataSource.query(
+      `UPDATE "feature_flag" SET enabled = false WHERE feature_key = ANY($1)`,
+      [shippedDisabledKeys],
+    );
+    try {
+      const plan = await createPlan('override-plan');
+      const feature = await createFeature('module.override-test');
+      await controlDataSource.getRepository(PlanFeatureEntitlement).save({
+        planId: plan.id,
+        featureKey: feature.key,
+        enabled: true,
+        limitValue: '250',
+      });
+      await controlDataSource
+        .getRepository(PlanSetting)
+        .save({ planId: plan.id, trialWindowDays: 30, autoRestrictUnpaid: false });
+
+      const result = await service.getEntitlementSet(plan.id);
+
+      expect(result.planId).toBe(plan.id);
+      expect(result.features).toEqual([{ key: feature.key, enabled: true, limitValue: 250 }]);
+      expect(result.trialWindowDays).toBe(30);
+      expect(result.autoRestrictUnpaid).toBe(false);
+      // Feature flags are platform-wide (T099), and the platform permanently ships a growing
+      // set of module gate rows via migration (`module.accounts` since T032, `module.company_setup`
+      // since T042). This test creates no flags, so the only rows that may legitimately appear
+      // are those shipped platform gates (in their shipped, disabled state) — never a
+      // test-created flag.
+      expect(result.featureFlags).toEqual(
+        result.featureFlags.filter(
+          (flag) => shippedDisabledKeys.includes(flag.key) && flag.enabled === false,
+        ),
+      );
+    } finally {
+      for (const row of priorFlagRows as Array<{ feature_key: string; enabled: boolean }>) {
+        await controlDataSource.query(
+          `UPDATE "feature_flag" SET enabled = $1 WHERE feature_key = $2`,
+          [row.enabled, row.feature_key],
+        );
+      }
+    }
   });
 
   it('falls back to EntitlementDefault.default_trial_window_days when PlanSetting.trial_window_days is null, independently of autoRestrictUnpaid', async () => {

@@ -6,6 +6,39 @@ import controlDataSource from '../../src/database/data-source';
 import { Account } from '../../src/modules/accounts/entities/account.entity';
 import { Plan } from '../../src/modules/entitlements/entities/plan.entity';
 import { FakeKeycloak, startFakeKeycloak } from '../support/fake-keycloak';
+import { OdooRpcService } from '../../src/integrations/odoo-rpc/odoo-rpc.service';
+
+/**
+ * T054 added a real `kemfai_setup_get_state`/`kemfai_setup_save_step` Odoo RPC call to the
+ * `GET /companies/current/setup` handler this suite's guard-wiring assertions exercise.
+ * This suite's job is the guard chain (TenantScopeGuard/RoleGuard/FeatureFlagGuard/
+ * TrialWindowGuard), not a live Odoo transport — matching every other module's test
+ * strategy in this repo (`odoo-rpc.service.spec.ts`, `tenant-provision.startup.spec.ts`),
+ * a deterministic fake is substituted for `OdooRpcService` so "reaches the handler" can be
+ * asserted without requiring a live Odoo instance in the contract-test tier. The live,
+ * real-Odoo proof of the handler's own behavior is
+ * `backend/addons/kemfai_company_setup/tests/test_company_setup.py` (scripts/test_t054_live.sh)
+ * plus `test/integration/company-setup-live.integration-spec.ts`.
+ */
+class FakeOdooRpcService {
+  async authenticate(): Promise<number> {
+    return 1;
+  }
+
+  async executeKw(
+    _database: string,
+    _uid: number,
+    _password: string,
+    model: string,
+    method: string,
+  ): Promise<unknown> {
+    if (model === 'res.company' && method === 'search') return [42];
+    if (model === 'res.company' && method === 'kemfai_setup_get_state') {
+      return { currentStep: 'country', setupComplete: false, values: {}, version: 0, stale: false };
+    }
+    throw new Error(`FakeOdooRpcService: unexpected call ${model}.${method}`);
+  }
+}
 
 /**
  * T042 (arbiter resolution, 2026-10-04). Exercises the real guard chain end to end against the
@@ -48,7 +81,10 @@ describe('Cross-tenant denial + company-setup guard wiring (T042)', () => {
     }
     await controlDataSource.runMigrations();
 
-    const moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile();
+    const moduleRef = await Test.createTestingModule({ imports: [AppModule] })
+      .overrideProvider(OdooRpcService)
+      .useValue(new FakeOdooRpcService())
+      .compile();
     app = moduleRef.createNestApplication();
     await app.init();
   });
@@ -59,8 +95,8 @@ describe('Cross-tenant denial + company-setup guard wiring (T042)', () => {
       accountRepo.create({ keycloakUserId, email, emailVerified: true, selectedPlanId: planId }),
     );
     const result = await controlDataSource.query(
-      "INSERT INTO tenant (account_id, status) VALUES ($1, 'Ready'::tenant_status_enum) RETURNING id",
-      [account.id],
+      "INSERT INTO tenant (account_id, status, odoo_db_name) VALUES ($1, 'Ready'::tenant_status_enum, $2) RETURNING id",
+      [account.id, `t042_fake_${keycloakUserId}`],
     );
     const tenantId = result[0].id as string;
     if (readyAt) {
