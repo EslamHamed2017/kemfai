@@ -184,6 +184,154 @@ class TestCompanySetupWizard(TransactionCase):
             with self.env.cr.savepoint():
                 self.company.kemfai_setup_save_step('country', {'country': 'US'}, None)
 
+    # -- T055: POST /companies/current/setup/complete (FR-028, Acceptance Scenario 3.7) --
+
+    def _complete_all_seven_steps(self):
+        self.company.kemfai_setup_save_step('country', {'country': 'AE'}, None)
+        self.company.kemfai_setup_save_step(
+            'identity', {'legal_name': 'Acme FZ', 'trade_name': 'Acme'}, None
+        )
+        self.company.kemfai_setup_save_step('currency', {'base_currency': 'AED'}, None)
+        self.company.kemfai_setup_save_step(
+            'fiscal_year', {'fiscal_year_start_month': '1', 'fiscal_year_start_day': 1}, None
+        )
+        self.company.kemfai_setup_save_step(
+            'vat_tax', {'vat_tax_registration': '1' * 15}, None
+        )
+        self.company.kemfai_setup_save_step(
+            'industry', {'industry': self._any_industry_id()}, None
+        )
+        self.company.kemfai_setup_save_step(
+            'accounting_setup', {'accounting_setup_template': 'standard'}, None
+        )
+
+    def test_complete_with_missing_required_steps_is_rejected_and_stays_incomplete(self):
+        self.company.kemfai_setup_save_step('country', {'country': 'AE'}, None)
+        with self.assertRaisesRegex(ValidationError, 'KEMFAI_SETUP_INCOMPLETE'):
+            self.company.kemfai_setup_complete()
+        self.company.invalidate_recordset()
+        self.assertFalse(self.company.setup_complete)
+        self.assertFalse(self.company.setup_completed_at)
+
+    def test_complete_after_all_seven_steps_marks_setup_complete_and_bumps_version(self):
+        self._complete_all_seven_steps()
+        v_before = self.company.setup_wizard_version
+        result = self.company.kemfai_setup_complete()
+        self.assertFalse(result['alreadyComplete'])
+        self.assertTrue(result['setupComplete'])
+        self.assertEqual(result['version'], v_before + 1)
+        self.company.invalidate_recordset()
+        self.assertTrue(self.company.setup_complete)
+        self.assertTrue(self.company.setup_completed_at)
+
+        # Resume/get-state also reflects completion.
+        state = self.company.kemfai_setup_get_state()
+        self.assertTrue(state['setupComplete'])
+
+    def test_repeated_complete_call_is_idempotent_and_does_not_bump_version_again(self):
+        self._complete_all_seven_steps()
+        first = self.company.kemfai_setup_complete()
+        self.assertFalse(first['alreadyComplete'])
+
+        second = self.company.kemfai_setup_complete()
+        self.assertTrue(second['alreadyComplete'])
+        self.assertTrue(second['setupComplete'])
+        # No further version bump on the already-complete no-op path.
+        self.assertEqual(second['version'], first['version'])
+
+    # -- T055: GET/PUT /companies/current/settings (FR-028) -----------------------------
+
+    def test_settings_get_before_completion_is_blocked(self):
+        self.company.kemfai_setup_save_step('country', {'country': 'AE'}, None)
+        with self.assertRaisesRegex(ValidationError, 'KEMFAI_SETUP_INCOMPLETE'):
+            self.company.kemfai_settings_get()
+
+    def test_settings_update_before_completion_is_blocked_and_does_not_write(self):
+        self.company.kemfai_setup_save_step('country', {'country': 'AE'}, None)
+        with self.assertRaisesRegex(ValidationError, 'KEMFAI_SETUP_INCOMPLETE'):
+            with self.env.cr.savepoint():
+                self.company.kemfai_settings_update({'legal_name': 'Should Not Persist'})
+        self.company.invalidate_recordset()
+        self.assertNotEqual(self.company.legal_name, 'Should Not Persist')
+
+    def test_settings_get_and_update_after_completion_edit_persisted_values_without_rerunning_wizard(self):
+        self._complete_all_seven_steps()
+        self.company.kemfai_setup_complete()
+
+        view = self.company.kemfai_settings_get()
+        self.assertTrue(view['setupComplete'])
+        self.assertEqual(view['values']['legal_name'], 'Acme FZ')
+
+        # Edits a setup-wizard-captured field through the DISTINCT settings surface —
+        # never kemfai_setup_save_step/kemfai_setup_complete again (FR-028: "not by
+        # re-running the wizard as the only path").
+        result = self.company.kemfai_settings_update({'legal_name': 'Acme Holdings FZ'})
+        self.assertEqual(result['changedFields'], ['legal_name'])
+        self.assertEqual(result['values']['legal_name'], 'Acme Holdings FZ')
+        self.assertTrue(result['setupComplete'])
+
+        self.company.invalidate_recordset()
+        self.assertEqual(self.company.legal_name, 'Acme Holdings FZ')
+        # setup_complete / setup_wizard_version are untouched by a settings edit — this
+        # surface never re-enters T054's wizard step/version bookkeeping.
+        self.assertTrue(self.company.setup_complete)
+
+    def test_settings_update_reuses_country_vat_revalidation(self):
+        self._complete_all_seven_steps()
+        self.company.kemfai_setup_complete()
+        # SA has its own configured rule (also \d{15}); the existing 15-digit VAT value
+        # must re-validate under the settings surface exactly as it does mid-wizard.
+        result = self.company.kemfai_settings_update({'country': 'SA'})
+        self.assertEqual(result['values']['country'], 'SA')
+        self.assertEqual(result['values']['vat_tax_registration'], '1' * 15)
+
+    def test_settings_update_with_no_recognized_field_is_rejected(self):
+        self._complete_all_seven_steps()
+        self.company.kemfai_setup_complete()
+        with self.assertRaisesRegex(ValidationError, 'KEMFAI_REQUIRED_FIELD'):
+            self.company.kemfai_settings_update({'not_a_field': 'x'})
+
+    # -- T055 arbiter binding resolution point 2: durable idempotent receipt -----------
+
+    def test_complete_with_same_operation_uuid_replays_receipt_without_reapplying(self):
+        self._complete_all_seven_steps()
+        op_uuid = 'op-complete-1'
+        first = self.company.kemfai_setup_complete(op_uuid, '2026-10-05T00:00:00.000Z', 'actor-1')
+        v_after_first = self.company.setup_wizard_version
+
+        # A second call with the SAME operation UUID (simulating a retry that reaches
+        # Odoo again after a lost response) must return the identical stored result and
+        # must NOT re-run the mutation (no further version bump).
+        second = self.company.kemfai_setup_complete(op_uuid, '2026-10-05T00:00:00.000Z', 'actor-1')
+        self.assertEqual(first, second)
+        self.company.invalidate_recordset()
+        self.assertEqual(self.company.setup_wizard_version, v_after_first)
+
+        receipts = self.env['kemfai.company.mutation.receipt'].search(
+            [('operation_uuid', '=', op_uuid)]
+        )
+        self.assertEqual(len(receipts), 1)
+
+    def test_settings_update_with_same_operation_uuid_replays_original_changed_fields(self):
+        self._complete_all_seven_steps()
+        self.company.kemfai_setup_complete()
+        op_uuid = 'op-settings-1'
+        first = self.company.kemfai_settings_update(
+            {'legal_name': 'Acme Holdings FZ'}, op_uuid, '2026-10-05T00:00:00.000Z', 'actor-1'
+        )
+        self.assertEqual(first['changedFields'], ['legal_name'])
+
+        # Repeat with a DIFFERENT submitted body but the SAME operation UUID: the
+        # original stored changedFields/result must be returned, never recomputed from
+        # this call's (different) values, and the company must not be mutated again.
+        second = self.company.kemfai_settings_update(
+            {'trade_name': 'Should Not Apply'}, op_uuid, '2026-10-05T00:00:00.000Z', 'actor-1'
+        )
+        self.assertEqual(first, second)
+        self.company.invalidate_recordset()
+        self.assertNotEqual(self.company.trade_name, 'Should Not Apply')
+
+
 @tagged('post_install', '-at_install', 'kemfai_company_setup')
 class TestCompanySetupWizardConcurrency(HttpCase):
     """Isolated into its own HttpCase: this is the only case in the module that

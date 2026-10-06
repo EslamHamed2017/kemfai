@@ -1,19 +1,23 @@
 import { ContractCoverage, OpenApiContractValidator } from '../support/openapi-contract-validator';
 
 /**
- * T049 — contract test for the US3 company-setup wizard endpoints against the committed
- * `specs/001-saas-onboarding-shell/contracts/openapi.yaml`. Strictly contract-level: it
- * drives OpenApiContractValidator and ContractCoverage directly against the committed
- * document, never booting an HTTP server or performing Odoo RPC — that live, real-Odoo
- * proof lives in `backend/addons/kemfai_company_setup/tests/test_company_setup.py`
- * (driven by `scripts/test_t054_live.sh`) and the real-HTTP harness under
+ * T049/T055 — contract test for the US3 company-setup wizard endpoints against the
+ * committed `specs/001-saas-onboarding-shell/contracts/openapi.yaml`. Strictly
+ * contract-level: it drives OpenApiContractValidator and ContractCoverage directly
+ * against the committed document, never booting an HTTP server or performing Odoo RPC —
+ * that live, real-Odoo proof lives in
+ * `backend/addons/kemfai_company_setup/tests/test_company_setup.py` (driven by
+ * `scripts/test_t054_live.sh`) and the real-HTTP harness under
  * `test/integration/company-setup-live.integration-spec.ts`. T054 (2026-10-05) added the
  * `baseVersion`/`version`/`stale` concurrency fields (arbiter resolution point 1) to
- * `CompanySetupStepInput`/`CompanySetupState`; `POST /companies/current/setup/complete`
- * remains T055's out-of-scope responsibility. Status conformance is the complete contract
- * assertion for every response whose body schema the contract does not yet declare
- * (PUT 422/409 and POST complete 200/422); where a schema IS declared (GET/PUT 200 →
- * CompanySetupState) the example body is validated against it.
+ * `CompanySetupStepInput`/`CompanySetupState`. T055 implemented
+ * `POST /companies/current/setup/complete` and gave its 200 response the same
+ * `CompanySetupState` schema. Status conformance is the complete contract assertion for
+ * every response whose body schema the contract does not yet declare (PUT 422/409 and
+ * POST complete 422); where a schema IS declared (GET/PUT 200, POST complete 200 →
+ * CompanySetupState) the example body is validated against it. The distinct
+ * `/companies/current/settings` surface (FR-028, also T055-scope) has its own
+ * `company-settings.contract-spec.ts`.
  */
 describe('Company setup contract (T049, against contracts/openapi.yaml)', () => {
   const validator = new OpenApiContractValidator();
@@ -97,12 +101,32 @@ describe('Company setup contract (T049, against contracts/openapi.yaml)', () => 
   });
 
   describe('POST /companies/current/setup/complete', () => {
-    it('200: company marked setup complete (Acceptance Scenario 3.7)', () => {
-      coverage.record('/companies/current/setup/complete', 'post', 200, undefined);
+    it('200: company marked setup complete, conforms to CompanySetupState (Acceptance Scenario 3.7)', () => {
+      coverage.record('/companies/current/setup/complete', 'post', 200, {
+        currentStep: 'accounting_setup',
+        setupComplete: true,
+        values: { country: 'AE' },
+        version: 8,
+        stale: false,
+      });
+    });
+
+    it('200: a repeated call is idempotent and still conforms (no second audit event asserted here — see live harness)', () => {
+      coverage.record('/companies/current/setup/complete', 'post', 200, {
+        currentStep: 'accounting_setup',
+        setupComplete: true,
+        values: { country: 'AE' },
+        version: 8,
+        stale: false,
+      });
     });
 
     it('422: one or more required steps incomplete', () => {
       coverage.record('/companies/current/setup/complete', 'post', 422, undefined);
+    });
+
+    it('403: caller is not WorkspaceOwner, or the trial window has elapsed unpaid (documented 2026-10-05 remediation)', () => {
+      coverage.record('/companies/current/setup/complete', 'post', 403, undefined);
     });
   });
 

@@ -1,3 +1,5 @@
 id,name,model_id:id,group_id:id,perm_read,perm_write,perm_create,perm_unlink
 access_kemfai_company_setup_country_rule_system,kemfai.company.setup.country.rule system,model_kemfai_company_setup_country_rule,base.group_system,1,1,1,1
 access_kemfai_company_setup_country_rule_user,kemfai.company.setup.country.rule read,model_kemfai_company_setup_country_rule,base.group_user,1,0,0,0
+access_kemfai_company_mutation_receipt_system,kemfai.company.mutation.receipt system,model_kemfai_company_mutation_receipt,base.group_system,1,1,1,0
+access_kemfai_company_mutation_receipt_user,kemfai.company.mutation.receipt user,model_kemfai_company_mutation_receipt,base.group_user,1,0,1,0
