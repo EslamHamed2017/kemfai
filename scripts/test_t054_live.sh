@@ -1,7 +1,11 @@
 #!/usr/bin/env bash
-# T054 live gate: real Odoo 18 + real PostgreSQL proof for the
+# T054/T055 live gate: real Odoo 18 + real PostgreSQL proof for the
 # GET/PUT /companies/current/setup wizard (step save/resume, country validation,
-# concurrency), plus a real-HTTP harness against the NestJS BFF.
+# concurrency), plus a real-HTTP harness against the NestJS BFF. T055 (2026-10-05)
+# extends this SAME run/fixture set with POST /companies/current/setup/complete and
+# GET/PUT /companies/current/settings — the live-HTTP spec file this script runs
+# (company-setup-live.integration-spec.ts) now covers both; no second isolated runner
+# was created, per the reuse-the-existing-runner guidance for this addition.
 #
 # Hard requirements (arbiter binding resolution, point 5/6):
 #   * FAILS (non-zero exit), never silently skips, when Docker is unavailable.
@@ -309,7 +313,7 @@ npm run migration:run > "$log_file" 2>&1 || { cat "$log_file"; fail "migrations 
 echo "PASS: migrations applied cleanly to scratch control DB ${control_db}." | tee -a "$evidence_file"
 
 echo
-echo "== Phase 4: real HTTP harness (GET/PUT, owner/tenant/feature/trial guards) =="
+echo "== Phase 4: real HTTP harness (GET/PUT/POST setup+complete+settings, owner/tenant/feature/trial guards) =="
 export KEMFAI_LIVE_T054=1
 export KEMFAI_ODOO_URL="http://127.0.0.1:${odoo_host_port}"
 export KEMFAI_ODOO_MASTER_PASSWORD="$odoo_master_password"
@@ -325,7 +329,7 @@ status=$?
 set -e
 cat "$log_file"
 [ $status -eq 0 ] || fail "live HTTP harness (company-setup-live.integration-spec.ts) failed"
-echo "PASS: real HTTP harness exercised GET/PUT + owner/tenant/feature/trial guards against scratch DBs ${http_db} / ${control_db}." | tee -a "$evidence_file"
+echo "PASS: real HTTP harness exercised GET/PUT/POST-complete/settings + owner/tenant/feature/trial guards against scratch DBs ${http_db} / ${control_db}." | tee -a "$evidence_file"
 
 echo
 echo "== Phase 5: general API integration suite (order-independence, no leaked T054 state) =="

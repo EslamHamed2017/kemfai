@@ -13,6 +13,12 @@ export interface AuditEventInput {
   subjectId: string;
   occurredAt: Date;
   payload: Record<string, unknown>;
+  /**
+   * T055 remediation — set this to make the write "ensure this event exists exactly
+   * once" (DB-enforced via `uq_audit_event_dedupe_key`) instead of "append another row".
+   * Omit for every pre-existing action; those still always insert a new row.
+   */
+  dedupeKey?: string;
 }
 
 export interface AccountCreatedInput {
@@ -62,15 +68,40 @@ export interface CompanySetupCompletedInput {
   accountId: string;
   tenantId: string;
   companyId: string;
+  /** T055 remediation (Finding 4) — the actual Odoo tenant DB + res.company.id this
+   *  completion event is about, since `companyId` above is the control plane's tenant
+   *  UUID (there is no separate UUID "Company" entity — see the call site's comment). */
+  odooDbName: string;
+  odooCompanyId: number;
   occurredAt?: Date;
+  /** T055 durable-handoff remediation — the `company_mutation_handoff.id` (the
+   *  immutable operation UUID) this completion is for. When present it REPLACES the
+   *  old per-tenant dedupe key: dedupe is now anchored to the single stable completion
+   *  handoff (one per tenant, see `CompanyMutationHandoffService`), not recomputed per
+   *  call, so every retry/recovery attempt for the SAME completion converges on it. */
+  operationUuid?: string;
 }
 
 export interface CompanySettingsUpdatedInput {
   accountId: string;
   tenantId: string;
   companyId: string;
+  odooDbName: string;
+  odooCompanyId: number;
   changedFields: string[];
+  /** T055 remediation (Finding 3) — present only when the caller sent an
+   *  `Idempotency-Key` header; used to build this event's `dedupeKey` so a
+   *  lost-response/failed-audit retry of the SAME logical edit never appends twice.
+   *  Superseded by `operationUuid` when present (see below). */
+  idempotencyKey?: string;
   occurredAt?: Date;
+  /** T055 durable-handoff remediation — the `company_mutation_handoff.id` for this
+   *  settings edit. When present it REPLACES the raw tenant+client-key dedupe anchor:
+   *  dedupe is anchored to the operation UUID itself, which already resolves the same
+   *  key-scope identically (and never collapses two distinct authorized callers who
+   *  happen to reuse the same textual key, since the handoff's uniqueness is scoped by
+   *  authenticated-caller+tenant+method+route+key, not the raw key string). */
+  operationUuid?: string;
 }
 
 export interface ModulesSelectionChangedInput {
@@ -194,7 +225,7 @@ export class AuditService {
    */
   async append(event: AuditEventInput, manager?: EntityManager): Promise<void> {
     const repo = (manager ?? controlDataSource).getRepository(AuditEvent);
-    await repo.insert({
+    const row = {
       actorType: event.actorType,
       actorId: event.actorId,
       tenantId: event.tenantId,
@@ -203,8 +234,19 @@ export class AuditService {
       subjectId: event.subjectId,
       occurredAt: event.occurredAt,
       payload: event.payload,
+      dedupeKey: event.dedupeKey ?? null,
       createdAt: new Date(),
-    } as QueryDeepPartialEntity<AuditEvent>);
+    } as QueryDeepPartialEntity<AuditEvent>;
+
+    if (event.dedupeKey) {
+      // `orIgnore()` compiles to `ON CONFLICT DO NOTHING` — the DB-enforced "ensure this
+      // event exists exactly once" path (`uq_audit_event_dedupe_key`). It needs only
+      // INSERT privilege (no row is ever modified on conflict), so it works under the
+      // same T014-revoked UPDATE/DELETE grant every other write here already respects.
+      await repo.createQueryBuilder().insert().values(row).orIgnore().execute();
+      return;
+    }
+    await repo.insert(row);
   }
 
   async recordAccountCreated(input: AccountCreatedInput): Promise<void> {
@@ -336,6 +378,18 @@ export class AuditService {
     else await this.append(event);
   }
 
+  /**
+   * T055 remediation (Finding 1) — `dedupeKey` is `company.setup.completed:<tenantId>`:
+   * a given tenant can only ever complete setup once, so this is "ensure the single
+   * completion event for this tenant exists" rather than "append another row". The
+   * caller (`CompanySetupService.completeSetup`) calls this on EVERY `kemfai_setup_complete`
+   * response — including `alreadyComplete: true` ones — so a retry after an audit-store
+   * failure, a lost Odoo RPC response, or a crash between the Odoo commit and this write
+   * all converge on the same outcome: exactly one durable row, written by whichever
+   * attempt (the original or a later retry) actually reaches this method successfully.
+   * `uq_audit_event_dedupe_key` is what makes concurrent attempts safe: at most one
+   * `INSERT` wins, every other one is a silent, harmless no-op.
+   */
   async recordCompanySetupCompleted(input: CompanySetupCompletedInput): Promise<void> {
     await this.append({
       actorType: AuditActorType.ACCOUNT,
@@ -345,10 +399,25 @@ export class AuditService {
       subjectType: 'company',
       subjectId: input.companyId,
       occurredAt: input.occurredAt ?? new Date(),
-      payload: {},
+      payload: { odoo_db_name: input.odooDbName, odoo_company_id: input.odooCompanyId },
+      dedupeKey: input.operationUuid
+        ? `company.setup.completed:${input.operationUuid}`
+        : `company.setup.completed:${input.tenantId}`,
     });
   }
 
+  /**
+   * T055 remediation (Finding 3) — when the caller supplies `idempotencyKey` (read from
+   * the request's `Idempotency-Key` header, the project's existing retry-identity
+   * convention — see `IdempotencyKeyInterceptor`), this write is anchored on
+   * `company.settings.updated:<tenantId>:<idempotencyKey>`: a retry of the SAME logical
+   * edit (after a failed append, or after a successful one whose HTTP response was lost)
+   * converges on exactly one row instead of appending a duplicate. Without a client-
+   * supplied key there is no way to distinguish "the same logical edit retried" from
+   * "a genuinely new edit with the same values" — that call then has no dedupe anchor
+   * and append behaves as a normal, unconstrained append (unchanged from before this
+   * remediation), exactly like every other call site that passes no `dedupeKey`.
+   */
   async recordCompanySettingsUpdated(input: CompanySettingsUpdatedInput): Promise<void> {
     await this.append({
       actorType: AuditActorType.ACCOUNT,
@@ -358,7 +427,16 @@ export class AuditService {
       subjectType: 'company',
       subjectId: input.companyId,
       occurredAt: input.occurredAt ?? new Date(),
-      payload: { changed_fields: input.changedFields },
+      payload: {
+        changed_fields: input.changedFields,
+        odoo_db_name: input.odooDbName,
+        odoo_company_id: input.odooCompanyId,
+      },
+      dedupeKey: input.operationUuid
+        ? `company.settings.updated:${input.operationUuid}`
+        : input.idempotencyKey
+          ? `company.settings.updated:${input.tenantId}:${input.idempotencyKey}`
+          : undefined,
     });
   }
 

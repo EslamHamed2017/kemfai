@@ -644,7 +644,7 @@ confirm every field persists, RTL fully mirrors, and no native Odoo UI/URL/termi
     each carry this guard explicitly (Round 2 remediation — see analysis.md).
   - **Roles**: Primary: GLM · Backup: Claude · Reviewer: Codex
 
-- [ ] T055 [US3] Implement `POST /companies/current/setup/complete` (marks `setup_complete` only when all
+- [x] T055 [US3] Implement `POST /companies/current/setup/complete` (marks `setup_complete` only when all
   required steps are submitted, emits `company.setup.completed`) in
   `backend/api/src/modules/company-setup/company-setup.service.ts`
   - **Dependencies**: T054

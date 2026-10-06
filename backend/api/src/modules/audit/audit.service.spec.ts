@@ -123,6 +123,8 @@ describe('AuditService — FR-007 event catalog (T019)', () => {
       accountId: ACCOUNT,
       tenantId: TENANT,
       companyId: SUBJECT,
+      odooDbName: 'tenant-db-1',
+      odooCompanyId: 7,
     });
     expect(appendSpy).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -132,6 +134,11 @@ describe('AuditService — FR-007 event catalog (T019)', () => {
         tenantId: TENANT,
         subjectType: 'company',
         subjectId: SUBJECT,
+        payload: { odoo_db_name: 'tenant-db-1', odoo_company_id: 7 },
+        // T055 remediation — this is the DB-enforced "ensure exactly once per tenant"
+        // anchor (uq_audit_event_dedupe_key) that lets a retry observing
+        // alreadyComplete=true safely call this method again without duplicating the row.
+        dedupeKey: `company.setup.completed:${TENANT}`,
       }),
     );
   });
@@ -141,12 +148,39 @@ describe('AuditService — FR-007 event catalog (T019)', () => {
       accountId: ACCOUNT,
       tenantId: TENANT,
       companyId: SUBJECT,
+      odooDbName: 'tenant-db-1',
+      odooCompanyId: 7,
       changedFields: ['base_currency', 'vat_tax_registration'],
     });
     expect(appendSpy).toHaveBeenCalledWith(
       expect.objectContaining({
         action: 'company.settings.updated',
-        payload: { changed_fields: ['base_currency', 'vat_tax_registration'] },
+        payload: {
+          changed_fields: ['base_currency', 'vat_tax_registration'],
+          odoo_db_name: 'tenant-db-1',
+          odoo_company_id: 7,
+        },
+        // No idempotencyKey supplied -> no dedupe anchor, unconstrained append (unchanged
+        // pre-remediation behavior for a caller that sends no Idempotency-Key header).
+        dedupeKey: undefined,
+      }),
+    );
+  });
+
+  it('company.settings.updated with a client-supplied idempotencyKey gets a per-tenant+key dedupe anchor (T055 remediation)', async () => {
+    await service.recordCompanySettingsUpdated({
+      accountId: ACCOUNT,
+      tenantId: TENANT,
+      companyId: SUBJECT,
+      odooDbName: 'tenant-db-1',
+      odooCompanyId: 7,
+      changedFields: ['legal_name'],
+      idempotencyKey: 'client-key-42',
+    });
+    expect(appendSpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: 'company.settings.updated',
+        dedupeKey: `company.settings.updated:${TENANT}:client-key-42`,
       }),
     );
   });

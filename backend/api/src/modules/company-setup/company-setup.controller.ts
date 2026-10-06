@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Put, Req } from '@nestjs/common';
+import { Body, Controller, Get, HttpCode, HttpStatus, Post, Put, Req } from '@nestjs/common';
 import { RequireFeatureFlag } from '../../common/decorators/feature-flag.decorator';
 import { EnforceTrialWindow } from '../../common/decorators/trial-window.decorator';
 import { Roles } from '../../common/decorators/roles.decorator';
@@ -40,5 +40,22 @@ export class CompanySetupController {
     @Body() body: CompanySetupStepRequestDto,
   ): Promise<CompanySetupStateDto> {
     return this.companySetup.saveStep(req, body);
+  }
+
+  /**
+   * T055: finalizes the wizard once every required step is persisted (FR-028,
+   * Acceptance Scenario 3.7). Guarded identically to GET/PUT above — only
+   * `WorkspaceOwner`, only while `module.company_setup` is enabled, only within an
+   * active trial/subscription window. Takes no request body: whether completion is
+   * allowed is derived entirely from persisted `res.company` state inside
+   * `CompanySetupService`/the Odoo addon, never from anything the caller sends.
+   */
+  @Post('setup/complete')
+  @HttpCode(HttpStatus.OK)
+  @Roles('WorkspaceOwner')
+  @RequireFeatureFlag('module.company_setup')
+  @EnforceTrialWindow()
+  async completeSetup(@Req() req: TenantScopedRequest): Promise<CompanySetupStateDto> {
+    return this.companySetup.completeSetup(req);
   }
 }

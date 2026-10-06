@@ -1,3 +1,6 @@
+import json
+from datetime import datetime
+
 from odoo import api, fields, models
 from odoo.exceptions import ValidationError
 
@@ -239,6 +242,52 @@ class ResCompany(models.Model):
             'accounting_setup_template': self.accounting_setup_template or False,
         }
 
+    # -- T055 arbiter binding resolution, point 2: durable idempotent receipt ----
+    #
+    # `operation_uuid` is the control-plane `company_mutation_handoff.id` the BFF
+    # generates and commits BEFORE calling this RPC. A repeated call with the SAME
+    # operation_uuid (lost-response retry, or the autonomous recovery worker replaying
+    # a handoff that already reached Odoo) returns the stored receipt verbatim — never
+    # re-applies the mutation, never recomputes `changedFields` from whatever the
+    # repeat call happens to submit. The receipt is created in the SAME method
+    # invocation (and therefore the SAME Odoo transaction) as the company mutation
+    # itself: Odoo commits both together, or rolls back both together, on return.
+
+    def _kemfai_get_receipt(self, operation_uuid):
+        if not operation_uuid:
+            return None
+        receipt = self.env['kemfai.company.mutation.receipt'].search(
+            [('operation_uuid', '=', operation_uuid)], limit=1
+        )
+        if not receipt:
+            return None
+        return json.loads(receipt.result_json)
+
+    def _kemfai_parse_occurred_at(self, raw):
+        """Normalizes the BFF's ISO-8601 `occurred_at` (e.g. '2026-10-05T12:00:00.000Z')
+        into an Odoo Datetime-field-writable value. Best-effort: an unparseable/absent
+        value is simply omitted from the receipt rather than failing the RPC — the
+        receipt's `occurred_at` is provenance only, never the audit event's source of
+        truth (that remains the control-plane handoff row)."""
+        if not raw:
+            return False
+        try:
+            return datetime.fromisoformat(str(raw).replace('Z', '+00:00')).replace(tzinfo=None)
+        except ValueError:
+            return False
+
+    def _kemfai_store_receipt(self, operation_uuid, action, result, occurred_at=None, actor_id=None):
+        if not operation_uuid:
+            return
+        self.env['kemfai.company.mutation.receipt'].create({
+            'operation_uuid': operation_uuid,
+            'company_id': self.id,
+            'action': action,
+            'actor_id': actor_id,
+            'occurred_at': self._kemfai_parse_occurred_at(occurred_at),
+            'result_json': json.dumps(result),
+        })
+
     def kemfai_setup_get_state(self):
         """GET /companies/current/setup RPC body (T054)."""
         self.ensure_one()
@@ -249,6 +298,149 @@ class ResCompany(models.Model):
             'version': self.setup_wizard_version,
             'stale': False,
         }
+
+    def _kemfai_missing_required_steps(self):
+        """Every wizard step with at least one unset required field, computed fresh
+        from persisted state (never from any client-supplied flag) — the single
+        source of truth T055's `kemfai_setup_complete()` gates on.
+        """
+        self.ensure_one()
+        return [
+            step_id for step_id, _label in SETUP_WIZARD_STEPS
+            if any(not getattr(self, field_name) for field_name in STEP_FIELDS[step_id])
+        ]
+
+    def kemfai_setup_complete(self, operation_uuid=None, occurred_at=None, actor_id=None):
+        """POST /companies/current/setup/complete RPC body (T055, FR-028,
+        Acceptance Scenario 3.7).
+
+        Locks the row (same `SELECT ... FOR UPDATE` pattern as
+        `kemfai_setup_save_step`) before re-checking persisted state, so a
+        concurrent save/complete call on this company can never race past this
+        check. A company already marked complete is a no-op success —
+        `alreadyComplete=True` tells the BFF not to append a second
+        `company.setup.completed` audit row for a retry (never trusts a client
+        flag either way: this method is the only place that flips
+        `setup_complete`).
+
+        `operation_uuid` (arbiter resolution point 2): when the BFF's
+        control-plane handoff for this operation already has a stored receipt
+        here (a prior attempt's RPC reached and committed on Odoo, even if its
+        HTTP response never reached the caller), that exact stored result is
+        returned verbatim and the row is NOT re-locked/re-written — a repeated
+        operation UUID can never apply a second mutation.
+        """
+        self.ensure_one()
+        self.env.cr.execute('SELECT id FROM res_company WHERE id = %s FOR UPDATE', (self.id,))
+        company = self.browse(self.id)
+
+        existing_receipt = company._kemfai_get_receipt(operation_uuid)
+        if existing_receipt is not None:
+            return existing_receipt
+
+        if company.setup_complete:
+            result = {
+                'alreadyComplete': True,
+                'currentStep': company._kemfai_compute_current_step(),
+                'setupComplete': True,
+                'values': company._kemfai_setup_values_dict(),
+                'version': company.setup_wizard_version,
+                'stale': False,
+            }
+            company._kemfai_store_receipt(
+                operation_uuid, 'setup.complete', result, occurred_at, actor_id
+            )
+            return result
+
+        missing_steps = company._kemfai_missing_required_steps()
+        if missing_steps:
+            raise ValidationError(
+                'KEMFAI_SETUP_INCOMPLETE: required step(s) not yet submitted: '
+                + ', '.join(missing_steps)
+            )
+
+        company.write({
+            'setup_complete': True,
+            'setup_completed_at': fields.Datetime.now(),
+            'setup_wizard_version': company.setup_wizard_version + 1,
+        })
+        result = {
+            'alreadyComplete': False,
+            'currentStep': company._kemfai_compute_current_step(),
+            'setupComplete': True,
+            'values': company._kemfai_setup_values_dict(),
+            'version': company.setup_wizard_version,
+            'stale': False,
+        }
+        company._kemfai_store_receipt(
+            operation_uuid, 'setup.complete', result, occurred_at, actor_id
+        )
+        return result
+
+    # -- T055: GET/PUT /companies/current/settings RPC surface (FR-028) ----------
+    #
+    # A distinct, post-completion-only surface over the SAME wizard-captured
+    # fields, reusing _kemfai_resolve_step_values/_kemfai_setup_values_dict
+    # (and therefore the SAME country/VAT validation constraint) rather than
+    # inventing a second validation path. Reachable only once setup_complete is
+    # True — checked here, against the authoritative persisted column, never a
+    # client-supplied flag.
+
+    def kemfai_settings_get(self):
+        self.ensure_one()
+        if not self.setup_complete:
+            raise ValidationError(
+                'KEMFAI_SETUP_INCOMPLETE: settings are not reachable until setup is complete.'
+            )
+        return {
+            'values': self._kemfai_setup_values_dict(),
+            'setupComplete': True,
+        }
+
+    def kemfai_settings_update(self, values, operation_uuid=None, occurred_at=None, actor_id=None):
+        """`operation_uuid` (arbiter resolution point 2): a repeated operation UUID
+        returns the stored receipt verbatim — including the ORIGINAL `changedFields` —
+        without re-applying the mutation or recomputing `changedFields` from whatever
+        the repeat call's `values` happens to be."""
+        self.ensure_one()
+        self.env.cr.execute('SELECT id FROM res_company WHERE id = %s FOR UPDATE', (self.id,))
+        company = self.browse(self.id)
+
+        existing_receipt = company._kemfai_get_receipt(operation_uuid)
+        if existing_receipt is not None:
+            return existing_receipt
+
+        if not company.setup_complete:
+            raise ValidationError(
+                'KEMFAI_SETUP_INCOMPLETE: settings are not reachable until setup is complete.'
+            )
+        if not isinstance(values, dict):
+            raise ValidationError('KEMFAI_INVALID_PAYLOAD: values must be an object.')
+
+        write_vals = {}
+        changed_fields = []
+        for step_id, _label in SETUP_WIZARD_STEPS:
+            step_input = {key: values[key] for key in STEP_FIELDS[step_id] if key in values}
+            if not step_input:
+                continue
+            resolved = company._kemfai_resolve_step_values(step_id, step_input)
+            write_vals.update(resolved)
+            changed_fields.extend(sorted(resolved.keys()))
+
+        if not write_vals:
+            raise ValidationError(
+                'KEMFAI_REQUIRED_FIELD: no recognized settings field was submitted.'
+            )
+        company.write(write_vals)
+        result = {
+            'values': company._kemfai_setup_values_dict(),
+            'setupComplete': True,
+            'changedFields': changed_fields,
+        }
+        company._kemfai_store_receipt(
+            operation_uuid, 'settings.update', result, occurred_at, actor_id
+        )
+        return result
 
     def kemfai_setup_save_step(self, step, values, base_version=None):
         """PUT /companies/current/setup RPC body (T054).

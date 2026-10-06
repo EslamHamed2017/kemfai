@@ -42,6 +42,11 @@ import { FakeKeycloak, startFakeKeycloak } from '../support/fake-keycloak';
  * preinitialized database; it never calls `createDatabase`/`exp_create_database`. The
  * script sets `KEMFAI_T054_DB_PREINITIALIZED=1` to attest that bootstrap happened; this
  * spec refuses to run without it rather than silently falling back to the forbidden RPC.
+ *
+ * T055 (2026-10-05) extends this SAME fixture/scratch-DB set — rather than owning a
+ * second one — with `POST /companies/current/setup/complete` and
+ * `GET`/`PUT /companies/current/settings` cases, reusing `resetCompanyToPristine`/
+ * `seedCountryAndVat`/the owner/non-owner tokens exactly as the T054 cases above do.
  */
 const live = process.env.KEMFAI_LIVE_T054 === '1' ? describe : describe.skip;
 
@@ -110,6 +115,18 @@ live('T054 live HTTP harness: GET/PUT /companies/current/setup (real Odoo + scra
       [companyId],
       writeVals,
     ]);
+    // T055 durable-handoff remediation: the completion `company_mutation_handoff` is
+    // capped at one row per tenant FOREVER (AC3.7 — see
+    // CompanyMutationHandoffService.findOrCreateCompletionHandoff), so once any case in
+    // this file completes setup, a later case that resets Odoo back to incomplete and
+    // expects a genuinely fresh completion (fresh version/values in the response, or a
+    // fresh audit row after `clearAuditEvents`) would otherwise get the FIRST
+    // completion's cached response replayed instead of a real one. "Pristine" must
+    // include this control-plane state, not only the Odoo-side fields, for every case
+    // below to remain order-independent.
+    await controlDataSource.query('DELETE FROM company_mutation_handoff WHERE tenant_id = $1', [
+      tenantId,
+    ]);
   }
 
   // Seeds a country + a VAT value that is valid for that country's configured rule,
@@ -128,6 +145,58 @@ live('T054 live HTTP harness: GET/PUT /companies/current/setup (real Odoo + scra
       .send({ step: 'vat_tax', values: { vat_tax_registration: vat } })
       .expect(200);
     return { version: vatResponse.body.version as number };
+  }
+
+  // Drives all seven wizard steps (pristine -> accounting_setup) through the real HTTP
+  // PUT surface, mirroring the all-seven-steps case above — used by every T055 case that
+  // needs a genuinely complete, persisted set of required fields before completing/
+  // editing settings.
+  async function completeAllSevenStepsAndSeedIndustry(): Promise<{ industryId: number }> {
+    const industryIds = (await odoo.executeKw(
+      tenantDb,
+      odooUid,
+      odooPassword,
+      'res.partner.industry',
+      'search',
+      [[]],
+      { limit: 1 },
+    )) as number[];
+    const industryId = industryIds[0];
+    const steps: Array<{ step: string; values: Record<string, unknown> }> = [
+      { step: 'country', values: { country: 'AE' } },
+      { step: 'identity', values: { legal_name: 'Acme FZ', trade_name: 'Acme' } },
+      { step: 'currency', values: { base_currency: 'AED' } },
+      { step: 'fiscal_year', values: { fiscal_year_start_month: '1', fiscal_year_start_day: 1 } },
+      { step: 'vat_tax', values: { vat_tax_registration: '1'.repeat(15) } },
+      { step: 'industry', values: { industry: industryId } },
+      { step: 'accounting_setup', values: { accounting_setup_template: 'standard' } },
+    ];
+    for (const { step, values } of steps) {
+      await request(app.getHttpServer())
+        .put('/companies/current/setup')
+        .set('Authorization', `Bearer ${ownerToken}`)
+        .send({ step, values })
+        .expect(200);
+    }
+    return { industryId };
+  }
+
+  async function countAuditEvents(action: string): Promise<number> {
+    const rows = await controlDataSource.query(
+      'SELECT count(*)::int AS count FROM audit_event WHERE tenant_id = $1 AND action = $2',
+      [tenantId, action],
+    );
+    return rows[0].count as number;
+  }
+
+  // This run's own tenant/action rows only (never another tenant's) — gives each
+  // completion/settings case below an isolated starting count, independent of what any
+  // earlier case in this suite appended.
+  async function clearAuditEvents(action: string): Promise<void> {
+    await controlDataSource.query('DELETE FROM audit_event WHERE tenant_id = $1 AND action = $2', [
+      tenantId,
+      action,
+    ]);
   }
 
   async function setFlagEnabled(enabled: boolean): Promise<void> {
@@ -330,10 +399,15 @@ live('T054 live HTTP harness: GET/PUT /companies/current/setup (real Odoo + scra
             // audit_event.tenant_id -> tenant.id is ON DELETE RESTRICT (fk_audit_event_tenant):
             // this fixture's own audit rows (if any were written by the saves under test) must be
             // removed before the tenant row, or the tenant delete below fails and this cleanup
-            // throws before the flag restoration runs.
+            // throws before the flag restoration runs. company_mutation_handoff.tenant_id has the
+            // same RESTRICT fk (fk_company_mutation_handoff_tenant) for the same reason.
             await controlDataSource.query('DELETE FROM audit_event WHERE tenant_id = $1', [
               tenantId,
             ]);
+            await controlDataSource.query(
+              'DELETE FROM company_mutation_handoff WHERE tenant_id = $1',
+              [tenantId],
+            );
             await controlDataSource.query('DELETE FROM subscription WHERE tenant_id = $1', [
               tenantId,
             ]);
@@ -693,5 +767,278 @@ live('T054 live HTTP harness: GET/PUT /companies/current/setup (real Odoo + scra
       .set('Authorization', `Bearer ${ownerToken}`)
       .expect(200);
     expect(getResponse.body.values).toMatchObject({ country: 'AE' });
+  });
+
+  // -- T055: POST /companies/current/setup/complete (FR-028, Acceptance Scenario 3.7) --
+
+  it('owner/tenant/feature/trial guards deny POST /companies/current/setup/complete exactly like GET/PUT', async () => {
+    await request(app.getHttpServer())
+      .post('/companies/current/setup/complete')
+      .set('Authorization', `Bearer ${nonOwnerToken}`)
+      .expect(403);
+
+    const otherTenant = randomUUID();
+    await request(app.getHttpServer())
+      .post('/companies/current/setup/complete')
+      .set('Authorization', `Bearer ${ownerToken}`)
+      .set('x-tenant-id', otherTenant)
+      .expect(403);
+
+    await setFlagEnabled(false);
+    try {
+      await request(app.getHttpServer())
+        .post('/companies/current/setup/complete')
+        .set('Authorization', `Bearer ${ownerToken}`)
+        .expect(404);
+    } finally {
+      await setFlagEnabled(true);
+    }
+
+    await controlDataSource.query(
+      "UPDATE subscription SET status = 'PendingActivation'::subscription_status_enum WHERE tenant_id = $1",
+      [tenantId],
+    );
+    await controlDataSource.query('UPDATE tenant SET ready_at = $1 WHERE id = $2', [
+      new Date(Date.now() - 20 * MS_PER_DAY),
+      tenantId,
+    ]);
+    try {
+      await request(app.getHttpServer())
+        .post('/companies/current/setup/complete')
+        .set('Authorization', `Bearer ${ownerToken}`)
+        .expect(403);
+    } finally {
+      await controlDataSource.query(
+        "UPDATE subscription SET status = 'Active'::subscription_status_enum WHERE tenant_id = $1",
+        [tenantId],
+      );
+      await controlDataSource.query('UPDATE tenant SET ready_at = now() WHERE id = $1', [tenantId]);
+    }
+  });
+
+  it('completing with required steps still missing is rejected (422) and writes no company.setup.completed audit row', async () => {
+    await resetCompanyToPristine();
+    await clearAuditEvents('company.setup.completed');
+    await request(app.getHttpServer())
+      .put('/companies/current/setup')
+      .set('Authorization', `Bearer ${ownerToken}`)
+      .send({ step: 'country', values: { country: 'AE' } })
+      .expect(200);
+
+    await request(app.getHttpServer())
+      .post('/companies/current/setup/complete')
+      .set('Authorization', `Bearer ${ownerToken}`)
+      .expect(422);
+
+    expect(await countAuditEvents('company.setup.completed')).toBe(0);
+    const getResponse = await request(app.getHttpServer())
+      .get('/companies/current/setup')
+      .set('Authorization', `Bearer ${ownerToken}`)
+      .expect(200);
+    expect(getResponse.body.setupComplete).toBe(false);
+  });
+
+  it('completing all seven persisted steps marks setup complete and writes exactly one scoped company.setup.completed audit row (Acceptance Scenario 3.7)', async () => {
+    await resetCompanyToPristine();
+    await clearAuditEvents('company.setup.completed');
+    await completeAllSevenStepsAndSeedIndustry();
+
+    const response = await request(app.getHttpServer())
+      .post('/companies/current/setup/complete')
+      .set('Authorization', `Bearer ${ownerToken}`)
+      .expect(200);
+    expect(response.body.setupComplete).toBe(true);
+
+    const rows = await controlDataSource.query(
+      `SELECT "action", "subject_type", "tenant_id", "actor_id"
+       FROM audit_event WHERE tenant_id = $1 AND action = $2`,
+      [tenantId, 'company.setup.completed'],
+    );
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({
+      action: 'company.setup.completed',
+      subject_type: 'company',
+      tenant_id: tenantId,
+    });
+
+    const getResponse = await request(app.getHttpServer())
+      .get('/companies/current/setup')
+      .set('Authorization', `Bearer ${ownerToken}`)
+      .expect(200);
+    expect(getResponse.body.setupComplete).toBe(true);
+  });
+
+  it('a repeated completion call is idempotent (200, still complete) and does not write a second audit row', async () => {
+    await resetCompanyToPristine();
+    await clearAuditEvents('company.setup.completed');
+    await completeAllSevenStepsAndSeedIndustry();
+
+    await request(app.getHttpServer())
+      .post('/companies/current/setup/complete')
+      .set('Authorization', `Bearer ${ownerToken}`)
+      .expect(200);
+    expect(await countAuditEvents('company.setup.completed')).toBe(1);
+
+    const second = await request(app.getHttpServer())
+      .post('/companies/current/setup/complete')
+      .set('Authorization', `Bearer ${ownerToken}`)
+      .expect(200);
+    expect(second.body.setupComplete).toBe(true);
+    expect(await countAuditEvents('company.setup.completed')).toBe(1);
+  });
+
+  // -- T055: GET/PUT /companies/current/settings (FR-028) ------------------------------
+
+  it('owner/tenant/feature/trial guards deny GET/PUT /companies/current/settings exactly like the wizard endpoints', async () => {
+    await request(app.getHttpServer())
+      .get('/companies/current/settings')
+      .set('Authorization', `Bearer ${nonOwnerToken}`)
+      .expect(403);
+    await request(app.getHttpServer())
+      .put('/companies/current/settings')
+      .set('Authorization', `Bearer ${nonOwnerToken}`)
+      .send({ values: { legal_name: 'X' } })
+      .expect(403);
+
+    const otherTenant = randomUUID();
+    await request(app.getHttpServer())
+      .get('/companies/current/settings')
+      .set('Authorization', `Bearer ${ownerToken}`)
+      .set('x-tenant-id', otherTenant)
+      .expect(403);
+    await request(app.getHttpServer())
+      .put('/companies/current/settings')
+      .set('Authorization', `Bearer ${ownerToken}`)
+      .set('x-tenant-id', otherTenant)
+      .send({ values: { legal_name: 'X' } })
+      .expect(403);
+
+    await setFlagEnabled(false);
+    try {
+      await request(app.getHttpServer())
+        .get('/companies/current/settings')
+        .set('Authorization', `Bearer ${ownerToken}`)
+        .expect(404);
+      await request(app.getHttpServer())
+        .put('/companies/current/settings')
+        .set('Authorization', `Bearer ${ownerToken}`)
+        .send({ values: { legal_name: 'X' } })
+        .expect(404);
+    } finally {
+      await setFlagEnabled(true);
+    }
+
+    // T055 remediation (prior review finding): this case's title has claimed "trial"
+    // coverage since it was written, but no sub-case here ever actually elapsed the
+    // trial/removed the active subscription — the assertion below is the genuine one,
+    // mirroring the real 'trial guard' case for GET/PUT /companies/current/setup above
+    // (same PendingActivation + 20-day-elapsed-ready_at precondition).
+    await controlDataSource.query(
+      "UPDATE subscription SET status = 'PendingActivation'::subscription_status_enum WHERE tenant_id = $1",
+      [tenantId],
+    );
+    await controlDataSource.query('UPDATE tenant SET ready_at = $1 WHERE id = $2', [
+      new Date(Date.now() - 20 * MS_PER_DAY),
+      tenantId,
+    ]);
+    try {
+      await request(app.getHttpServer())
+        .get('/companies/current/settings')
+        .set('Authorization', `Bearer ${ownerToken}`)
+        .expect(403);
+      await request(app.getHttpServer())
+        .put('/companies/current/settings')
+        .set('Authorization', `Bearer ${ownerToken}`)
+        .send({ values: { legal_name: 'X' } })
+        .expect(403);
+    } finally {
+      // Independent of the try body's outcome: later tests in this file assume an
+      // active, non-expired trial/subscription window.
+      await controlDataSource.query(
+        "UPDATE subscription SET status = 'Active'::subscription_status_enum WHERE tenant_id = $1",
+        [tenantId],
+      );
+      await controlDataSource.query('UPDATE tenant SET ready_at = now() WHERE id = $1', [tenantId]);
+    }
+  });
+
+  it('GET/PUT /companies/current/settings before setup is complete are both rejected with the canonical 409 CompanySetupIncompleteError', async () => {
+    await resetCompanyToPristine();
+    await request(app.getHttpServer())
+      .put('/companies/current/setup')
+      .set('Authorization', `Bearer ${ownerToken}`)
+      .send({ step: 'country', values: { country: 'AE' } })
+      .expect(200);
+
+    const getResponse = await request(app.getHttpServer())
+      .get('/companies/current/settings')
+      .set('Authorization', `Bearer ${ownerToken}`)
+      .expect(409);
+    expect(getResponse.body).toMatchObject({ statusCode: 409, setupComplete: false });
+
+    const putResponse = await request(app.getHttpServer())
+      .put('/companies/current/settings')
+      .set('Authorization', `Bearer ${ownerToken}`)
+      .send({ values: { legal_name: 'Should Not Persist' } })
+      .expect(409);
+    expect(putResponse.body).toMatchObject({ statusCode: 409, setupComplete: false });
+
+    const wizardGet = await request(app.getHttpServer())
+      .get('/companies/current/setup')
+      .set('Authorization', `Bearer ${ownerToken}`)
+      .expect(200);
+    expect(wizardGet.body.values.legal_name).toBeFalsy();
+  });
+
+  it('after completion, settings GET/PUT edit persisted values WITHOUT re-running the wizard, and the wizard/version integrity is untouched (FR-028)', async () => {
+    await resetCompanyToPristine();
+    await clearAuditEvents('company.settings.updated');
+    await completeAllSevenStepsAndSeedIndustry();
+    const completeResponse = await request(app.getHttpServer())
+      .post('/companies/current/setup/complete')
+      .set('Authorization', `Bearer ${ownerToken}`)
+      .expect(200);
+    const versionAfterComplete = completeResponse.body.version as number;
+
+    const settingsBefore = await request(app.getHttpServer())
+      .get('/companies/current/settings')
+      .set('Authorization', `Bearer ${ownerToken}`)
+      .expect(200);
+    expect(settingsBefore.body).toMatchObject({
+      setupComplete: true,
+      values: { legal_name: 'Acme FZ' },
+    });
+
+    const settingsPut = await request(app.getHttpServer())
+      .put('/companies/current/settings')
+      .set('Authorization', `Bearer ${ownerToken}`)
+      .send({ values: { legal_name: 'Acme Holdings FZ' } })
+      .expect(200);
+    expect(settingsPut.body).toMatchObject({
+      setupComplete: true,
+      values: { legal_name: 'Acme Holdings FZ' },
+    });
+
+    // Durably persisted — a fresh GET (not just the PUT's own response) reflects it.
+    const settingsAfter = await request(app.getHttpServer())
+      .get('/companies/current/settings')
+      .set('Authorization', `Bearer ${ownerToken}`)
+      .expect(200);
+    expect(settingsAfter.body.values).toMatchObject({ legal_name: 'Acme Holdings FZ' });
+
+    // Exactly one company.settings.updated audit row for this edit — distinct action
+    // from company.setup.completed, never reusing/duplicating it.
+    expect(await countAuditEvents('company.settings.updated')).toBe(1);
+
+    // The settings edit never re-entered the wizard's step/version bookkeeping: the
+    // wizard's own version is unchanged by a pure settings PUT, and setup_complete
+    // stays true — this edit happened WITHOUT re-running the wizard, per FR-028.
+    const wizardGet = await request(app.getHttpServer())
+      .get('/companies/current/setup')
+      .set('Authorization', `Bearer ${ownerToken}`)
+      .expect(200);
+    expect(wizardGet.body.version).toBe(versionAfterComplete);
+    expect(wizardGet.body.setupComplete).toBe(true);
+    expect(wizardGet.body.values.legal_name).toBe('Acme Holdings FZ');
   });
 });

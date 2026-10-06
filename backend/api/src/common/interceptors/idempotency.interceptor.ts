@@ -21,7 +21,7 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-function fingerprintOf(body: unknown): string {
+export function fingerprintOf(body: unknown): string {
   return createHash('sha256')
     .update(JSON.stringify(body ?? {}))
     .digest('hex');
@@ -43,7 +43,7 @@ function fingerprintOf(body: unknown): string {
  * stored or replayed for them (mirroring the standard contract, e.g. Stripe, where
  * idempotency keys are meaningful only for authenticated principals).
  */
-function scopeOf(req: TenantScopedRequest): string | null {
+export function scopeOf(req: TenantScopedRequest): string | null {
   const sub = req.auth?.keycloakUserId;
   if (!sub) {
     return null;

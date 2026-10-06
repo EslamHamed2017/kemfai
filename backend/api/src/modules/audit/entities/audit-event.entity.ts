@@ -51,6 +51,15 @@ export class AuditEvent {
   @Column({ name: 'payload', type: 'jsonb' })
   payload: Record<string, unknown>;
 
+  /**
+   * Durable "ensure exactly once" anchor (T055 remediation): non-null only for call sites
+   * that need DB-enforced idempotent append (`uq_audit_event_dedupe_key`, partial unique
+   * index over non-null values) — see `AuditService.append`'s `dedupeKey` parameter. Every
+   * pre-existing action leaves this NULL and is therefore unconstrained, exactly as before.
+   */
+  @Column({ name: 'dedupe_key', type: 'text', nullable: true })
+  dedupeKey: string | null;
+
   @Column({ name: 'created_at', type: 'timestamptz' })
   createdAt: Date;
 }
