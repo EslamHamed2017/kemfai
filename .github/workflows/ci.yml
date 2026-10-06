@@ -2,35 +2,77 @@ name: KEMFAI CI
 
 on:
   push:
-    branches: [ main, develop ]
+    branches: [ main, develop, 'feature/**' ]
   pull_request:
     branches: [ main, develop ]
+  workflow_dispatch: {}
 
 jobs:
   lint-frontend:
     runs-on: ubuntu-latest
-    if: hashFiles('frontend/package.json') != ''
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-      - run: cd frontend && npm ci && npm run lint --if-present && npm run build --if-present
+      - run: |
+          cd frontend
+          npm ci
+          npm run lint --if-present
+          npm run typecheck --if-present
+          npm test --if-present -- --ci
+          npm run build --if-present
 
   test-backend:
     runs-on: ubuntu-latest
-    if: hashFiles('backend/**/*.py') != ''
+    services:
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: kemfai_ci
+          POSTGRES_PASSWORD: ${{ secrets.CI_POSTGRES_PASSWORD }}
+          POSTGRES_DB: kemfai_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U kemfai_ci"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      CONTROL_DB_HOST: localhost
+      CONTROL_DB_PORT: 5432
+      CONTROL_DB_USER: kemfai_ci
+      CONTROL_DB_PASSWORD: ${{ secrets.CI_POSTGRES_PASSWORD }}
+      CONTROL_DB_NAME: kemfai_ci
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-node@v4
         with:
-          python-version: '3.12'
+          node-version: 22
       - run: |
-          pip install -r backend/requirements.txt || true
-          python -m pytest tests/ -q || true
+          cd backend/api
+          npm ci
+          npm run lint
+          npm run build
+          npm test -- --runInBand
+          npm run test:contract -- --runInBand
 
-  accounting-invariants:
+  durable-handoff-audit:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - run: echo "Placeholder - accounting invariant tests (debits=credits, tenant isolation, idempotency) run here."
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: cd backend/api && npm ci
+      - run: bash scripts/test_t055_durable_handoff.sh
