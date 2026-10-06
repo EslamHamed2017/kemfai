@@ -1,13 +1,33 @@
-import { INestApplication, ValidationPipe } from '@nestjs/common';
+import { Module, INestApplication, ValidationPipe } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
+import { getQueueToken } from '@nestjs/bullmq';
 import { type KeyObject, generateKeyPairSync } from 'node:crypto';
 import * as http from 'node:http';
 import * as request from 'supertest';
 import { exportJWK, SignJWT } from 'jose';
 
 import { AppModule } from '../../app.module';
+import { QueuesModule } from '../../common/queues/queues.module';
+import { ALL_QUEUE_NAMES } from '../../common/queues/queue-names';
 import controlDataSource from '../../database/data-source';
 import { Account } from './entities/account.entity';
+
+/**
+ * Stands in for QueuesModule in this HTTP fixture: provides an inert object (no Redis
+ * connection, no onModuleInit, no worker/scheduler lifecycle) under every queue token so
+ * AccountsService/TenantsService/global providers that @InjectQueue(...) resolve cleanly,
+ * without booting BullMQ's live Redis-backed infrastructure (QueueSchedulingService,
+ * TrialExpirySweepProcessor, …) that this locale-only suite never exercises.
+ */
+const inertQueue = { add: async () => undefined } as const;
+@Module({
+  providers: ALL_QUEUE_NAMES.map((name) => ({
+    provide: getQueueToken(name),
+    useValue: inertQueue,
+  })),
+  exports: ALL_QUEUE_NAMES.map((name) => getQueueToken(name)),
+})
+class IsolatedQueuesModule {}
 
 /**
  * T104 — HTTP-level integration proof of PATCH/GET /accounts/me/locale through the REAL
@@ -52,7 +72,10 @@ beforeAll(async () => {
   process.env.KEYCLOAK_API_AUDIENCE = 'kemfai-api';
 
   // 2) real Nest app with the REAL global guards/pipes
-  const moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile();
+  const moduleRef = await Test.createTestingModule({ imports: [AppModule] })
+    .overrideModule(QueuesModule)
+    .useModule(IsolatedQueuesModule)
+    .compile();
   app = moduleRef.createNestApplication();
   app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true }));
   await app.init();
@@ -106,7 +129,7 @@ beforeAll(async () => {
 
 afterAll(async () => {
   await app?.close();
-  jwksServer?.close();
+  await new Promise<void>((resolve) => jwksServer.close(() => resolve()));
   jest.restoreAllMocks();
 });
 
