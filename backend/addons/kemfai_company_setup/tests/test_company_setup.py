@@ -85,9 +85,53 @@ class TestCompanySetupWizard(TransactionCase):
         self.assertEqual(state['currentStep'], 'accounting_setup')
         self.assertEqual(state['values']['country'], 'AE')
         self.assertEqual(state['values']['legal_name'], 'Acme FZ')
+        self.assertEqual(state['values']['trade_name'], 'Acme')
         self.assertEqual(state['values']['base_currency'], 'AED')
+        self.assertEqual(state['values']['fiscal_year_start_month'], '1')
+        self.assertEqual(state['values']['fiscal_year_start_day'], 1)
         self.assertEqual(state['values']['vat_tax_registration'], '1' * 15)
+        self.assertEqual(state['values']['industry'], self._any_industry_id())
+        self.assertEqual(state['values']['accounting_setup_template'], 'standard')
         self.assertEqual(state['version'], len(steps))
+
+    def test_resume_uses_first_incomplete_step_when_a_later_step_is_already_persisted(self):
+        first = self.company.kemfai_setup_save_step('country', {'country': 'AE'}, 0)
+        later = self.company.kemfai_setup_save_step(
+            'currency', {'base_currency': 'AED'}, first['version']
+        )
+
+        # A later step may already be present (for example after two browser sessions
+        # save out of order), but resume is derived from the earliest missing required
+        # field rather than the most recently saved step.
+        state = self.company.kemfai_setup_get_state()
+        self.assertEqual(state['currentStep'], 'identity')
+        self.assertEqual(state['values']['country'], 'AE')
+        self.assertEqual(state['values']['base_currency'], 'AED')
+        self.assertEqual(state['version'], later['version'])
+        self.assertFalse(state['stale'])
+
+    def test_completed_step_can_be_revisited_and_edited_without_losing_other_values(self):
+        country = self.company.kemfai_setup_save_step('country', {'country': 'AE'}, 0)
+        identity = self.company.kemfai_setup_save_step(
+            'identity', {'legal_name': 'Acme FZ', 'trade_name': 'Acme'}, country['version']
+        )
+        currency = self.company.kemfai_setup_save_step(
+            'currency', {'base_currency': 'AED'}, identity['version']
+        )
+
+        edited = self.company.kemfai_setup_save_step(
+            'identity', {'legal_name': 'Acme Holdings FZ'}, currency['version']
+        )
+        self.assertFalse(edited['stale'])
+        self.assertEqual(edited['currentStep'], 'fiscal_year')
+
+        # The revisited field is editable, an omitted sibling field is preserved,
+        # and a value already entered on a later step remains intact (Scenario 3.3).
+        state = self.company.kemfai_setup_get_state()
+        self.assertEqual(state['values']['legal_name'], 'Acme Holdings FZ')
+        self.assertEqual(state['values']['trade_name'], 'Acme')
+        self.assertEqual(state['values']['base_currency'], 'AED')
+        self.assertEqual(state['version'], edited['version'])
 
     def test_version_advances_by_exactly_one_per_save(self):
         v0 = self.company.kemfai_setup_get_state()['version']
