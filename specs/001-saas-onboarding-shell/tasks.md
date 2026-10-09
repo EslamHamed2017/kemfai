@@ -652,7 +652,7 @@ confirm every field persists, RTL fully mirrors, and no native Odoo UI/URL/termi
     settings (FR-028), not only by re-running the wizard.
   - **Roles**: Primary: GLM · Backup: Claude · Reviewer: Codex
 
-- [ ] T056 [P] [US3] Build the company setup wizard UI (country, identity, currency, fiscal year, VAT/tax,
+- [X] T056 [P] [US3] Build the company setup wizard UI (country, identity, currency, fiscal year, VAT/tax,
   industry, accounting-setup steps; fixed order with progress indicator; EN/AR/RTL; pause/resume) in
   `frontend/src/app/(onboarding)/setup-wizard/`
   - **Dependencies**: T024, T054, T055

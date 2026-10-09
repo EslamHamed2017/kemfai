@@ -141,6 +141,16 @@ export class OpenApiContractValidator {
     this.validateAgainst(schema, body, `${method.toUpperCase()} ${path} ${status} response body`);
   }
 
+  /** Validate a reusable component directly when an operation documents only its status. */
+  validateComponentSchema(name: string, value: unknown): void {
+    const schemas = this.document.components?.schemas as Record<string, JsonSchema> | undefined;
+    const schema = schemas?.[name];
+    if (!schema) {
+      throw new Error(`Contract has no component schema "${name}"`);
+    }
+    this.validateAgainst(schema, value, `components.schemas.${name}`);
+  }
+
   /** The one call sites should make per exercised response: status + body, both checked. */
   assertResponse(path: string, method: string, status: number, body: unknown): void {
     this.assertDocumentedStatus(path, method, status);
