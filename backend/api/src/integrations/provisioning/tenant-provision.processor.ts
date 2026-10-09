@@ -22,6 +22,15 @@ import {
 import { Inject, Logger } from '@nestjs/common';
 import { ProvisioningCredentials, provisioningCredentials } from './credentials';
 
+/**
+ * T056 point 4 — marks a failure that occurred strictly inside the narrow Ready/null
+ * repair branch so the outer catch can recognize it and skip the ordinary
+ * attempt-increment/Failed/readyAt-clearing transition entirely: Ready, the prior
+ * readyAt, and a null `odooCompanyId` are already exactly as they were before this job
+ * ran, and that is the correct retryable state — not a provisioning failure.
+ */
+class ReadyRepairFailedError extends Error {}
+
 /** Dedicated session advisory lock serializes external operations across processes; the
  * Account row is FOR UPDATE across external operations in a separate transaction.
  * Attempt and success/failure transactions commit durably on the first session. */
@@ -85,8 +94,7 @@ export class TenantProvisionProcessor extends WorkerHost {
         if (!tenant || !account) throw new Error('Tenant unavailable');
         tenantId = tenant.id;
         if (tenant.status === TenantStatus.READY) {
-          await this.verifySubscription(tenant, account);
-          await this.keycloak.assignWorkspaceOwner(account.keycloakUserId, tenant.id);
+          await this.repairReadyOdooCompanyMapping(runner, tenant, account);
           return;
         }
         // Attempt state and audit commit together. An audit failure rolls this transaction back.
@@ -123,7 +131,7 @@ export class TenantProvisionProcessor extends WorkerHost {
         if (tenant.odooDbName && tenant.odooDbName !== db) throw new Error('Database mismatch');
         await this.ensureDatabase(db);
         await this.installModules(db);
-        await this.verifyCompany(db);
+        const odooCompanyId = await this.verifyCompany(db);
         await this.transaction(runner, async (manager) => {
           const period = initialPeriod(new Date(), account!.selectedBillingCycle!);
           await manager
@@ -156,6 +164,7 @@ export class TenantProvisionProcessor extends WorkerHost {
           await this.keycloak.assignWorkspaceOwner(account!.keycloakUserId, tenant!.id);
           await manager.getRepository(Tenant).update(tenant!.id, {
             odooDbName: db,
+            odooCompanyId,
             status: TenantStatus.READY,
             readyAt: new Date(),
             failureReason: null,
@@ -166,6 +175,13 @@ export class TenantProvisionProcessor extends WorkerHost {
           );
         });
       } catch (_error) {
+        if (_error instanceof ReadyRepairFailedError) {
+          // Ready, the prior readyAt, and a null odooCompanyId are already exactly as
+          // they were before this job ran (the repair branch never mutated them on
+          // failure) — never run the ordinary attempt-increment/Failed transition here,
+          // and never compensate a role bind that is itself idempotent and safe to retry.
+          throw new Error('Tenant repair failed; retry required');
+        }
         // Roll back the long-held row lock before writing the failure transition.
         if (accountLock?.isTransactionActive) await accountLock.rollbackTransaction();
         if (ownerBindingAttempted && tenantId && account) {
@@ -234,6 +250,49 @@ export class TenantProvisionProcessor extends WorkerHost {
       .setLock('pessimistic_write')
       .where('account.id = :id', { id })
       .getOneOrFail();
+  }
+  /**
+   * T056 round-6/point 4 — a `Ready` tenant provisioned before the `odoo_company_id`
+   * column existed has a valid row with that field left `NULL` by the migration (it only
+   * adds the nullable column; it cannot safely guess a company id for data it has never
+   * read). This is the ONLY exceptional Ready retry: `TenantsService.retry()` gates
+   * entry so this is reached exclusively when `odooDbName` is non-null and
+   * `odooCompanyId` is null (a mapped Ready tenant, or one with no database at all, is a
+   * 409 the caller never reaches here).
+   *
+   * Order matters: resolve the company, then bind WorkspaceOwner (already idempotent —
+   * safe to repeat on every retry), and persist `odooCompanyId` LAST. If binding failed
+   * before the mapping was persisted, the branch condition (`odooCompanyId === null`)
+   * still matches on the next retry, so the role bind is retried too. Persisting the
+   * mapping FIRST would let a subsequent role-bind failure strand a "mapped but not
+   * owned" tenant that no retry could ever reach again.
+   *
+   * Every failure here (zero/multiple companies, an Odoo RPC error, a subscription
+   * mismatch, a role-binding error, or a persistence error) is caught locally and
+   * re-thrown as `ReadyRepairFailedError`: Ready, the prior `readyAt`, and a null mapping
+   * are left completely untouched — no bucket/database/subscription creation, no module
+   * install, no `provisioningAttempts` increment, no ordinary audit transition, and no
+   * Failed status — so the tenant remains retryable through this exact same path.
+   */
+  private async repairReadyOdooCompanyMapping(
+    runner: QueryRunner,
+    tenant: Tenant,
+    account: Account,
+  ): Promise<void> {
+    if (tenant.odooCompanyId !== null || !tenant.odooDbName) return;
+    try {
+      await this.verifySubscription(tenant, account);
+      const odooCompanyId = await this.verifyCompany(tenant.odooDbName);
+      await this.keycloak.assignWorkspaceOwner(account.keycloakUserId, tenant.id);
+      await this.transaction(runner, async (manager) => {
+        await manager.getRepository(Tenant).update(tenant.id, { odooCompanyId });
+      });
+      tenant.odooCompanyId = odooCompanyId;
+    } catch {
+      // Never surface the underlying RPC/Keycloak exception: it can carry credentials.
+      this.logger.warn('Ready tenant repair failed; retry required');
+      throw new ReadyRepairFailedError('Ready tenant repair failed; retry required');
+    }
   }
   private async verifySubscription(tenant: Tenant, account: Account): Promise<void> {
     const sub = await controlDataSource
@@ -319,16 +378,23 @@ export class TenantProvisionProcessor extends WorkerHost {
     )
       throw new Error('Required Odoo addon not installed');
   }
-  private async verifyCompany(db: string): Promise<void> {
+  /**
+   * T056 round-5 — resolves the id, not merely the count, of the tenant's single
+   * `res.company` record, so the final Ready transition below can persist it to the
+   * control plane (`Tenant.odooCompanyId`) for `CompanyOdooContextService.resolveCompanyTarget`
+   * to read back later without any further Odoo RPC.
+   */
+  private async verifyCompany(db: string): Promise<number> {
     const uid = await this.odoo.authenticate(db, this.credentials.login, this.credentials.password);
-    const count = await this.odoo.executeKw(
+    const companyIds = (await this.odoo.executeKw(
       db,
       uid,
       this.credentials.password,
       'res.company',
-      'search_count',
+      'search',
       [[]],
-    );
-    if (count !== 1) throw new Error('Expected exactly one company');
+    )) as number[];
+    if (companyIds.length !== 1) throw new Error('Expected exactly one company');
+    return companyIds[0];
   }
 }

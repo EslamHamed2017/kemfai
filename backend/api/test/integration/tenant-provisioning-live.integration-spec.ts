@@ -114,6 +114,18 @@ live('T044 live provisioning against real Postgres, MinIO and Odoo', () => {
         [[]],
       ),
     ).toBe(1);
+    // T056 round-5 — the real company id verifyCompany() captured during provisioning
+    // must be the SAME id a direct Odoo search returns, so
+    // CompanyOdooContextService.resolveCompanyTarget can trust the control-plane copy.
+    const realCompanyIds = (await odoo.executeKw(
+      db!,
+      uid,
+      process.env.KEMFAI_TENANT_ADMIN_PASSWORD!,
+      'res.company',
+      'search',
+      [[]],
+    )) as number[];
+    expect(t.odooCompanyId).toBe(realCompanyIds[0]);
     for (let i = 0; i < SEQUENTIAL_RETRIES; i += 1) {
       await processor.process(job);
     }

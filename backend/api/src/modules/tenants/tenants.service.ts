@@ -64,7 +64,19 @@ export class TenantsService {
       if (!locked.emailVerified)
         throw new ForbiddenException('Verify your email before accessing a workspace');
       const tenant = await manager.getRepository(Tenant).findOneBy({ accountId: account.id });
-      if (tenant?.status === TenantStatus.READY || tenant?.status === TenantStatus.CREATING) {
+      if (tenant?.status === TenantStatus.CREATING) {
+        throw new ConflictException(this.view(tenant));
+      }
+      // A Ready tenant with a provisioned Odoo database but no captured company id (e.g. a
+      // row that predates the odoo_company_id column, or a lost mapping) is the one Ready
+      // case this must let through: it enqueues the SAME idempotent job the worker already
+      // uses to re-resolve the mapping from that tenant's own Odoo database (see
+      // TenantProvisionProcessor.repairOdooCompanyMapping). A Ready tenant that already has
+      // its mapping, or has no database at all, stays rejected; retrying it is a conflict.
+      if (
+        tenant?.status === TenantStatus.READY &&
+        (!tenant.odooDbName || tenant.odooCompanyId !== null)
+      ) {
         throw new ConflictException(this.view(tenant));
       }
       const jobId = tenantProvisionJobId(account.id);

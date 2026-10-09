@@ -27,7 +27,16 @@ interface FakeAdminServer {
   /** Current per-user state served by GET .../users/{id} (requiredActions preserved across PUTs). */
   users: Map<
     string,
-    { emailVerified: boolean; requiredActions: string[]; attributes?: Record<string, string[]> }
+    {
+      emailVerified: boolean;
+      requiredActions: string[];
+      attributes?: Record<string, string[]>;
+      username?: string;
+      email?: string;
+      firstName?: string;
+      lastName?: string;
+      enabled?: boolean;
+    }
   >;
   roles: Map<string, string[]>;
   mappingStatus: number;
@@ -136,18 +145,27 @@ async function startFakeAdminServer(): Promise<FakeAdminServer> {
           return;
         }
         const body = JSON.parse(recorded.body ?? '{}') as {
+          username?: string;
+          email?: string;
+          firstName?: string;
+          lastName?: string;
+          enabled?: boolean;
           emailVerified?: boolean;
           requiredActions?: string[];
           attributes?: Record<string, string[]>;
         };
-        const existing = state.users.get(userMatch[1]) ?? {
-          emailVerified: false,
-          requiredActions: [],
-        };
+        // Mirrors real Keycloak 26 User Profile semantics: a PUT body is authoritative — any
+        // mutable identity field the body omits (username/email/firstName/lastName/enabled)
+        // is cleared, not carried forward from the prior representation.
         state.users.set(userMatch[1], {
-          emailVerified: body.emailVerified ?? existing.emailVerified,
-          requiredActions: body.requiredActions ?? existing.requiredActions,
-          attributes: body.attributes ?? existing.attributes,
+          username: body.username,
+          email: body.email,
+          firstName: body.firstName,
+          lastName: body.lastName,
+          enabled: body.enabled,
+          emailVerified: body.emailVerified ?? false,
+          requiredActions: body.requiredActions ?? [],
+          attributes: body.attributes,
         });
         res.statusCode = 204;
         res.end();
@@ -579,6 +597,11 @@ describe('WorkspaceOwner Admin REST binding (T046)', () => {
       emailVerified: true,
       requiredActions: [],
       attributes: { timezone: ['UTC'] },
+      username: 'owner@example.com',
+      email: 'owner@example.com',
+      firstName: 'Ada',
+      lastName: 'Lovelace',
+      enabled: true,
     });
   });
   afterEach(async () => {
@@ -611,5 +634,76 @@ describe('WorkspaceOwner Admin REST binding (T046)', () => {
     server.mappingStatus = 204;
     await client.revokeWorkspaceOwner(USER_INPUT.id, 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb');
     expect(server.users.get(USER_INPUT.id)?.attributes).toEqual({ timezone: ['UTC'] });
+  });
+
+  it('assignWorkspaceOwner PUT body preserves seeded email/firstName/lastName and requiredActions (profile-destruction regression)', async () => {
+    server.users.set(USER_INPUT.id, {
+      emailVerified: true,
+      requiredActions: ['CONFIGURE_TOTP'],
+      attributes: { timezone: ['UTC'] },
+      username: 'owner@example.com',
+      email: 'owner@example.com',
+      firstName: 'Ada',
+      lastName: 'Lovelace',
+      enabled: true,
+    });
+    const client = new AdminRestKeycloakUserProvisioner();
+    await client.assignWorkspaceOwner(USER_INPUT.id, 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb');
+
+    const putRequest = server.requests.find(
+      (r) => r.method === 'PUT' && r.url.endsWith(`/users/${USER_INPUT.id}`),
+    );
+    expect(JSON.parse(putRequest?.body ?? '{}')).toEqual({
+      username: 'owner@example.com',
+      email: 'owner@example.com',
+      firstName: 'Ada',
+      lastName: 'Lovelace',
+      enabled: true,
+      emailVerified: true,
+      requiredActions: ['CONFIGURE_TOTP'],
+      attributes: { timezone: ['UTC'], tenant_id: ['bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'] },
+    });
+
+    const after = server.users.get(USER_INPUT.id);
+    expect(after?.email).toBe('owner@example.com');
+    expect(after?.firstName).toBe('Ada');
+    expect(after?.lastName).toBe('Lovelace');
+    expect(after?.requiredActions).toEqual(['CONFIGURE_TOTP']);
+  });
+
+  it('revokeWorkspaceOwner PUT body preserves seeded email/firstName/lastName and requiredActions (profile-destruction regression)', async () => {
+    server.users.set(USER_INPUT.id, {
+      emailVerified: true,
+      requiredActions: ['CONFIGURE_TOTP'],
+      attributes: { timezone: ['UTC'], tenant_id: ['bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'] },
+      username: 'owner@example.com',
+      email: 'owner@example.com',
+      firstName: 'Ada',
+      lastName: 'Lovelace',
+      enabled: true,
+    });
+    server.roles.set(USER_INPUT.id, ['WorkspaceOwner']);
+    const client = new AdminRestKeycloakUserProvisioner();
+    await client.revokeWorkspaceOwner(USER_INPUT.id, 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb');
+
+    const putRequest = server.requests.find(
+      (r) => r.method === 'PUT' && r.url.endsWith(`/users/${USER_INPUT.id}`),
+    );
+    expect(JSON.parse(putRequest?.body ?? '{}')).toEqual({
+      username: 'owner@example.com',
+      email: 'owner@example.com',
+      firstName: 'Ada',
+      lastName: 'Lovelace',
+      enabled: true,
+      emailVerified: true,
+      requiredActions: ['CONFIGURE_TOTP'],
+      attributes: { timezone: ['UTC'] },
+    });
+
+    const after = server.users.get(USER_INPUT.id);
+    expect(after?.email).toBe('owner@example.com');
+    expect(after?.firstName).toBe('Ada');
+    expect(after?.lastName).toBe('Lovelace');
+    expect(after?.requiredActions).toEqual(['CONFIGURE_TOTP']);
   });
 });

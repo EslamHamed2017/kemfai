@@ -31,6 +31,7 @@ describe('Company setup contract (T049, against contracts/openapi.yaml)', () => 
         values: {},
         version: 0,
         stale: false,
+        scope: 'scope-token',
       });
     });
   });
@@ -68,6 +69,42 @@ describe('Company setup contract (T049, against contracts/openapi.yaml)', () => 
         validator.validateRequestBody('/companies/current/setup', 'put', { step: 'country' }),
       ).toThrow(/values/);
     });
+
+    // T056 round-5 binding resolution (item 5) — the three required contract negatives:
+    // unknown step, negative baseVersion, non-integer baseVersion. These prove the
+    // CONTRACT itself (not just the DTO decorators, which are separately verified against
+    // the same enum/minimum in company-setup-step.request.dto.ts) declares and rejects
+    // every one of them; the HTTP-level "never reaches Odoo" proof for the same three
+    // inputs lives in company-setup-live.integration-spec.ts (real app, real guards, real
+    // global ValidationPipe, real Odoo read proving no mutation).
+    it('rejects an unknown "step" value not in the seven-value enum', () => {
+      expect(() =>
+        validator.validateRequestBody('/companies/current/setup', 'put', {
+          step: 'not_a_real_step',
+          values: {},
+        }),
+      ).toThrow();
+    });
+
+    it('rejects a negative "baseVersion"', () => {
+      expect(() =>
+        validator.validateRequestBody('/companies/current/setup', 'put', {
+          step: 'country',
+          values: { country: 'AE' },
+          baseVersion: -1,
+        }),
+      ).toThrow();
+    });
+
+    it('rejects a non-integer "baseVersion"', () => {
+      expect(() =>
+        validator.validateRequestBody('/companies/current/setup', 'put', {
+          step: 'country',
+          values: { country: 'AE' },
+          baseVersion: 1.5,
+        }),
+      ).toThrow();
+    });
   });
 
   describe('PUT /companies/current/setup responses', () => {
@@ -78,6 +115,7 @@ describe('Company setup contract (T049, against contracts/openapi.yaml)', () => 
         values: { country: 'AE' },
         version: 1,
         stale: false,
+        scope: 'scope-token',
       });
     });
 
@@ -88,6 +126,7 @@ describe('Company setup contract (T049, against contracts/openapi.yaml)', () => 
         values: { country: 'AE' },
         version: 2,
         stale: true,
+        scope: 'scope-token',
       });
     });
 
@@ -97,6 +136,10 @@ describe('Company setup contract (T049, against contracts/openapi.yaml)', () => 
 
     it('409: missing country validation rule — configuration gap, never silently accepted', () => {
       coverage.record('/companies/current/setup', 'put', 409, undefined);
+    });
+
+    it('412: T056 X-KEMFAI-Setup-Scope header no longer matches the authenticated scope', () => {
+      coverage.record('/companies/current/setup', 'put', 412, undefined);
     });
   });
 
@@ -108,6 +151,7 @@ describe('Company setup contract (T049, against contracts/openapi.yaml)', () => 
         values: { country: 'AE' },
         version: 8,
         stale: false,
+        scope: 'scope-token',
       });
     });
 
@@ -118,6 +162,7 @@ describe('Company setup contract (T049, against contracts/openapi.yaml)', () => 
         values: { country: 'AE' },
         version: 8,
         stale: false,
+        scope: 'scope-token',
       });
     });
 
@@ -127,6 +172,10 @@ describe('Company setup contract (T049, against contracts/openapi.yaml)', () => 
 
     it('403: caller is not WorkspaceOwner, or the trial window has elapsed unpaid (documented 2026-10-05 remediation)', () => {
       coverage.record('/companies/current/setup/complete', 'post', 403, undefined);
+    });
+
+    it('412: T056 X-KEMFAI-Setup-Scope header no longer matches the authenticated scope', () => {
+      coverage.record('/companies/current/setup/complete', 'post', 412, undefined);
     });
   });
 

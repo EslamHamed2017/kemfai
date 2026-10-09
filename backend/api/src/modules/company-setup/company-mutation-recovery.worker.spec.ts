@@ -91,11 +91,20 @@ describe('CompanyMutationRecoveryWorker (T055, unit)', () => {
     };
   }
 
+  const validCompletionResult = {
+    currentStep: 'accounting_setup',
+    setupComplete: true,
+    alreadyComplete: false,
+    values: { country: 'AE' },
+    version: 8,
+    stale: false,
+  };
+
   it('a pending setup.complete handoff is replayed against Odoo, then committed and audited', async () => {
     const handoff = makeHandoff();
     const { worker, executeKw, markOdooCommitted, markAudited, recordCompanySetupCompleted } =
       makeWorker([handoff]);
-    executeKw.mockResolvedValue({ setupComplete: true, alreadyComplete: false });
+    executeKw.mockResolvedValue(validCompletionResult);
 
     await worker.tick();
 
@@ -105,14 +114,47 @@ describe('CompanyMutationRecoveryWorker (T055, unit)', () => {
       occurredAt.toISOString(),
       'account-1',
     ]);
-    expect(markOdooCommitted).toHaveBeenCalledWith('handoff-1', {
-      setupComplete: true,
-      alreadyComplete: false,
-    });
+    expect(markOdooCommitted).toHaveBeenCalledWith('handoff-1', validCompletionResult);
     expect(recordCompanySetupCompleted).toHaveBeenCalledWith(
       expect.objectContaining({ operationUuid: 'handoff-1', occurredAt }),
     );
     expect(markAudited).toHaveBeenCalledWith('handoff-1');
+  });
+
+  it('round-3 point 2: a malformed FRESH replayed setup.complete result is never committed/audited — left retryable', async () => {
+    const handoff = makeHandoff();
+    const {
+      worker,
+      executeKw,
+      markOdooCommitted,
+      markAudited,
+      recordCompanySetupCompleted,
+      scheduleRetryBackoff,
+    } = makeWorker([handoff]);
+    executeKw.mockResolvedValue({ ...validCompletionResult, currentStep: 'not_a_real_step' });
+
+    await worker.tick();
+
+    expect(markOdooCommitted).not.toHaveBeenCalled();
+    expect(markAudited).not.toHaveBeenCalled();
+    expect(recordCompanySetupCompleted).not.toHaveBeenCalled();
+    expect(scheduleRetryBackoff).toHaveBeenCalledWith('handoff-1', expect.any(Number));
+  });
+
+  it('round-3 point 2: a malformed STORED odoo_committed setup.complete payload is never audited/marked audited — left retryable', async () => {
+    const handoff = makeHandoff({
+      state: CompanyMutationHandoffState.ODOO_COMMITTED,
+      finalResponse: { ...validCompletionResult, version: -5 },
+    });
+    const { worker, executeKw, markAudited, recordCompanySetupCompleted, scheduleRetryBackoff } =
+      makeWorker([handoff]);
+
+    await worker.tick();
+
+    expect(executeKw).not.toHaveBeenCalled();
+    expect(markAudited).not.toHaveBeenCalled();
+    expect(recordCompanySetupCompleted).not.toHaveBeenCalled();
+    expect(scheduleRetryBackoff).toHaveBeenCalledWith('handoff-1', expect.any(Number));
   });
 
   it('an odoo_committed settings.update handoff skips the RPC and audits directly from the stored finalResponse', async () => {

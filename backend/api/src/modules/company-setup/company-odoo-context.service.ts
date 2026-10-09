@@ -45,6 +45,42 @@ export class CompanyOdooContextService {
   }
 
   /**
+   * T056 round-5 binding resolution (item 1) — control-plane-ONLY lookup of the caller's
+   * immutable Odoo company target. Reads `Tenant.odooCompanyId` (captured once by
+   * `TenantProvisionProcessor.verifyCompany` at provisioning time) from Postgres and never
+   * touches Odoo — so `CompanySetupService` can compute/validate the expected
+   * `X-KEMFAI-Setup-Scope` BEFORE any `authenticate`/`search`/mutation RPC runs, closing the
+   * gap where a missing/blank/mismatched scope was previously only caught after `resolve()`
+   * had already hit Odoo to learn the company id.
+   */
+  async resolveCompanyTarget(tenantId: string): Promise<number> {
+    const tenant = await controlDataSource.getRepository(Tenant).findOneBy({ id: tenantId });
+    if (!tenant?.odooCompanyId) {
+      throw new InternalServerErrorException('Tenant has no provisioned Odoo company');
+    }
+    return tenant.odooCompanyId;
+  }
+
+  /**
+   * T056 round-5 binding resolution (item 1) — resolves ONLY the Odoo credentials
+   * (database name + authenticated uid/password), deliberately split from
+   * `resolveCompanyTarget` above: this is the first point in a request's lifecycle that is
+   * allowed to call `odoo.authenticate`, and callers must invoke it only AFTER the scope/
+   * principal preconditions have already passed.
+   */
+  async resolveCredentials(
+    tenantId: string,
+  ): Promise<{ db: string; uid: number; password: string }> {
+    const tenant = await controlDataSource.getRepository(Tenant).findOneBy({ id: tenantId });
+    if (!tenant?.odooDbName) {
+      throw new InternalServerErrorException('Tenant has no provisioned Odoo database');
+    }
+    const { login, password } = provisioningCredentials();
+    const uid = await this.odoo.authenticate(tenant.odooDbName, login, password);
+    return { db: tenant.odooDbName, uid, password };
+  }
+
+  /**
    * T055 — `CompanyMutationRecoveryWorker` has no inbound HTTP request to resolve a
    * tenant from (recovery runs autonomously, never triggered by a client call), so it
    * resolves Odoo credentials directly from a handoff's persisted `tenantId`. This reuses

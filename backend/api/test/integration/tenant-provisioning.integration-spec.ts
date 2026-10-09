@@ -1,5 +1,12 @@
 import { randomUUID } from 'crypto';
-import { Controller, Get, INestApplication, Module, Param } from '@nestjs/common';
+import {
+  ConflictException,
+  Controller,
+  Get,
+  INestApplication,
+  Module,
+  Param,
+} from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import request = require('supertest');
 import { AppModule } from '../../src/app.module';
@@ -19,7 +26,12 @@ import { Job, Queue } from 'bullmq';
 import { getQueueToken } from '@nestjs/bullmq';
 import { KEYCLOAK_USER_PROVISIONER } from '../../src/integrations/keycloak/keycloak-user-provisioner';
 import { FakeKeycloakUsers } from '../support/fake-keycloak-users';
-import { QUEUE_EMAIL_SEND_VERIFICATION } from '../../src/common/queues/queue-names';
+import {
+  QUEUE_EMAIL_SEND_VERIFICATION,
+  QUEUE_TENANT_PROVISION,
+} from '../../src/common/queues/queue-names';
+import { redisConnectionFromUrl } from '../../src/common/queues/redis-connection';
+import { TenantsService } from '../../src/modules/tenants/tenants.service';
 
 @Controller('t046-probe')
 class OwnerProbe {
@@ -94,7 +106,10 @@ describe('tenant provisioning control-plane transactions (T044)', () => {
       async (_db: string, _uid: number, _pass: string, model: string, method: string) => {
         if (model === 'res.company') {
           fail('company');
-          return 1;
+          // T056 round-5: verifyCompany now calls `search` (not `search_count`) to
+          // capture the company id for Tenant.odooCompanyId, so this stands in for a
+          // single-element id list, not a bare count.
+          return [1];
         }
         if (method === 'button_immediate_install') {
           fail('addon');
@@ -209,6 +224,9 @@ describe('tenant provisioning control-plane transactions (T044)', () => {
     expect(current.status).toBe(TenantStatus.READY);
     expect(bindings.get(account.keycloakUserId)).toBe(current.id);
     expect(current.provisioningAttempts).toBe(1);
+    // T056 round-5 — verifyCompany's `res.company` search id is persisted to the control
+    // plane so CompanySetupService can resolve it later with zero Odoo RPCs.
+    expect(current.odooCompanyId).toBe(1);
     expect(await controlDataSource.getRepository(Tenant).countBy({ accountId: account.id })).toBe(
       1,
     );
@@ -224,15 +242,17 @@ describe('tenant provisioning control-plane transactions (T044)', () => {
     ]);
     expect((await events())[0].payload.attempt_number).toBe(1);
 
-    // N sequential retries of the already-Ready request must remain no-ops: no new
-    // tenant/subscription/bucket/database/company and no additional lifecycle audit events.
-    bindings.clear(); // Simulate a lost remote mapping; Ready must repair it.
+    // N sequential retries of the already-Ready, already-mapped request must remain
+    // COMPLETE no-ops: T056 point 4 narrows the Ready repair branch to exactly
+    // `odooDbName` non-null AND `odooCompanyId` null — a tenant that already has its
+    // mapping is never reprovisioned and never re-bound, matching the 409
+    // `TenantsService.retry()` would return for this exact row in production.
+    const callsBeforeRetries = keycloak.assignWorkspaceOwner.mock.calls.length;
     for (let i = 0; i < SEQUENTIAL_RETRIES; i += 1) {
       await run();
     }
     const afterRetries = await tenant();
-    expect(bindings.get(account.keycloakUserId)).toBe(afterRetries.id);
-    expect(keycloak.assignWorkspaceOwner).toHaveBeenCalledTimes(CONCURRENCY + SEQUENTIAL_RETRIES);
+    expect(keycloak.assignWorkspaceOwner).toHaveBeenCalledTimes(callsBeforeRetries);
     expect(afterRetries.status).toBe(TenantStatus.READY);
     expect(afterRetries.provisioningAttempts).toBe(1);
     expect(await controlDataSource.getRepository(Tenant).countBy({ accountId: account.id })).toBe(
@@ -248,6 +268,347 @@ describe('tenant provisioning control-plane transactions (T044)', () => {
       'tenant.provisioning.attempted',
       'tenant.provisioning.succeeded',
     ]);
+  });
+  // T056 round-6 (required work item 1) — a Ready tenant provisioned before the
+  // `odoo_company_id` column existed is a real production shape: a valid row the
+  // migration left with that field NULL (it only ADDs the nullable column; it never
+  // guesses a value). This proves a Ready retry is the authoritative, tenant-isolated
+  // upgrade path: it re-resolves the mapping from the SAME db the tenant already owns
+  // (never a guessed id) and persists it, then never re-touches Odoo once repaired.
+  it('repairs a missing odoo_company_id on a pre-existing Ready tenant via retry, then stays a no-op', async () => {
+    await run();
+    const ready = await tenant();
+    expect(ready.odooCompanyId).toBe(1);
+    // Simulate data that predates the odoo_company_id backfill: a genuinely Ready
+    // tenant whose mapping was never captured.
+    await controlDataSource.query('UPDATE tenant SET odoo_company_id = NULL WHERE id = $1', [
+      ready.id,
+    ]);
+    expect((await tenant()).odooCompanyId).toBeNull();
+    calls.length = 0;
+    await run();
+    const repaired = await tenant();
+    expect(repaired.odooCompanyId).toBe(1);
+    expect(repaired.status).toBe(TenantStatus.READY);
+    expect(repaired.provisioningAttempts).toBe(1);
+    expect(calls.filter((step) => step === 'company')).toHaveLength(1);
+    // Once repaired, a further retry must not re-touch Odoo for the company mapping.
+    calls.length = 0;
+    await run();
+    expect(calls.filter((step) => step === 'company')).toHaveLength(0);
+    expect((await tenant()).odooCompanyId).toBe(1);
+  });
+  // T056 point 4 — regression for the defect this corrective round fixes: a failure
+  // inside the Ready/null repair branch used to fall through to the SAME catch block
+  // every ordinary provisioning failure does, which flipped a formerly Ready tenant to
+  // Failed and cleared readyAt — destroying a working tenant over a retryable backfill
+  // failure. The repair branch must catch its own failures and leave Ready, readyAt, and
+  // the null mapping completely untouched so the exact same repair path can be retried.
+  it('an Odoo failure inside the Ready/null repair branch preserves Ready, readyAt, and the null mapping — never Failed', async () => {
+    await run();
+    const ready = await tenant();
+    expect(ready.status).toBe(TenantStatus.READY);
+    const originalReadyAt = ready.readyAt;
+    await controlDataSource.query('UPDATE tenant SET odoo_company_id = NULL WHERE id = $1', [
+      ready.id,
+    ]);
+    calls.length = 0;
+    failAt = 'company';
+    await expect(run()).rejects.toThrow();
+
+    const afterFailure = await tenant();
+    expect(afterFailure.status).toBe(TenantStatus.READY);
+    expect(afterFailure.odooCompanyId).toBeNull();
+    expect(afterFailure.readyAt?.getTime()).toBe(originalReadyAt?.getTime());
+    expect(afterFailure.failureReason).toBeNull();
+    expect(afterFailure.provisioningAttempts).toBe(ready.provisioningAttempts);
+    // No ordinary Failed-transition audit event, no new attempted event: this never
+    // reached the common provisioning failure handler.
+    expect((await events()).map((event) => event.action)).toEqual([
+      'tenant.provisioning.attempted',
+      'tenant.provisioning.succeeded',
+    ]);
+    expect(keycloak.revokeWorkspaceOwner).not.toHaveBeenCalled();
+
+    // The exact same repair path must still be retryable afterward.
+    failAt = undefined;
+    await run();
+    expect((await tenant()).odooCompanyId).toBe(1);
+    expect((await tenant()).status).toBe(TenantStatus.READY);
+  });
+  // T056 point 4 — same invariant, but for a role-binding failure: binding happens BEFORE
+  // the mapping is persisted (never after), so a bind failure must never strand a
+  // "mapped but not owned" row, and must never trigger the ordinary revoke compensation
+  // (the bind is itself idempotent and safe to retry, not a partial effect to undo).
+  it('a role-binding failure inside the Ready/null repair branch preserves Ready/readyAt/null mapping and never compensates', async () => {
+    await run();
+    const ready = await tenant();
+    const originalReadyAt = ready.readyAt;
+    await controlDataSource.query('UPDATE tenant SET odoo_company_id = NULL WHERE id = $1', [
+      ready.id,
+    ]);
+    calls.length = 0;
+    keycloak.assignWorkspaceOwner.mockImplementationOnce(() => {
+      throw new Error('private-owner-secret');
+    });
+    await expect(run()).rejects.toThrow();
+
+    const afterFailure = await tenant();
+    expect(afterFailure.status).toBe(TenantStatus.READY);
+    expect(afterFailure.odooCompanyId).toBeNull();
+    expect(afterFailure.readyAt?.getTime()).toBe(originalReadyAt?.getTime());
+    expect(keycloak.revokeWorkspaceOwner).not.toHaveBeenCalled();
+    expect((await events()).map((event) => event.action)).toEqual([
+      'tenant.provisioning.attempted',
+      'tenant.provisioning.succeeded',
+    ]);
+
+    await run();
+    expect((await tenant()).odooCompanyId).toBe(1);
+  });
+  // T056 round-6 — proves the backfill is tenant-isolated, not merely "works for one
+  // tenant": two separate pre-existing Ready tenants, each missing odoo_company_id,
+  // resolve the SAME numeric company id (1) from their OWN separate Odoo database, and
+  // each repair writes only its own row.
+  it("isolates the backfill to each tenant's own row for two pre-existing Ready tenants sharing a numeric company id across separate Odoo databases", async () => {
+    const perDbCompanyId = new Map<string, number>([
+      ['db_alpha_t056', 1],
+      ['db_beta_t056', 1],
+    ]);
+    const isolatedCalls: string[] = [];
+    const isolatedOdoo = {
+      databaseList: jest.fn(async () => []),
+      createDatabase: jest.fn(async () => undefined),
+      authenticate: jest.fn(async () => 9),
+      executeKw: jest.fn(
+        async (db: string, _uid: number, _pass: string, model: string, method: string) => {
+          if (model === 'res.company' && method === 'search') {
+            isolatedCalls.push(db);
+            const id = perDbCompanyId.get(db);
+            if (id === undefined) throw new Error(`unexpected db ${db}`);
+            return [id];
+          }
+          throw new Error(`isolatedOdoo: unexpected call ${model}.${method}`);
+        },
+      ),
+    };
+    const isolatedKeycloak = {
+      assignWorkspaceOwner: jest.fn(async () => undefined),
+      revokeWorkspaceOwner: jest.fn(async () => undefined),
+    };
+    const isolatedProcessor = new TenantProvisionProcessor(
+      audit,
+      storage as unknown as MinioStorageService,
+      isolatedOdoo as unknown as OdooRpcService,
+      isolatedKeycloak as never,
+    );
+    const accountRepo = controlDataSource.getRepository(Account);
+    const makeReadyTenantMissingCompany = async (db: string) => {
+      const acct = await accountRepo.save(
+        accountRepo.create({
+          keycloakUserId: randomUUID(),
+          email: `t056-isolation-${randomUUID()}@example.com`,
+          emailVerified: true,
+          selectedPlanId: plan.id,
+          selectedBillingCycle: BillingCycle.MONTHLY,
+        }),
+      );
+      const rows = await controlDataSource.query(
+        `INSERT INTO tenant (account_id, status, odoo_db_name, ready_at)
+         VALUES ($1, 'Ready'::tenant_status_enum, $2, now()) RETURNING id`,
+        [acct.id, db],
+      );
+      await controlDataSource.query(
+        `INSERT INTO subscription (tenant_id, plan_id, billing_cycle, status, current_period_start, current_period_end)
+         VALUES ($1, $2, 'monthly'::subscription_billing_cycle_enum, 'Active'::subscription_status_enum, '2026-01-01', '2026-02-01')`,
+        [rows[0].id, plan.id],
+      );
+      return { accountId: acct.id as string, tenantId: rows[0].id as string };
+    };
+    const alpha = await makeReadyTenantMissingCompany('db_alpha_t056');
+    const beta = await makeReadyTenantMissingCompany('db_beta_t056');
+    try {
+      await isolatedProcessor.process({
+        data: { accountId: alpha.accountId },
+      } as Job<{ accountId: string }>);
+      await isolatedProcessor.process({
+        data: { accountId: beta.accountId },
+      } as Job<{ accountId: string }>);
+      const alphaRow = await controlDataSource
+        .getRepository(Tenant)
+        .findOneByOrFail({ id: alpha.tenantId });
+      const betaRow = await controlDataSource
+        .getRepository(Tenant)
+        .findOneByOrFail({ id: beta.tenantId });
+      expect(alphaRow.odooCompanyId).toBe(1);
+      expect(betaRow.odooCompanyId).toBe(1);
+      expect(alphaRow.odooDbName).toBe('db_alpha_t056');
+      expect(betaRow.odooDbName).toBe('db_beta_t056');
+      expect(isolatedCalls).toEqual(['db_alpha_t056', 'db_beta_t056']);
+    } finally {
+      await controlDataSource.query('DELETE FROM subscription WHERE tenant_id IN ($1, $2)', [
+        alpha.tenantId,
+        beta.tenantId,
+      ]);
+      await controlDataSource.query('DELETE FROM tenant WHERE id IN ($1, $2)', [
+        alpha.tenantId,
+        beta.tenantId,
+      ]);
+      await controlDataSource.query('DELETE FROM account WHERE id IN ($1, $2)', [
+        alpha.accountId,
+        beta.accountId,
+      ]);
+    }
+  });
+  // T056 round-7 (required work item 1) — round 6's repair code was only reachable by
+  // calling the processor directly; the ACTUAL production path a tenant upgrade must use
+  // is `TenantsService.retry()` behind POST /tenants/me/provisioning-retry, and until now
+  // it unconditionally rejected every Ready tenant with ConflictException before ever
+  // touching the queue. This proves retry() ITSELF is now the authoritative,
+  // tenant-isolated, idempotent invocation path for a pre-existing Ready row left with a
+  // NULL odoo_company_id: it enqueues the same real BullMQ job a worker would consume (no
+  // dedupe duplicate on a second call before processing), the REAL Job fetched back off
+  // that queue is handed to the worker's own process() method, two separate tenants with
+  // the SAME numeric company id in SEPARATE Odoo databases are repaired without
+  // cross-contamination, and once repaired the tenant is never again retry-able (no
+  // backdoor to re-provision a complete tenant). No company id is guessed anywhere: it is
+  // re-resolved from each tenant's OWN odoo_db_name, exactly like fresh provisioning does.
+  it("TenantsService.retry() reaches and repairs a pre-existing Ready tenant's missing odoo_company_id through the real queue, isolated per tenant across separate databases, then rejects further retries", async () => {
+    const queue = new Queue(QUEUE_TENANT_PROVISION, { connection: redisConnectionFromUrl() });
+    const tenantsService = new TenantsService(queue);
+    const perDbCompanyId = new Map<string, number>([
+      ['db_alpha_t056r7', 1],
+      ['db_beta_t056r7', 1],
+    ]);
+    const isolatedCalls: string[] = [];
+    const isolatedOdoo = {
+      databaseList: jest.fn(async () => []),
+      createDatabase: jest.fn(async () => undefined),
+      authenticate: jest.fn(async () => 9),
+      executeKw: jest.fn(
+        async (db: string, _uid: number, _pass: string, model: string, method: string) => {
+          if (model === 'res.company' && method === 'search') {
+            isolatedCalls.push(db);
+            const id = perDbCompanyId.get(db);
+            if (id === undefined) throw new Error(`unexpected db ${db}`);
+            return [id];
+          }
+          throw new Error(`isolatedOdoo: unexpected call ${model}.${method}`);
+        },
+      ),
+    };
+    const isolatedKeycloak = {
+      assignWorkspaceOwner: jest.fn(async () => undefined),
+      revokeWorkspaceOwner: jest.fn(async () => undefined),
+    };
+    const isolatedProcessor = new TenantProvisionProcessor(
+      audit,
+      storage as unknown as MinioStorageService,
+      isolatedOdoo as unknown as OdooRpcService,
+      isolatedKeycloak as never,
+    );
+    const accountRepo = controlDataSource.getRepository(Account);
+    const makeReadyTenantMissingCompany = async (db: string) => {
+      const acct = await accountRepo.save(
+        accountRepo.create({
+          keycloakUserId: randomUUID(),
+          email: `t056r7-${randomUUID()}@example.com`,
+          emailVerified: true,
+          selectedPlanId: plan.id,
+          selectedBillingCycle: BillingCycle.MONTHLY,
+        }),
+      );
+      const rows = await controlDataSource.query(
+        `INSERT INTO tenant (account_id, status, odoo_db_name, ready_at)
+         VALUES ($1, 'Ready'::tenant_status_enum, $2, now()) RETURNING id`,
+        [acct.id, db],
+      );
+      await controlDataSource.query(
+        `INSERT INTO subscription (tenant_id, plan_id, billing_cycle, status, current_period_start, current_period_end)
+         VALUES ($1, $2, 'monthly'::subscription_billing_cycle_enum, 'Active'::subscription_status_enum, '2026-01-01', '2026-02-01')`,
+        [rows[0].id, plan.id],
+      );
+      return { account: acct, tenantId: rows[0].id as string };
+    };
+    const alpha = await makeReadyTenantMissingCompany('db_alpha_t056r7');
+    const beta = await makeReadyTenantMissingCompany('db_beta_t056r7');
+    const repairThroughRealQueue = async (target: { account: Account; tenantId: string }) => {
+      // Two calls before processing must dedupe to the SAME single waiting job: the
+      // authoritative path is idempotent at the enqueue layer, not merely at the worker.
+      const first = await tenantsService.retry(target.account.keycloakUserId);
+      const second = await tenantsService.retry(target.account.keycloakUserId);
+      const expected = {
+        tenantId: target.tenantId,
+        status: TenantStatus.READY,
+        failureReason: null,
+      };
+      expect(first).toEqual(expected);
+      expect(second).toEqual(expected);
+      const waiting = (await queue.getJobs(['waiting'])).filter(
+        (job) => job.id === target.account.id,
+      );
+      expect(waiting).toHaveLength(1);
+      const job = await queue.getJob(target.account.id);
+      expect(job).toBeDefined();
+      expect(await job!.getState()).toBe('waiting');
+      // Hand the REAL job fetched off the REAL queue to the worker's own entrypoint — the
+      // same object shape BullMQ's own Worker would deliver to `process()`.
+      await isolatedProcessor.process(job as Job<{ accountId: string }>);
+      // A real Worker would now move this job to `completed`; simulate that side effect
+      // directly so the next assertion observes a cleared queue, not a stuck `waiting` job.
+      await job!.remove();
+    };
+    try {
+      await repairThroughRealQueue(alpha);
+      await repairThroughRealQueue(beta);
+      const alphaRow = await controlDataSource
+        .getRepository(Tenant)
+        .findOneByOrFail({ id: alpha.tenantId });
+      const betaRow = await controlDataSource
+        .getRepository(Tenant)
+        .findOneByOrFail({ id: beta.tenantId });
+      expect(alphaRow.odooCompanyId).toBe(1);
+      expect(betaRow.odooCompanyId).toBe(1);
+      expect(alphaRow.status).toBe(TenantStatus.READY);
+      expect(betaRow.status).toBe(TenantStatus.READY);
+      expect(alphaRow.odooDbName).toBe('db_alpha_t056r7');
+      expect(betaRow.odooDbName).toBe('db_beta_t056r7');
+      // Equal numeric company id (1) resolved independently from each tenant's OWN
+      // separate database — never the other tenant's, never guessed.
+      expect(isolatedCalls).toEqual(['db_alpha_t056r7', 'db_beta_t056r7']);
+
+      // Now genuinely Ready and mapped: retry must stay a conflict (no backdoor to
+      // re-provision a complete tenant) and must not enqueue a new job.
+      await expect(tenantsService.retry(alpha.account.keycloakUserId)).rejects.toBeInstanceOf(
+        ConflictException,
+      );
+      await expect(tenantsService.retry(beta.account.keycloakUserId)).rejects.toBeInstanceOf(
+        ConflictException,
+      );
+      expect(
+        (await queue.getJobs(['waiting'])).filter(
+          (job) => job.id === alpha.account.id || job.id === beta.account.id,
+        ),
+      ).toHaveLength(0);
+    } finally {
+      for (const target of [alpha, beta]) {
+        const job = await queue.getJob(target.account.id);
+        if (job) await job.remove();
+      }
+      await queue.close();
+      await controlDataSource.query('DELETE FROM subscription WHERE tenant_id IN ($1, $2)', [
+        alpha.tenantId,
+        beta.tenantId,
+      ]);
+      await controlDataSource.query('DELETE FROM tenant WHERE id IN ($1, $2)', [
+        alpha.tenantId,
+        beta.tenantId,
+      ]);
+      await controlDataSource.query('DELETE FROM account WHERE id IN ($1, $2)', [
+        alpha.account.id,
+        beta.account.id,
+      ]);
+    }
   });
   it.each([
     'bucket',

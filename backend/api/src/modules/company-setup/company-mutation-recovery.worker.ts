@@ -3,6 +3,7 @@ import { randomUUID } from 'crypto';
 import { OdooRpcService } from '../../integrations/odoo-rpc/odoo-rpc.service';
 import { AuditService } from '../audit/audit.service';
 import { CompanyOdooContextService } from './company-odoo-context.service';
+import { CompanySetupService } from './company-setup.service';
 import {
   CompanyMutationHandoffRow,
   CompanyMutationHandoffService,
@@ -121,7 +122,19 @@ export class CompanyMutationRecoveryWorker implements OnModuleInit, OnModuleDest
       let result: unknown = handoff.finalResponse;
       if (handoff.state === CompanyMutationHandoffState.PENDING) {
         result = await this.replayOdoo(handoff, db, uid, password);
+        // Round-3 binding resolution point 2 — reuse CompanySetupService's EXACT
+        // completion-result validator (never a forked copy) before this freshly
+        // replayed result is persisted via markOdooCommitted. A malformed result throws
+        // here, is caught by the outer try/catch below, and leaves the handoff
+        // retryable via scheduleRetryBackoff — never marked committed with garbage.
+        if (handoff.action === CompanyMutationAction.SETUP_COMPLETE) {
+          CompanySetupService.assertValidCompletionResult(result);
+        }
         await this.handoffs.markOdooCommitted(handoff.id, result);
+      } else if (handoff.action === CompanyMutationAction.SETUP_COMPLETE) {
+        // ODOO_COMMITTED (or already-stored) completion payload — validate the STORED
+        // row before trusting it for the audit append/markAudited that follows.
+        CompanySetupService.assertValidCompletionResult(result);
       }
       await this.appendAudit(handoff, result);
       await this.handoffs.markAudited(handoff.id);

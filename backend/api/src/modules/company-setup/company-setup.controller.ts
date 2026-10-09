@@ -1,4 +1,14 @@
-import { Body, Controller, Get, HttpCode, HttpStatus, Post, Put, Req } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  Headers,
+  HttpCode,
+  HttpStatus,
+  Post,
+  Put,
+  Req,
+} from '@nestjs/common';
 import { RequireFeatureFlag } from '../../common/decorators/feature-flag.decorator';
 import { EnforceTrialWindow } from '../../common/decorators/trial-window.decorator';
 import { Roles } from '../../common/decorators/roles.decorator';
@@ -38,8 +48,9 @@ export class CompanySetupController {
   async putSetup(
     @Req() req: TenantScopedRequest,
     @Body() body: CompanySetupStepRequestDto,
+    @Headers('x-kemfai-setup-scope') scope?: string,
   ): Promise<CompanySetupStateDto> {
-    return this.companySetup.saveStep(req, body);
+    return this.companySetup.saveStep(req, body, scope);
   }
 
   /**
@@ -55,7 +66,10 @@ export class CompanySetupController {
   @Roles('WorkspaceOwner')
   @RequireFeatureFlag('module.company_setup')
   @EnforceTrialWindow()
-  async completeSetup(@Req() req: TenantScopedRequest): Promise<CompanySetupStateDto> {
-    return this.companySetup.completeSetup(req);
+  async completeSetup(
+    @Req() req: TenantScopedRequest,
+    @Headers('x-kemfai-setup-scope') scope?: string,
+  ): Promise<CompanySetupStateDto> {
+    return this.companySetup.completeSetup(req, scope);
   }
 }

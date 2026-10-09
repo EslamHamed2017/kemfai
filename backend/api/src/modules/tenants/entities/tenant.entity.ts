@@ -44,6 +44,14 @@ export class Tenant {
   @Column({ name: 'odoo_db_name', type: 'text', nullable: true })
   odooDbName: string | null;
 
+  /**
+   * T056 round-5 — captured once by `TenantProvisionProcessor.verifyCompany` at
+   * provisioning time, so `CompanyOdooContextService.resolveCompanyTarget` can resolve a
+   * tenant's single `res.company` id from the control plane alone, without an Odoo RPC.
+   */
+  @Column({ name: 'odoo_company_id', type: 'int', nullable: true })
+  odooCompanyId: number | null;
+
   @Column({ name: 'minio_bucket', type: 'text', nullable: true })
   minioBucket: string | null;
 

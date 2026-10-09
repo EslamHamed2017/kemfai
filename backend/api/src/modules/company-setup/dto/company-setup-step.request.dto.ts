@@ -1,4 +1,4 @@
-import { IsIn, IsInt, IsObject, IsOptional } from 'class-validator';
+import { IsIn, IsInt, IsObject, IsOptional, Min } from 'class-validator';
 
 /**
  * Request body of `PUT /companies/current/setup` (contracts/openapi.yaml
@@ -25,6 +25,7 @@ export class CompanySetupStepRequestDto {
 
   @IsOptional()
   @IsInt({ message: 'baseVersion must be an integer' })
+  @Min(0, { message: 'baseVersion must not be negative' })
   baseVersion?: number;
 }
 
@@ -35,4 +36,6 @@ export interface CompanySetupStateDto {
   values: Record<string, unknown>;
   version: number;
   stale: boolean;
+  /** T056 — opaque server-authenticated tenant/account/company draft scope; see company-setup-scope.util.ts. */
+  scope: string;
 }

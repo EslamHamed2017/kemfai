@@ -33,6 +33,18 @@ interface CachedToken {
   expiresAtMs: number;
 }
 
+/** The subset of Keycloak's UserRepresentation this provisioner reads and writes back. */
+interface KeycloakUserRepresentation {
+  username?: string;
+  email?: string;
+  firstName?: string;
+  lastName?: string;
+  enabled?: boolean;
+  emailVerified?: boolean;
+  requiredActions?: string[];
+  attributes?: Record<string, string[]>;
+}
+
 const REQUEST_TIMEOUT_MS = 10_000;
 /** Refresh a token this many ms before its nominal expiry so a call never rides a dying token. */
 const TOKEN_EXPIRY_SAFETY_MS = 10_000;
@@ -183,31 +195,54 @@ export class AdminRestKeycloakUserProvisioner implements KeycloakUserProvisioner
       throw new KeycloakUnavailableError('WorkspaceOwner role unavailable');
     return { id: role.id, name: role.name };
   }
+
+  /**
+   * Keycloak 26's User Profile component treats a partial PUT body as authoritative: any
+   * mutable identity field omitted from the body (email/firstName/lastName) is cleared, not
+   * left untouched. Every representation we PUT back must therefore originate from a fresh
+   * GET of the current user, carrying forward every mutable identity/profile field verbatim,
+   * and only change the one field the caller actually intends (tenant_id inside attributes).
+   */
+  private async currentUserRepresentation(path: string): Promise<KeycloakUserRepresentation> {
+    return (await (await this.adminRequest(path)).json()) as KeycloakUserRepresentation;
+  }
+
+  private safeUpdatePayload(
+    user: KeycloakUserRepresentation,
+    attributes: Record<string, string[]>,
+  ): KeycloakUserRepresentation {
+    const payload: KeycloakUserRepresentation = { attributes };
+    if (user.username !== undefined) payload.username = user.username;
+    if (user.email !== undefined) payload.email = user.email;
+    if (user.firstName !== undefined) payload.firstName = user.firstName;
+    if (user.lastName !== undefined) payload.lastName = user.lastName;
+    if (user.enabled !== undefined) payload.enabled = user.enabled;
+    if (user.emailVerified !== undefined) payload.emailVerified = user.emailVerified;
+    if (user.requiredActions !== undefined) payload.requiredActions = user.requiredActions;
+    return payload;
+  }
+
   async assignWorkspaceOwner(id: string, tenantId: string): Promise<void> {
     const path = `/users/${encodeURIComponent(id)}`;
-    const user = (await (await this.adminRequest(path)).json()) as {
-      attributes?: Record<string, string[]>;
-    };
+    const user = await this.currentUserRepresentation(path);
     const existing = user.attributes?.tenant_id?.[0];
     if (existing && existing !== tenantId)
       throw new KeycloakUnavailableError('User already bound to another tenant');
     const role = await this.ownerRole();
-    await this.adminRequest(path, 'PUT', {
-      attributes: { ...user.attributes, tenant_id: [tenantId] },
-    });
+    const attributes = { ...user.attributes, tenant_id: [tenantId] };
+    await this.adminRequest(path, 'PUT', this.safeUpdatePayload(user, attributes));
     await this.adminRequest(`${path}/role-mappings/realm`, 'POST', [role]);
   }
+
   async revokeWorkspaceOwner(id: string, tenantId: string): Promise<void> {
     const path = `/users/${encodeURIComponent(id)}`;
     const role = await this.ownerRole();
     await this.adminRequest(`${path}/role-mappings/realm`, 'DELETE', [role]);
-    const user = (await (await this.adminRequest(path)).json()) as {
-      attributes?: Record<string, string[]>;
-    };
+    const user = await this.currentUserRepresentation(path);
     if (user.attributes?.tenant_id?.[0] === tenantId) {
       const attributes = { ...user.attributes };
       delete attributes.tenant_id;
-      await this.adminRequest(path, 'PUT', { attributes });
+      await this.adminRequest(path, 'PUT', this.safeUpdatePayload(user, attributes));
     }
   }
 

@@ -36,6 +36,42 @@ for (const locale of ['en', 'ar'] as const) {
     } finally { await context.close(); }
   });
 }
+// T056 round-5 binding resolution (item 4) — the provisioning screen renders the ONE
+// shared `SignOutButton` (binding review point 6), and clicking it must actually invoke
+// the real signOut() handler end to end: POST the logout BFF route, then hard-navigate to
+// the login page. `/auth/login` itself is intercepted here (as `authenticated()` above
+// already does for its own `?e2e-provisioning` variant) purely to stop this suite's own
+// navigation from leaving its mocked environment and hitting the real Keycloak redirect
+// `/auth/login` would otherwise issue — the button/handler/BFF-call/navigation sequence
+// under test is exercised for real.
+test('the shared sign-out control is present and triggers a real logout POST + navigation to login', async ({ browser, baseURL }) => {
+  const { context, page } = await openLocalePage(browser, baseURL!, 'en');
+  try {
+    await authenticated(page, baseURL!);
+    await page.route('**/api/tenants/me', (route) =>
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ status: 'Creating' }) }),
+    );
+    let logoutCalls = 0;
+    await page.route('**/api/auth/logout', async (route) => {
+      logoutCalls += 1;
+      await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ outcome: 'confirmed' }) });
+    });
+    await page.route('**/auth/login', (route) =>
+      route.fulfill({ status: 200, contentType: 'text/html', body: '<html><body>login</body></html>' }),
+    );
+    await page.goto('/provisioning');
+
+    const signOutButton = page.getByTestId('sign-out-button');
+    await expect(signOutButton).toBeVisible();
+    await signOutButton.click();
+
+    await page.waitForURL('**/auth/login');
+    expect(logoutCalls).toBe(1);
+  } finally {
+    await context.close();
+  }
+});
+
 test('EN/AR failure actions mirror and network recovery stays actionable', async ({ browser, baseURL }) => {
   const english = await openLocalePage(browser, baseURL!, 'en');
   const arabic = await openLocalePage(browser, baseURL!, 'ar');
