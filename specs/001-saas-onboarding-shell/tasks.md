@@ -593,7 +593,7 @@ confirm every field persists, RTL fully mirrors, and no native Odoo UI/URL/termi
     unvalidated data."
   - **Roles**: Primary: Codex · Backup: GLM · Reviewer: Gemini
 
-- [ ] T051 [P] [US3] Odoo addon test: `kemfai_company_setup` wizard-state persistence, resume-at-first-
+- [X] T051 [P] [US3] Odoo addon test: `kemfai_company_setup` wizard-state persistence, resume-at-first-
   incomplete-step, and last-write-wins concurrency indicator in
   `backend/addons/kemfai_company_setup/tests/test_company_setup.py`
   - **Dependencies**: T005
