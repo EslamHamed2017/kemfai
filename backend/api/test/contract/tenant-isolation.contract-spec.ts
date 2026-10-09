@@ -7,6 +7,7 @@ import { Account } from '../../src/modules/accounts/entities/account.entity';
 import { Plan } from '../../src/modules/entitlements/entities/plan.entity';
 import { FakeKeycloak, startFakeKeycloak } from '../support/fake-keycloak';
 import { OdooRpcService } from '../../src/integrations/odoo-rpc/odoo-rpc.service';
+import { computeCompanySetupScope } from '../../src/modules/company-setup/company-setup-scope.util';
 
 /**
  * T054 added a real `kemfai_setup_get_state`/`kemfai_setup_save_step` Odoo RPC call to the
@@ -35,6 +36,15 @@ class FakeOdooRpcService {
     if (model === 'res.company' && method === 'search') return [42];
     if (model === 'res.company' && method === 'kemfai_setup_get_state') {
       return { currentStep: 'country', setupComplete: false, values: {}, version: 0, stale: false };
+    }
+    if (model === 'res.company' && method === 'kemfai_setup_save_step') {
+      return {
+        currentStep: 'identity',
+        setupComplete: false,
+        values: {},
+        version: 1,
+        stale: false,
+      };
     }
     throw new Error(`FakeOdooRpcService: unexpected call ${model}.${method}`);
   }
@@ -94,8 +104,12 @@ describe('Cross-tenant denial + company-setup guard wiring (T042)', () => {
     const account = await accountRepo.save(
       accountRepo.create({ keycloakUserId, email, emailVerified: true, selectedPlanId: planId }),
     );
+    // T056 round-6: a real Ready tenant always carries BOTH its Odoo database name and
+    // the company id TenantProvisionProcessor.verifyCompany captured for it — the fixture
+    // mirrors that invariant with the same id FakeOdooRpcService's `res.company` search
+    // resolves to (42), never a guessed/unrelated value.
     const result = await controlDataSource.query(
-      "INSERT INTO tenant (account_id, status, odoo_db_name) VALUES ($1, 'Ready'::tenant_status_enum, $2) RETURNING id",
+      "INSERT INTO tenant (account_id, status, odoo_db_name, odoo_company_id) VALUES ($1, 'Ready'::tenant_status_enum, $2, 42) RETURNING id",
       [account.id, `t042_fake_${keycloakUserId}`],
     );
     const tenantId = result[0].id as string;
@@ -274,6 +288,83 @@ describe('Cross-tenant denial + company-setup guard wiring (T042)', () => {
         .set('Authorization', `Bearer ${tokenA}`)
         .expect(200);
       expect(response.body).toMatchObject({ currentStep: 'country', setupComplete: false });
+    });
+  });
+
+  // T056 round-6 (required work item 3) — proves the exact "zero Odoo RPC" condition the
+  // round-5 review found only indirectly demonstrated: `company-setup-live.integration-spec.ts`'s
+  // "never reaches Odoo" cases only assert unchanged `res.company` state via a direct
+  // Odoo read performed AFTER the 422 — that read is itself an Odoo call, so it cannot
+  // prove the REJECTED request made zero RPCs. Here `FakeOdooRpcService.authenticate`/
+  // `executeKw` are wrapped with jest spies so the count attributable to the rejected HTTP
+  // request itself can be asserted directly, against the real app/real global
+  // ValidationPipe/real guard chain (never a mocked controller/service).
+  describe('PUT /companies/current/setup invalid envelopes never reach Odoo (T056 item 3)', () => {
+    let authenticateSpy: jest.SpyInstance;
+    let executeKwSpy: jest.SpyInstance;
+    let fakeOdoo: OdooRpcService;
+
+    beforeAll(() => {
+      fakeOdoo = app.get(OdooRpcService);
+    });
+
+    beforeEach(async () => {
+      authenticateSpy = jest.spyOn(fakeOdoo, 'authenticate');
+      executeKwSpy = jest.spyOn(fakeOdoo, 'executeKw');
+      await setCompanySetupFlagEnabled(true);
+      await createSubscription(tenantA, 'Active');
+    });
+
+    afterEach(() => {
+      authenticateSpy.mockRestore();
+      executeKwSpy.mockRestore();
+    });
+
+    it('rejects an unknown "step" value (422) with zero authenticate/executeKw calls', async () => {
+      await request(app.getHttpServer())
+        .put('/companies/current/setup')
+        .set('Authorization', `Bearer ${tokenA}`)
+        .set('X-KEMFAI-Setup-Scope', 'irrelevant-before-validation')
+        .send({ step: 'not_a_real_step', values: {} })
+        .expect(422);
+
+      expect(authenticateSpy).toHaveBeenCalledTimes(0);
+      expect(executeKwSpy).toHaveBeenCalledTimes(0);
+    });
+
+    it('rejects a negative "baseVersion" (422) with zero authenticate/executeKw calls', async () => {
+      await request(app.getHttpServer())
+        .put('/companies/current/setup')
+        .set('Authorization', `Bearer ${tokenA}`)
+        .set('X-KEMFAI-Setup-Scope', 'irrelevant-before-validation')
+        .send({ step: 'country', values: { country: 'AE' }, baseVersion: -1 })
+        .expect(422);
+
+      expect(authenticateSpy).toHaveBeenCalledTimes(0);
+      expect(executeKwSpy).toHaveBeenCalledTimes(0);
+    });
+
+    it('rejects a non-integer (fractional) "baseVersion" (422) with zero authenticate/executeKw calls', async () => {
+      await request(app.getHttpServer())
+        .put('/companies/current/setup')
+        .set('Authorization', `Bearer ${tokenA}`)
+        .set('X-KEMFAI-Setup-Scope', 'irrelevant-before-validation')
+        .send({ step: 'country', values: { country: 'AE' }, baseVersion: 1.5 })
+        .expect(422);
+
+      expect(authenticateSpy).toHaveBeenCalledTimes(0);
+      expect(executeKwSpy).toHaveBeenCalledTimes(0);
+    });
+
+    it('control: a VALID save with the correct scope on the same tenant/flag/subscription state DOES reach authenticate/executeKw', async () => {
+      const validScope = computeCompanySetupScope(tenantA, accountA, 42);
+      await request(app.getHttpServer())
+        .put('/companies/current/setup')
+        .set('Authorization', `Bearer ${tokenA}`)
+        .set('X-KEMFAI-Setup-Scope', validScope)
+        .send({ step: 'country', values: { country: 'AE' } });
+
+      expect(authenticateSpy.mock.calls.length + executeKwSpy.mock.calls.length).toBeGreaterThan(0);
     });
   });
 });

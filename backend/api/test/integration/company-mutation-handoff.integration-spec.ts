@@ -1,5 +1,9 @@
 import { randomUUID } from 'crypto';
-import { ConflictException, InternalServerErrorException } from '@nestjs/common';
+import {
+  ConflictException,
+  InternalServerErrorException,
+  PreconditionFailedException,
+} from '@nestjs/common';
 import controlDataSource from '../../src/database/data-source';
 import { Account, BillingCycle } from '../../src/modules/accounts/entities/account.entity';
 import { AuditService } from '../../src/modules/audit/audit.service';
@@ -9,6 +13,7 @@ import { CompanyMutationHandoffService } from '../../src/modules/company-setup/c
 import { CompanyMutationRecoveryWorker } from '../../src/modules/company-setup/company-mutation-recovery.worker';
 import { CompanyMutationHandoffState } from '../../src/modules/company-setup/entities/company-mutation-handoff.entity';
 import { CompanyOdooContextService } from '../../src/modules/company-setup/company-odoo-context.service';
+import { computeCompanySetupScope } from '../../src/modules/company-setup/company-setup-scope.util';
 import { OdooRpcService } from '../../src/integrations/odoo-rpc/odoo-rpc.service';
 import { TenantScopedRequest } from '../../src/common/tenant-context/tenant-context.model';
 
@@ -69,23 +74,33 @@ live('T055 durable-handoff application-level regressions (real scratch Postgres)
     return rows[0].count as number;
   }
 
-  // `resolve()` (request path) and `resolveByTenantId()` (worker recovery path) MUST
-  // agree on the same db/companyId here: every handoff in this suite is stored with
-  // odooDbName 'scratch_db_unused'/odooCompanyId 7 (either via this fake's `resolve()`
-  // or hardcoded identically in test fixtures), and B3 now requires the worker to
-  // verify its resolved target against exactly those stored values before replaying.
+  // The legacy `resolve()` path and the split request-path methods MUST agree with
+  // `resolveByTenantId()` (worker recovery): every handoff in this suite is stored with
+  // odooDbName 'scratch_db_unused'/odooCompanyId 7, and B3 requires the worker to verify
+  // its resolved target against exactly those stored values before replaying.
   function fakeContext(tenantId: string, accountId: string): CompanyOdooContextService {
     return {
-      resolve: async () => ({ db: 'scratch_db_unused', uid: 1, password: 'pw', companyId: 7 }),
+      resolve: async () => ({
+        db: 'scratch_db_unused',
+        uid: 1,
+        password: 'test-only-password',
+        companyId: 7,
+      }),
       resolveTenantContext: async (req: TenantScopedRequest) => {
         const ctx = { keycloakUserId: randomUUID(), accountId, callerTenantId: tenantId };
         req.tenantContext = ctx;
         return ctx;
       },
+      resolveCompanyTarget: async () => 7,
+      resolveCredentials: async () => ({
+        db: 'scratch_db_unused',
+        uid: 1,
+        password: 'test-only-password',
+      }),
       resolveByTenantId: async () => ({
         db: 'scratch_db_unused',
         uid: 1,
-        password: 'pw',
+        password: 'test-only-password',
         companyId: 7,
       }),
     } as unknown as CompanyOdooContextService;
@@ -116,6 +131,23 @@ live('T055 durable-handoff application-level regressions (real scratch Postgres)
       headers,
       auth: { keycloakUserId: randomUUID() },
     } as unknown as TenantScopedRequest;
+  }
+
+  function setupScope(tenantId: string, accountId: string): string {
+    return computeCompanySetupScope(tenantId, accountId, 7);
+  }
+
+  function validCompletionResult() {
+    const result = {
+      alreadyComplete: false,
+      setupComplete: true,
+      values: {},
+      version: 1,
+      currentStep: 'accounting_setup',
+      stale: false,
+    };
+    CompanySetupService.assertValidCompletionResult(result);
+    return result;
   }
 
   beforeAll(async () => {
@@ -199,13 +231,7 @@ live('T055 durable-handoff application-level regressions (real scratch Postgres)
       'UPDATE company_mutation_handoff SET occurred_at = $2 WHERE id = $1',
       [handoff.id, occurredAt],
     );
-    const finalResponse = {
-      alreadyComplete: false,
-      setupComplete: true,
-      version: 1,
-      currentStep: 'done',
-      stale: false,
-    };
+    const finalResponse = validCompletionResult();
     await handoffs.markOdooCommitted(handoff.id, finalResponse);
 
     // Worker runs with NO HTTP/service call preceding it — this is the entire recovery.
@@ -260,7 +286,7 @@ live('T055 durable-handoff application-level regressions (real scratch Postgres)
     expect(executeKw).toHaveBeenCalledWith(
       'scratch_db_unused',
       1,
-      'pw',
+      'test-only-password',
       'res.company',
       'kemfai_settings_update',
       [[7], { legal_name: 'Recovered' }, handoff.id, handoff.occurredAt.toISOString(), accountAId],
@@ -288,7 +314,7 @@ live('T055 durable-handoff application-level regressions (real scratch Postgres)
       requestFingerprint: 'setup.complete',
       requestPayload: {},
     });
-    await handoffs.markOdooCommitted(handoff.id, { alreadyComplete: false, setupComplete: true });
+    await handoffs.markOdooCommitted(handoff.id, validCompletionResult());
 
     const appendSpy = jest
       .spyOn(auditService, 'recordCompanySetupCompleted')
@@ -335,23 +361,31 @@ live('T055 durable-handoff application-level regressions (real scratch Postgres)
         // deleting the handoff.
         throw new Error('ECONNRESET: response lost after dispatch');
       }
-      return {
-        alreadyComplete: false,
-        setupComplete: true,
-        version: 1,
-        currentStep: 'done',
-        stale: false,
-      };
+      return validCompletionResult();
     });
     const odoo = { executeKw } as unknown as OdooRpcService;
-    const service = new CompanySetupService(
-      fakeContext(tenantAId, accountAId),
-      odoo,
-      auditService,
-      handoffs,
-    );
+    const context = fakeContext(tenantAId, accountAId);
+    const resolveCredentials = jest.spyOn(context, 'resolveCredentials');
+    const service = new CompanySetupService(context, odoo, auditService, handoffs);
 
-    await expect(service.completeSetup(fakeReq())).rejects.toThrow(InternalServerErrorException);
+    // Missing and stale scopes fail before credential resolution, Odoo mutation, or
+    // durable-handoff creation. These calls also prove the injected transport fault
+    // below is reached only after a correctly scoped request crosses the precondition.
+    await expect(service.completeSetup(fakeReq())).rejects.toThrow(PreconditionFailedException);
+    await expect(
+      service.completeSetup(fakeReq(), setupScope(tenantBId, accountBId)),
+    ).rejects.toThrow(PreconditionFailedException);
+    expect(resolveCredentials).not.toHaveBeenCalled();
+    expect(executeKw).not.toHaveBeenCalled();
+    const preconditionRows = await controlDataSource.query(
+      "SELECT id FROM company_mutation_handoff WHERE tenant_id = $1 AND action = 'setup.complete'",
+      [tenantAId],
+    );
+    expect(preconditionRows).toHaveLength(0);
+
+    await expect(
+      service.completeSetup(fakeReq(), setupScope(tenantAId, accountAId)),
+    ).rejects.toThrow(InternalServerErrorException);
 
     // Captured from the handoff the REAL service call created, BEFORE the worker's
     // replay RPC fires below — this is the "original" against which the recovered
@@ -483,13 +517,7 @@ live('T055 durable-handoff application-level regressions (real scratch Postgres)
   });
 
   it('B2: process interruption after Odoo commit (crash before the audit append) through the REAL service — worker recovers without any HTTP retry', async () => {
-    const executeKw = jest.fn().mockResolvedValue({
-      alreadyComplete: false,
-      setupComplete: true,
-      version: 1,
-      currentStep: 'done',
-      stale: false,
-    });
+    const executeKw = jest.fn().mockResolvedValue(validCompletionResult());
     const odoo = { executeKw } as unknown as OdooRpcService;
     const service = new CompanySetupService(
       fakeContext(tenantAId, accountAId),
@@ -505,7 +533,9 @@ live('T055 durable-handoff application-level regressions (real scratch Postgres)
       .spyOn(auditService, 'recordCompanySetupCompleted')
       .mockRejectedValueOnce(new Error('INJECTED_PROCESS_CRASH'));
 
-    await expect(service.completeSetup(fakeReq())).rejects.toThrow('INJECTED_PROCESS_CRASH');
+    await expect(
+      service.completeSetup(fakeReq(), setupScope(tenantAId, accountAId)),
+    ).rejects.toThrow('INJECTED_PROCESS_CRASH');
     appendSpy.mockRestore();
 
     const rows = await controlDataSource.query(
@@ -536,7 +566,7 @@ live('T055 durable-handoff application-level regressions (real scratch Postgres)
     expect(refreshed[0].state).toBe(CompanyMutationHandoffState.AUDITED);
   });
 
-  it("B3: a worker whose resolved Odoo target no longer matches the handoff's stored db/company never dispatches the RPC", async () => {
+  it("B3: a worker whose resolved Odoo target no longer matches the handoff's stored db/company performs no replay mutation", async () => {
     const executeKw = jest.fn();
     const odoo = { executeKw } as unknown as OdooRpcService;
 
@@ -558,7 +588,7 @@ live('T055 durable-handoff application-level regressions (real scratch Postgres)
     );
     await worker.tick();
 
-    expect(executeKw).not.toHaveBeenCalled(); // never replays against the wrong target
+    expect(executeKw).not.toHaveBeenCalled(); // no replay mutation against the wrong target
     const refreshed = await controlDataSource.query(
       'SELECT state FROM company_mutation_handoff WHERE id = $1',
       [handoff.id],
@@ -568,13 +598,7 @@ live('T055 durable-handoff application-level regressions (real scratch Postgres)
   });
 
   it('exactly one company_mutation_handoff row (and exactly one audit event) is created under concurrent completion requests for the same tenant', async () => {
-    const executeKw = jest.fn().mockImplementation(async () => ({
-      alreadyComplete: false,
-      setupComplete: true,
-      version: 1,
-      currentStep: 'done',
-      stale: false,
-    }));
+    const executeKw = jest.fn().mockImplementation(async () => validCompletionResult());
     const odoo = { executeKw } as unknown as OdooRpcService;
     const service = new CompanySetupService(
       fakeContext(tenantAId, accountAId),
@@ -584,7 +608,9 @@ live('T055 durable-handoff application-level regressions (real scratch Postgres)
     );
 
     const results = await Promise.all(
-      Array.from({ length: 8 }, () => service.completeSetup(fakeReq())),
+      Array.from({ length: 8 }, () =>
+        service.completeSetup(fakeReq(), setupScope(tenantAId, accountAId)),
+      ),
     );
     results.forEach((r) => expect(r.setupComplete).toBe(true));
 

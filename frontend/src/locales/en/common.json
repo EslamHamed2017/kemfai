@@ -1,6 +1,11 @@
 {
   "app": {
-    "title": "KEMFAI"
+    "title": "KEMFAI",
+    "actions": {
+      "signOut": "Sign out",
+      "retry": "Try again"
+    },
+    "signOutUnconfirmed": "You're signed out of this device, but we couldn't confirm sign-out with the identity provider. Please try again before signing in to a different account."
   },
   "plans": {
     "title": "Choose your plan",
@@ -126,5 +131,97 @@
     },
     "signIn": "Sign in",
     "verify": "Go to verification"
+  },
+  "setupWizard": {
+    "title": "Set up your company",
+    "progressLabel": "Setup wizard progress",
+    "loading": "Loading your company setup…",
+    "staleNotice": "Saved. Another session also updated this company's setup — the latest values are shown below.",
+    "steps": {
+      "country": "Country",
+      "identity": "Company identity",
+      "currency": "Base currency",
+      "fiscal_year": "Fiscal year",
+      "vat_tax": "VAT / tax registration",
+      "industry": "Industry",
+      "accounting_setup": "Accounting setup"
+    },
+    "fields": {
+      "selectPlaceholder": "Select…",
+      "country": {
+        "label": "Country (ISO 3166-1 alpha-2 code)",
+        "error": "Enter a valid country code, such as AE or EG."
+      },
+      "legal_name": {
+        "label": "Legal name",
+        "error": "Enter the company's legal name."
+      },
+      "trade_name": {
+        "label": "Trade name",
+        "error": "Enter the company's trade name."
+      },
+      "base_currency": {
+        "label": "Base currency (ISO 4217 code)",
+        "error": "Enter a valid currency code, such as AED or USD."
+      },
+      "fiscal_year_start_month": {
+        "label": "Fiscal year start month",
+        "error": "Choose a fiscal year start month."
+      },
+      "fiscal_year_start_day": {
+        "label": "Fiscal year start day",
+        "error": "Enter a valid fiscal year start day (1–31)."
+      },
+      "vat_tax_registration": {
+        "label": "VAT / tax registration number",
+        "error": "Enter a VAT/tax registration number in the format expected for the selected country."
+      },
+      "industry": {
+        "label": "Industry reference ID",
+        "error": "Enter a valid industry reference ID."
+      },
+      "accounting_setup_template": {
+        "label": "Accounting setup template",
+        "error": "Choose an accounting setup template.",
+        "options": {
+          "standard": "Standard Chart of Accounts"
+        }
+      }
+    },
+    "actions": {
+      "back": "Back",
+      "next": "Save and continue",
+      "finish": "Finish setup",
+      "pauseAndSave": "Save and pause",
+      "resume": "Resume setup",
+      "retry": "Try again",
+      "signIn": "Sign in",
+      "signOut": "Sign out",
+      "continue": "Continue"
+    },
+    "paused": {
+      "title": "Setup paused",
+      "body": "Your progress has been saved. Resume anytime from where you left off."
+    },
+    "complete": {
+      "title": "Company setup complete",
+      "body": "Your company profile is set up. You can edit these details later from company settings."
+    },
+    "conflict": {
+      "body": "Another session saved newer changes to this step while you were editing. Choose whether to keep your unsaved changes or use the latest saved values.",
+      "keepMine": "Keep my changes",
+      "useLatest": "Use latest saved values"
+    },
+    "errors": {
+      "general": "Something went wrong saving your changes. Your edits are still here — please try again.",
+      "configGap": "No VAT/tax validation rule is configured yet for the selected country. This is a configuration gap — please contact support rather than resubmitting.",
+      "incompleteSteps": "Some required steps are not yet complete. Please go back and finish every step before completing setup.",
+      "forbiddenRole": "Only the workspace owner can complete company setup.",
+      "trialExpired": "Your trial window has ended. Activate a subscription to continue company setup.",
+      "featureUnavailable": "Company setup is not available right now.",
+      "sessionExpired": "Your session has expired. Sign in again to continue.",
+      "offline": "You are offline. We will retry when your connection returns.",
+      "unavailable": "We couldn't reach company setup. Please try again."
+    }
   }
 }

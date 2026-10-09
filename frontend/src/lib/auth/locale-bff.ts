@@ -3,7 +3,7 @@ import { NextResponse } from 'next/server';
 
 import { accessTokenForSession } from './authenticated-session';
 import { getAuthConfig, type AuthConfig } from './config';
-import { SESSION_COOKIE } from './cookies';
+import { clearSessionCookie, SESSION_COOKIE } from './cookies';
 import { hasSameOrigin } from './origin';
 import { RedisSessionStore, type SessionStore } from './session-store';
 
@@ -26,7 +26,7 @@ async function callApi(
   if (id) token = await accessTokenForSession(id, config, dependencies.store);
   if (!token) {
     const response = NextResponse.json({ message: 'Authentication required' }, { status: 401 });
-    response.cookies.delete(SESSION_COOKIE);
+    clearSessionCookie(response);
     return response;
   }
   const upstream = await fetcher(`${config.apiUrl}/accounts/me/locale`, {

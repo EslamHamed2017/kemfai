@@ -3,11 +3,13 @@ import { refreshSession } from './oauth';
 import type { SessionStore } from './session-store';
 
 const REFRESH_SKEW_MS = 30_000;
-const REFRESH_LOCK_TTL_MS = 10_000;
+/** Exported so logout-bff.ts can acquire the SAME per-session lock before reading the refresh token — one lock keyspace, never a parallel locking scheme. */
+export const REFRESH_LOCK_TTL_MS = 10_000;
 const REFRESH_WAIT_ATTEMPTS = 20;
 const REFRESH_WAIT_MS = 25;
 
-const delay = (milliseconds: number) => new Promise<void>((resolve) => setTimeout(resolve, milliseconds));
+const delay = (milliseconds: number) =>
+  new Promise<void>((resolve) => setTimeout(resolve, milliseconds));
 
 export async function accessTokenForSession(
   id: string,

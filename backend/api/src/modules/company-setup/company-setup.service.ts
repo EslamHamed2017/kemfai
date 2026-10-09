@@ -2,9 +2,13 @@ import {
   ConflictException,
   Injectable,
   InternalServerErrorException,
+  PreconditionFailedException,
   UnprocessableEntityException,
 } from '@nestjs/common';
-import { TenantScopedRequest } from '../../common/tenant-context/tenant-context.model';
+import {
+  TenantContext,
+  TenantScopedRequest,
+} from '../../common/tenant-context/tenant-context.model';
 import { OdooRpcService } from '../../integrations/odoo-rpc/odoo-rpc.service';
 import { AuditService } from '../audit/audit.service';
 import { CompanyOdooContextService } from './company-odoo-context.service';
@@ -13,6 +17,7 @@ import {
   CompanyMutationHandoffService,
 } from './company-mutation-handoff.service';
 import { CompanyMutationHandoffState } from './entities/company-mutation-handoff.entity';
+import { computeCompanySetupScope } from './company-setup-scope.util';
 import { stripKemfaiPrefix } from './kemfai-error.util';
 import {
   CompanySetupStateDto,
@@ -27,7 +32,7 @@ interface OdooCompanySetupState {
   stale: boolean;
 }
 
-interface OdooCompanySetupCompleteResult extends OdooCompanySetupState {
+export interface OdooCompanySetupCompleteResult extends OdooCompanySetupState {
   alreadyComplete: boolean;
 }
 
@@ -50,20 +55,39 @@ export class CompanySetupService {
   ) {}
 
   async getState(req: TenantScopedRequest): Promise<CompanySetupStateDto> {
-    const { db, uid, password, companyId } = await this.context.resolve(req);
+    // T056 round-5 binding resolution (items 1+2) — tenant/principal resolution and the
+    // control-plane-only company-target lookup both happen BEFORE `resolveCredentials`,
+    // which is the first call in this method allowed to touch Odoo (`authenticate`).
+    const tenantContext = await this.context.resolveTenantContext(req);
+    this.assertResolvedPrincipal(tenantContext);
+    const companyId = await this.context.resolveCompanyTarget(tenantContext.callerTenantId);
+    const { db, uid, password } = await this.context.resolveCredentials(
+      tenantContext.callerTenantId,
+    );
     const result = await this.callOrTranslate(() =>
       this.odoo.executeKw(db, uid, password, 'res.company', 'kemfai_setup_get_state', [
         [companyId],
       ]),
     );
-    return this.toDto(result);
+    return this.toDto(result, tenantContext, companyId);
   }
 
   async saveStep(
     req: TenantScopedRequest,
     body: CompanySetupStepRequestDto,
+    clientScope?: string,
   ): Promise<CompanySetupStateDto> {
-    const { db, uid, password, companyId } = await this.context.resolve(req);
+    // T056 round-5 binding resolution (item 1) — the scope precondition is evaluated
+    // against a company id resolved purely from the control plane, and is checked BEFORE
+    // `resolveCredentials` (the first Odoo-facing call in this method): a missing, blank,
+    // or stale scope now causes ZERO Odoo RPCs of any kind, not merely zero mutation RPCs.
+    const tenantContext = await this.context.resolveTenantContext(req);
+    this.assertResolvedPrincipal(tenantContext);
+    const companyId = await this.context.resolveCompanyTarget(tenantContext.callerTenantId);
+    this.assertScopePrecondition(tenantContext, companyId, clientScope);
+    const { db, uid, password } = await this.context.resolveCredentials(
+      tenantContext.callerTenantId,
+    );
     const result = await this.callOrTranslate(() =>
       this.odoo.executeKw(db, uid, password, 'res.company', 'kemfai_setup_save_step', [
         [companyId],
@@ -72,7 +96,65 @@ export class CompanySetupService {
         body.baseVersion ?? null,
       ]),
     );
-    return this.toDto(result);
+    return this.toDto(result, tenantContext, companyId);
+  }
+
+  /**
+   * T056 round-5 binding resolution (item 2) — ONE shared nonblank principal validator for
+   * every operation (GET/PUT/completion), covering `accountId`, `callerTenantId`, AND
+   * `keycloakUserId` uniformly: a token that somehow resolves without any one of them must
+   * fail closed, before any Odoo-facing resolution (`resolveCompanyTarget`/
+   * `resolveCredentials`) and before `toDto` could hash a missing identity component (`''`)
+   * into the opaque scope. `.trim()` matters: a whitespace-only identity component is not a
+   * real identity and must not be treated as one. `keycloakUserId` is validated here even
+   * for GET/PUT (which do not themselves consume it) so every operation fails closed on an
+   * incomplete principal identically — completion is no longer the only path that checks it.
+   */
+  private assertResolvedPrincipal(
+    tenantContext: TenantContext,
+  ): asserts tenantContext is TenantContext & {
+    accountId: string;
+    callerTenantId: string;
+    keycloakUserId: string;
+  } {
+    if (
+      !tenantContext.accountId?.trim() ||
+      !tenantContext.callerTenantId?.trim() ||
+      !tenantContext.keycloakUserId?.trim()
+    ) {
+      throw new InternalServerErrorException(
+        'No account/tenant/principal resolved for this request',
+      );
+    }
+  }
+
+  /**
+   * T056 round-3 binding resolution — `X-KEMFAI-Setup-Scope` is REQUIRED on every PUT and
+   * completion POST, including a session's very first mutation. There is no "first save,
+   * nothing to echo yet" exception: the client always has a scope available because it
+   * must perform a GET before it can render the form the mutation came from, and any
+   * caller skipping that GET is exactly the case this precondition exists to close — a
+   * missing/blank header is rejected with 412 BEFORE any Odoo RPC or handoff creation,
+   * identically to a mismatched one.
+   */
+  private assertScopePrecondition(
+    tenantContext: TenantContext & { accountId: string; callerTenantId: string },
+    companyId: number,
+    clientScope: string | undefined,
+  ): void {
+    if (!clientScope?.trim()) {
+      throw new PreconditionFailedException('X-KEMFAI-Setup-Scope header is required');
+    }
+    const expected = computeCompanySetupScope(
+      tenantContext.callerTenantId,
+      tenantContext.accountId,
+      companyId,
+    );
+    if (clientScope !== expected) {
+      throw new PreconditionFailedException(
+        'Setup scope no longer matches the authenticated company',
+      );
+    }
   }
 
   /**
@@ -99,12 +181,21 @@ export class CompanySetupService {
    * `CompanyMutationRecoveryWorker` performs the identical recovery autonomously, without
    * requiring any of this to be triggered by a client request at all.
    */
-  async completeSetup(req: TenantScopedRequest): Promise<CompanySetupStateDto> {
-    const { db, uid, password, companyId } = await this.context.resolve(req);
+  async completeSetup(
+    req: TenantScopedRequest,
+    clientScope?: string,
+  ): Promise<CompanySetupStateDto> {
+    // T056 round-5 binding resolution (items 1+2) — identical ordering to saveStep:
+    // principal validation and the control-plane-only company-target lookup both happen
+    // before the scope precondition, which in turn happens before `resolveCredentials`
+    // (the first Odoo-facing call in this method) and before the handoff is created.
     const tenantContext = await this.context.resolveTenantContext(req);
-    if (!tenantContext.accountId || !tenantContext.callerTenantId) {
-      throw new InternalServerErrorException('No account/tenant resolved for this request');
-    }
+    this.assertResolvedPrincipal(tenantContext);
+    const companyId = await this.context.resolveCompanyTarget(tenantContext.callerTenantId);
+    this.assertScopePrecondition(tenantContext, companyId, clientScope);
+    const { db, uid, password } = await this.context.resolveCredentials(
+      tenantContext.callerTenantId,
+    );
 
     const handoff = await this.handoffs.findOrCreateCompletionHandoff({
       tenantId: tenantContext.callerTenantId,
@@ -117,7 +208,13 @@ export class CompanySetupService {
     });
 
     if (handoff.state === CompanyMutationHandoffState.AUDITED) {
-      return this.toDto(handoff.finalResponse);
+      // Round-3 binding resolution point 2 — validate the STORED payload before it is
+      // ever returned; a corrupted/malformed `finalResponse` row must become a generic
+      // 5xx here, not a malformed 200 (there is no further durable action to guard in
+      // this branch — it is already audited — but the response itself must still fail
+      // closed rather than trust a stored blob unconditionally).
+      CompanySetupService.assertValidCompletionResult(handoff.finalResponse);
+      return this.toDto(handoff.finalResponse, tenantContext, companyId);
     }
 
     const result = await this.runOdooCompletion(handoff, db, uid, password, companyId);
@@ -139,7 +236,7 @@ export class CompanySetupService {
     });
     await this.handoffs.markAudited(handoff.id);
 
-    return this.toDto(result);
+    return this.toDto(result, tenantContext, companyId);
   }
 
   private async runOdooCompletion(
@@ -150,7 +247,11 @@ export class CompanySetupService {
     companyId: number,
   ): Promise<OdooCompanySetupCompleteResult> {
     if (handoff.state === CompanyMutationHandoffState.ODOO_COMMITTED) {
-      return handoff.finalResponse as OdooCompanySetupCompleteResult;
+      // Round-3 binding resolution point 2 — validate the STORED payload before it is
+      // trusted for the audit append/markAudited that is about to follow in the caller.
+      // A malformed row here must fail closed (5xx), never advance to AUDITED.
+      CompanySetupService.assertValidCompletionResult(handoff.finalResponse);
+      return handoff.finalResponse;
     }
 
     let result: OdooCompanySetupCompleteResult;
@@ -187,6 +288,20 @@ export class CompanySetupService {
       throw new InternalServerErrorException(
         'Company setup completion could not be confirmed and will be retried automatically',
       );
+    }
+
+    // Round-3 binding resolution point 2 — validate the FRESH Odoo result BEFORE
+    // `markOdooCommitted` persists it (and before the caller's audit append runs on it).
+    // A malformed fresh result is treated exactly like the ambiguous-failure branch
+    // above: Odoo may or may not actually have committed something usable, so the
+    // handoff is left retryable (never deleted, never marked committed with garbage)
+    // for CompanyMutationRecoveryWorker to resolve via receipt replay, and the caller
+    // gets a generic 5xx rather than ever seeing this result.
+    try {
+      CompanySetupService.assertValidCompletionResult(result);
+    } catch (validationError) {
+      await this.handoffs.scheduleRetryBackoff(handoff.id, 0);
+      throw validationError;
     }
 
     await this.handoffs.markOdooCommitted(handoff.id, result);
@@ -257,14 +372,83 @@ export class CompanySetupService {
     throw new InternalServerErrorException('Company setup is temporarily unavailable');
   }
 
-  private toDto(result: unknown): CompanySetupStateDto {
-    const state = result as OdooCompanySetupState;
+  /**
+   * T056 binding-review point 5 — `result` originates from the Odoo RPC response or a
+   * stored handoff's `finalResponse`, neither of which is this service's own typed
+   * output: a malformed shape there (bad upgrade, corrupted handoff row, unexpected addon
+   * change) must never be cast and handed to a caller as a trusted 2xx. Fail closed with
+   * a generic 5xx instead of leaking a malformed body.
+   */
+  private static readonly KNOWN_STEPS = new Set([
+    'country',
+    'identity',
+    'currency',
+    'fiscal_year',
+    'vat_tax',
+    'industry',
+    'accounting_setup',
+  ]);
+
+  /**
+   * Static (and exported-class-reusable) so `CompanyMutationRecoveryWorker` validates a
+   * SETUP_COMPLETE result with this EXACT same check — round-3 binding resolution point
+   * 2 — rather than forking a second, possibly-drifting copy of "what counts as a
+   * well-formed Odoo setup-state payload".
+   */
+  static assertValidUpstreamState(result: unknown): asserts result is OdooCompanySetupState {
+    const state = result as Partial<OdooCompanySetupState> | null | undefined;
+    const valid =
+      !!state &&
+      typeof state === 'object' &&
+      typeof state.currentStep === 'string' &&
+      CompanySetupService.KNOWN_STEPS.has(state.currentStep) &&
+      typeof state.setupComplete === 'boolean' &&
+      typeof state.values === 'object' &&
+      state.values !== null &&
+      !Array.isArray(state.values) &&
+      typeof state.version === 'number' &&
+      Number.isInteger(state.version) &&
+      state.version >= 0 &&
+      typeof state.stale === 'boolean';
+    if (!valid) {
+      throw new InternalServerErrorException('Company setup is temporarily unavailable');
+    }
+  }
+
+  /**
+   * Round-3 binding resolution point 2 — completion results carry one more field
+   * (`alreadyComplete`) that the base setup-state shape does not; a result missing it or
+   * carrying a non-boolean must fail exactly like any other malformed shape, BEFORE
+   * `markOdooCommitted`/audit append/`markAudited` ever runs on it; the base checks above
+   * aren't enough for a completion-specific result on their own.
+   */
+  static assertValidCompletionResult(
+    result: unknown,
+  ): asserts result is OdooCompanySetupCompleteResult {
+    CompanySetupService.assertValidUpstreamState(result);
+    if (typeof (result as OdooCompanySetupCompleteResult).alreadyComplete !== 'boolean') {
+      throw new InternalServerErrorException('Company setup is temporarily unavailable');
+    }
+  }
+
+  private toDto(
+    result: unknown,
+    tenantContext: TenantContext & { accountId: string; callerTenantId: string },
+    companyId: number,
+  ): CompanySetupStateDto {
+    CompanySetupService.assertValidUpstreamState(result);
+    const state = result;
     return {
       currentStep: state.currentStep,
       setupComplete: state.setupComplete,
       values: state.values,
       version: state.version,
       stale: state.stale,
+      scope: computeCompanySetupScope(
+        tenantContext.callerTenantId,
+        tenantContext.accountId,
+        companyId,
+      ),
     };
   }
 }

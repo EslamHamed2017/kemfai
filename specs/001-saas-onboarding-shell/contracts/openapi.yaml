@@ -135,7 +135,11 @@ paths:
       summary: Retry a failed provisioning attempt; idempotent, never duplicates tenant/db/company (FR-023)
       responses:
         "202":
-          description: A retry is queued (or was already queued); status is Pending
+          description: >-
+            A retry is queued (or was already queued). An ordinary Failed retry returns
+            Pending; the one exceptional case — a Ready tenant with a provisioned Odoo
+            database but no captured company id — returns Ready while that mapping is
+            repaired.
           content:
             application/json:
               schema: { $ref: "#/components/schemas/TenantStatus" }
@@ -160,6 +164,19 @@ paths:
     put:
       tags: [company-setup]
       summary: Save one wizard step (country/company identity/currency/fiscal year/VAT/industry/accounting) (FR-025)
+      parameters:
+        - name: X-KEMFAI-Setup-Scope
+          in: header
+          required: true
+          schema: { type: string, minLength: 1 }
+          description: >
+            T056 round 3 — REQUIRED on every call, including a session's first mutation:
+            the opaque `CompanySetupState.scope` this wizard session last observed via
+            GET. The server recomputes the scope for the authenticated tenant/account/
+            company BEFORE this mutation runs and rejects a missing, blank, or mismatched
+            value with 412, so a session/account transition (or a caller skipping the
+            prerequisite GET) can never mutate a different company using values displayed
+            for the previous one.
       requestBody:
         required: true
         content:
@@ -175,11 +192,21 @@ paths:
               schema: { $ref: "#/components/schemas/CompanySetupState" }
         "422": { description: Field-level validation failure, incl. country-specific VAT format (FR-026) }
         "409": { description: Country validation rule missing for this country — configuration gap, not silently accepted (Edge Cases) }
+        "412": { description: "T056 — X-KEMFAI-Setup-Scope no longer matches the authenticated tenant/account/company; rejected before any Odoo mutation" }
 
   /companies/current/setup/complete:
     post:
       tags: [company-setup]
       summary: Finalize setup once all required steps are submitted (FR-028)
+      parameters:
+        - name: X-KEMFAI-Setup-Scope
+          in: header
+          required: true
+          schema: { type: string, minLength: 1 }
+          description: >
+            T056 round 3 — REQUIRED, same precondition as the PUT above (missing/blank/
+            mismatched all rejected with 412), checked before the completion handoff/Odoo
+            RPC runs.
       responses:
         "200":
           description: >
@@ -193,6 +220,7 @@ paths:
               schema: { $ref: "#/components/schemas/CompanySetupState" }
         "403": { description: Caller is not the Workspace Owner for this tenant, or the tenant's trial window has elapsed unpaid }
         "422": { description: One or more required steps incomplete — no completion, no audit event }
+        "412": { description: "T056 — X-KEMFAI-Setup-Scope no longer matches the authenticated tenant/account/company; rejected before the completion handoff/Odoo RPC" }
 
   /companies/current/settings:
     get:
@@ -528,13 +556,16 @@ components:
 
     CompanySetupState:
       type: object
-      required: [currentStep, setupComplete, values, version, stale]
+      required: [currentStep, setupComplete, values, version, stale, scope]
       properties:
-        currentStep: { type: string }
+        currentStep:
+          type: string
+          enum: [country, identity, currency, fiscal_year, vat_tax, industry, accounting_setup]
         setupComplete: { type: boolean }
         values: { type: object, additionalProperties: true }
         version:
           type: integer
+          minimum: 0
           description: >
             Current `res.company.setup_wizard_version` (T054 arbiter resolution point 1).
             Pass this back as `baseVersion` on the next `PUT` to detect a concurrent save
@@ -546,16 +577,27 @@ components:
             locked `setup_wizard_version` at save time (last-write-wins: the save still
             succeeded field-by-field). Always `false` on `GET` — there is no `baseVersion`
             to compare on a read.
+        scope:
+          type: string
+          description: >
+            T056 — an opaque, server-authenticated token binding this response to the
+            caller's authenticated tenant/account/company. The client must treat it as
+            opaque (equality-compare only, e.g. to detect an account/company transition
+            before restoring a locally-held draft) and must never parse it, derive
+            authority from it, or substitute a client-selected value for it.
 
     CompanySetupStepInput:
       type: object
       required: [step, values]
       properties:
-        step: { type: string }
+        step:
+          type: string
+          enum: [country, identity, currency, fiscal_year, vat_tax, industry, accounting_setup]
         values: { type: object, additionalProperties: true }
         baseVersion:
           type: integer
           nullable: true
+          minimum: 0
           description: >
             The `version` this wizard session last read (T054 arbiter resolution point 1).
             Omitted/null on a first save; the response's `stale` flag reports whether

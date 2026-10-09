@@ -72,6 +72,12 @@ live('T054 live HTTP harness: GET/PUT /companies/current/setup (real Odoo + scra
   let originalFlagEnabled: boolean | null = null;
   let companyId: number;
   let pristineCompanyFields: Record<string, unknown>;
+  // T056 round 3 — the opaque scope is stable for the lifetime of this fixture's single
+  // owned tenant/account/company (scope is a function of exactly those three, none of
+  // which this file's cases ever change), so it is fetched once via a real GET and
+  // echoed on every PUT/POST below — exactly what a real browser session would do,
+  // never a client-fabricated value.
+  let scope: string;
 
   // Every field T054's wizard reads/writes, plus the step/version/completion bookkeeping
   // fields that ride alongside them — the exact set needed to restore this run's owned
@@ -137,11 +143,13 @@ live('T054 live HTTP harness: GET/PUT /companies/current/setup (real Odoo + scra
     await request(app.getHttpServer())
       .put('/companies/current/setup')
       .set('Authorization', `Bearer ${ownerToken}`)
+      .set('X-KEMFAI-Setup-Scope', scope)
       .send({ step: 'country', values: { country: countryCode } })
       .expect(200);
     const vatResponse = await request(app.getHttpServer())
       .put('/companies/current/setup')
       .set('Authorization', `Bearer ${ownerToken}`)
+      .set('X-KEMFAI-Setup-Scope', scope)
       .send({ step: 'vat_tax', values: { vat_tax_registration: vat } })
       .expect(200);
     return { version: vatResponse.body.version as number };
@@ -175,6 +183,7 @@ live('T054 live HTTP harness: GET/PUT /companies/current/setup (real Odoo + scra
       await request(app.getHttpServer())
         .put('/companies/current/setup')
         .set('Authorization', `Bearer ${ownerToken}`)
+        .set('X-KEMFAI-Setup-Scope', scope)
         .send({ step, values })
         .expect(200);
     }
@@ -295,6 +304,35 @@ live('T054 live HTTP harness: GET/PUT /companies/current/setup (real Odoo + scra
       [{ country_id: saIds[0], vat_regex: '\\d{15}', vat_format_hint: '3'.repeat(15) }],
     );
 
+    // T056 round-5 binding resolution (item 1) — captured here, BEFORE the tenant row is
+    // inserted below, so `odoo_company_id` can be persisted on that row directly: this
+    // fixture now exercises the exact same control-plane shape
+    // `TenantProvisionProcessor.verifyCompany` produces for a real tenant, which is what
+    // lets `CompanyOdooContextService.resolveCompanyTarget` resolve it with zero Odoo
+    // RPCs. Also captured once, before any HTTP case below has had a chance to mutate it:
+    // the exact raw wizard field values (and version) of this run's owned scratch
+    // company, used by resetCompanyToPristine() to give every case below a pristine,
+    // order-independent starting point.
+    const companyIds = (await odoo.executeKw(
+      tenantDb,
+      odooUid,
+      odooPassword,
+      'res.company',
+      'search',
+      [[]],
+      { limit: 1 },
+    )) as number[];
+    companyId = companyIds[0];
+    const companyRows = (await odoo.executeKw(
+      tenantDb,
+      odooUid,
+      odooPassword,
+      'res.company',
+      'read',
+      [[companyId], WIZARD_FIELDS],
+    )) as Array<Record<string, unknown>>;
+    pristineCompanyFields = companyRows[0];
+
     if (!controlDataSource.isInitialized) await controlDataSource.initialize();
     await controlDataSource.runMigrations();
 
@@ -330,9 +368,9 @@ live('T054 live HTTP harness: GET/PUT /companies/current/setup (real Odoo + scra
       }),
     );
     const tenantRows = await controlDataSource.query(
-      `INSERT INTO tenant (account_id, status, odoo_db_name, ready_at)
-       VALUES ($1, 'Ready'::tenant_status_enum, $2, now()) RETURNING id`,
-      [account.id, tenantDb],
+      `INSERT INTO tenant (account_id, status, odoo_db_name, odoo_company_id, ready_at)
+       VALUES ($1, 'Ready'::tenant_status_enum, $2, $3, now()) RETURNING id`,
+      [account.id, tenantDb, companyId],
     );
     tenantId = tenantRows[0].id as string;
 
@@ -361,29 +399,13 @@ live('T054 live HTTP harness: GET/PUT /companies/current/setup (real Odoo + scra
     originalFlagEnabled = await getFlagEnabled();
     await setFlagEnabled(true);
 
-    // Captured once, before any HTTP case below has had a chance to mutate it: the exact
-    // raw wizard field values (and version) of this run's owned scratch company, used by
-    // resetCompanyToPristine() to give every case below a pristine, order-independent
-    // starting point.
-    const companyIds = (await odoo.executeKw(
-      tenantDb,
-      odooUid,
-      odooPassword,
-      'res.company',
-      'search',
-      [[]],
-      { limit: 1 },
-    )) as number[];
-    companyId = companyIds[0];
-    const companyRows = (await odoo.executeKw(
-      tenantDb,
-      odooUid,
-      odooPassword,
-      'res.company',
-      'read',
-      [[companyId], WIZARD_FIELDS],
-    )) as Array<Record<string, unknown>>;
-    pristineCompanyFields = companyRows[0];
+    const scopeResponse = await request(app.getHttpServer())
+      .get('/companies/current/setup')
+      .set('Authorization', `Bearer ${ownerToken}`)
+      .expect(200);
+    scope = scopeResponse.body.scope as string;
+    if (!scope)
+      throw new Error('T056 fixture setup: GET /companies/current/setup returned no scope');
   }, 180000);
 
   afterAll(async () => {
@@ -449,12 +471,14 @@ live('T054 live HTTP harness: GET/PUT /companies/current/setup (real Odoo + scra
     await request(app.getHttpServer())
       .put('/companies/current/setup')
       .set('Authorization', `Bearer ${nonOwnerToken}`)
+      .set('X-KEMFAI-Setup-Scope', scope)
       .set('Accept', 'application/json')
       .send({ step: 'country', values: { country: 'AE' } })
       .expect(403);
     await request(app.getHttpServer())
       .put('/companies/current/setup')
       .set('Authorization', `Bearer ${nonOwnerToken}`)
+      .set('X-KEMFAI-Setup-Scope', scope)
       .send({ step: 'country', values: { country: 'AE' } })
       .expect(403);
   });
@@ -475,6 +499,7 @@ live('T054 live HTTP harness: GET/PUT /companies/current/setup (real Odoo + scra
     await request(app.getHttpServer())
       .put('/companies/current/setup')
       .set('Authorization', `Bearer ${ownerToken}`)
+      .set('X-KEMFAI-Setup-Scope', scope)
       .set('x-tenant-id', otherTenant)
       .set('Accept', 'application/json')
       .send({ step: 'country', values: { country: 'AE' } })
@@ -482,6 +507,7 @@ live('T054 live HTTP harness: GET/PUT /companies/current/setup (real Odoo + scra
     await request(app.getHttpServer())
       .put('/companies/current/setup')
       .set('Authorization', `Bearer ${ownerToken}`)
+      .set('X-KEMFAI-Setup-Scope', scope)
       .set('x-tenant-id', otherTenant)
       .send({ step: 'country', values: { country: 'AE' } })
       .expect(403);
@@ -502,12 +528,14 @@ live('T054 live HTTP harness: GET/PUT /companies/current/setup (real Odoo + scra
       await request(app.getHttpServer())
         .put('/companies/current/setup')
         .set('Authorization', `Bearer ${ownerToken}`)
+        .set('X-KEMFAI-Setup-Scope', scope)
         .set('Accept', 'application/json')
         .send({ step: 'country', values: { country: 'AE' } })
         .expect(404);
       await request(app.getHttpServer())
         .put('/companies/current/setup')
         .set('Authorization', `Bearer ${ownerToken}`)
+        .set('X-KEMFAI-Setup-Scope', scope)
         .send({ step: 'country', values: { country: 'AE' } })
         .expect(404);
     } finally {
@@ -539,12 +567,14 @@ live('T054 live HTTP harness: GET/PUT /companies/current/setup (real Odoo + scra
       await request(app.getHttpServer())
         .put('/companies/current/setup')
         .set('Authorization', `Bearer ${ownerToken}`)
+        .set('X-KEMFAI-Setup-Scope', scope)
         .set('Accept', 'application/json')
         .send({ step: 'country', values: { country: 'AE' } })
         .expect(403);
       await request(app.getHttpServer())
         .put('/companies/current/setup')
         .set('Authorization', `Bearer ${ownerToken}`)
+        .set('X-KEMFAI-Setup-Scope', scope)
         .send({ step: 'country', values: { country: 'AE' } })
         .expect(403);
     } finally {
@@ -577,8 +607,75 @@ live('T054 live HTTP harness: GET/PUT /companies/current/setup (real Odoo + scra
     await request(app.getHttpServer())
       .put('/companies/current/setup')
       .set('Authorization', `Bearer ${ownerToken}`)
+      .set('X-KEMFAI-Setup-Scope', scope)
       .send({ step: 'identity', values: { legal_name: '', trade_name: 'Acme' } })
       .expect(422);
+  });
+
+  // T056 round-5 binding resolution (item 5) — the three required contract negatives,
+  // proven here against the REAL app (real global ValidationPipe, real guards) with a
+  // direct Odoo read proving the rejected envelope never reached the mutation RPC at
+  // all, not merely that the HTTP response was a non-2xx.
+  it('PUT an unknown "step" value is rejected (422) and never reaches Odoo', async () => {
+    await resetCompanyToPristine();
+    await request(app.getHttpServer())
+      .put('/companies/current/setup')
+      .set('Authorization', `Bearer ${ownerToken}`)
+      .set('X-KEMFAI-Setup-Scope', scope)
+      .send({ step: 'not_a_real_step', values: {} })
+      .expect(422);
+
+    const afterRejection = (await odoo.executeKw(
+      tenantDb,
+      odooUid,
+      odooPassword,
+      'res.company',
+      'read',
+      [[companyId], ['setup_wizard_version']],
+    )) as Array<{ setup_wizard_version: number }>;
+    expect(afterRejection[0].setup_wizard_version).toBe(0);
+  });
+
+  it('PUT a negative "baseVersion" is rejected (422) and never reaches Odoo', async () => {
+    await resetCompanyToPristine();
+    await request(app.getHttpServer())
+      .put('/companies/current/setup')
+      .set('Authorization', `Bearer ${ownerToken}`)
+      .set('X-KEMFAI-Setup-Scope', scope)
+      .send({ step: 'country', values: { country: 'AE' }, baseVersion: -1 })
+      .expect(422);
+
+    const afterRejection = (await odoo.executeKw(
+      tenantDb,
+      odooUid,
+      odooPassword,
+      'res.company',
+      'read',
+      [[companyId], ['country_id', 'setup_wizard_version']],
+    )) as Array<{ country_id: unknown; setup_wizard_version: number }>;
+    expect(afterRejection[0].country_id).toBe(false);
+    expect(afterRejection[0].setup_wizard_version).toBe(0);
+  });
+
+  it('PUT a non-integer "baseVersion" is rejected (422) and never reaches Odoo', async () => {
+    await resetCompanyToPristine();
+    await request(app.getHttpServer())
+      .put('/companies/current/setup')
+      .set('Authorization', `Bearer ${ownerToken}`)
+      .set('X-KEMFAI-Setup-Scope', scope)
+      .send({ step: 'country', values: { country: 'AE' }, baseVersion: 1.5 })
+      .expect(422);
+
+    const afterRejection = (await odoo.executeKw(
+      tenantDb,
+      odooUid,
+      odooPassword,
+      'res.company',
+      'read',
+      [[companyId], ['country_id', 'setup_wizard_version']],
+    )) as Array<{ country_id: unknown; setup_wizard_version: number }>;
+    expect(afterRejection[0].country_id).toBe(false);
+    expect(afterRejection[0].setup_wizard_version).toBe(0);
   });
 
   it('PUT invalid country code is rejected (422)', async () => {
@@ -586,6 +683,7 @@ live('T054 live HTTP harness: GET/PUT /companies/current/setup (real Odoo + scra
     await request(app.getHttpServer())
       .put('/companies/current/setup')
       .set('Authorization', `Bearer ${ownerToken}`)
+      .set('X-KEMFAI-Setup-Scope', scope)
       .send({ step: 'country', values: { country: 'ZZ' } })
       .expect(422);
   });
@@ -595,6 +693,7 @@ live('T054 live HTTP harness: GET/PUT /companies/current/setup (real Odoo + scra
     const response = await request(app.getHttpServer())
       .put('/companies/current/setup')
       .set('Authorization', `Bearer ${ownerToken}`)
+      .set('X-KEMFAI-Setup-Scope', scope)
       .send({ step: 'country', values: { country: 'AE' }, baseVersion: 0 })
       .expect(200);
     expect(response.body).toMatchObject({
@@ -620,6 +719,7 @@ live('T054 live HTTP harness: GET/PUT /companies/current/setup (real Odoo + scra
     const countryResponse = await request(app.getHttpServer())
       .put('/companies/current/setup')
       .set('Authorization', `Bearer ${ownerToken}`)
+      .set('X-KEMFAI-Setup-Scope', scope)
       .send({ step: 'country', values: { country: 'AE' } })
       .expect(200);
     expect(countryResponse.body.version).toBe(1);
@@ -627,6 +727,7 @@ live('T054 live HTTP harness: GET/PUT /companies/current/setup (real Odoo + scra
     const response = await request(app.getHttpServer())
       .put('/companies/current/setup')
       .set('Authorization', `Bearer ${ownerToken}`)
+      .set('X-KEMFAI-Setup-Scope', scope)
       .send({
         step: 'identity',
         values: { legal_name: 'Acme FZ', trade_name: 'Acme' },
@@ -638,6 +739,55 @@ live('T054 live HTTP harness: GET/PUT /companies/current/setup (real Odoo + scra
       stale: true,
       values: { legal_name: 'Acme FZ' },
     });
+  });
+
+  it('T056 — a stale X-KEMFAI-Setup-Scope header is rejected with 412 BEFORE the Odoo mutation runs; a matching one is accepted', async () => {
+    await resetCompanyToPristine();
+    const getResponse = await request(app.getHttpServer())
+      .get('/companies/current/setup')
+      .set('Authorization', `Bearer ${ownerToken}`)
+      .expect(200);
+    const realScope = getResponse.body.scope as string;
+    expect(typeof realScope).toBe('string');
+    expect(realScope.length).toBeGreaterThan(0);
+
+    // A scope computed for a different (nonexistent) tenant/account/company — stands in
+    // for "the Alpha scope this browser still holds after the authenticated session
+    // actually moved to a different tenant/company (Beta)". Must be rejected before any
+    // Odoo write, not merely detected after one.
+    const staleScope = Buffer.from('stale-alpha-scope-does-not-match').toString('base64url');
+
+    const rejected = await request(app.getHttpServer())
+      .put('/companies/current/setup')
+      .set('Authorization', `Bearer ${ownerToken}`)
+      .set('X-KEMFAI-Setup-Scope', scope)
+      .set('X-KEMFAI-Setup-Scope', staleScope)
+      .send({ step: 'country', values: { country: 'AE' } })
+      .expect(412);
+    expect(rejected.body.statusCode).toBe(412);
+
+    // Proof the rejected call never reached Odoo: a direct RPC read of the live company
+    // still shows no country persisted and version still at the pristine GET's value.
+    const afterRejection = (await odoo.executeKw(
+      tenantDb,
+      odooUid,
+      odooPassword,
+      'res.company',
+      'read',
+      [[companyId], ['country_id', 'setup_wizard_version']],
+    )) as Array<{ country_id: unknown; setup_wizard_version: number }>;
+    expect(afterRejection[0].country_id).toBe(false);
+    expect(afterRejection[0].setup_wizard_version).toBe(getResponse.body.version);
+
+    // The REAL scope, echoed back, is accepted and the mutation proceeds normally.
+    const accepted = await request(app.getHttpServer())
+      .put('/companies/current/setup')
+      .set('Authorization', `Bearer ${ownerToken}`)
+      .set('X-KEMFAI-Setup-Scope', scope)
+      .set('X-KEMFAI-Setup-Scope', realScope)
+      .send({ step: 'country', values: { country: 'AE' } })
+      .expect(200);
+    expect(accepted.body.version).toBe(getResponse.body.version + 1);
   });
 
   it('PUT and GET-resume persist across all seven wizard steps in fixed order', async () => {
@@ -677,6 +827,7 @@ live('T054 live HTTP harness: GET/PUT /companies/current/setup (real Odoo + scra
       const putResponse = await request(app.getHttpServer())
         .put('/companies/current/setup')
         .set('Authorization', `Bearer ${ownerToken}`)
+        .set('X-KEMFAI-Setup-Scope', scope)
         .send({ step, values })
         .expect(200);
       expect(putResponse.body.currentStep).toBe(expectedNextStep[i]);
@@ -728,6 +879,7 @@ live('T054 live HTTP harness: GET/PUT /companies/current/setup (real Odoo + scra
     const response = await request(app.getHttpServer())
       .put('/companies/current/setup')
       .set('Authorization', `Bearer ${ownerToken}`)
+      .set('X-KEMFAI-Setup-Scope', scope)
       .send({ step: 'country', values: { country: 'SA' }, baseVersion })
       .expect(200);
     expect(response.body).toMatchObject({
@@ -757,6 +909,7 @@ live('T054 live HTTP harness: GET/PUT /companies/current/setup (real Odoo + scra
     await request(app.getHttpServer())
       .put('/companies/current/setup')
       .set('Authorization', `Bearer ${ownerToken}`)
+      .set('X-KEMFAI-Setup-Scope', scope)
       .send({ step: 'country', values: { country: 'US' } })
       .expect(409);
 
@@ -775,12 +928,14 @@ live('T054 live HTTP harness: GET/PUT /companies/current/setup (real Odoo + scra
     await request(app.getHttpServer())
       .post('/companies/current/setup/complete')
       .set('Authorization', `Bearer ${nonOwnerToken}`)
+      .set('X-KEMFAI-Setup-Scope', scope)
       .expect(403);
 
     const otherTenant = randomUUID();
     await request(app.getHttpServer())
       .post('/companies/current/setup/complete')
       .set('Authorization', `Bearer ${ownerToken}`)
+      .set('X-KEMFAI-Setup-Scope', scope)
       .set('x-tenant-id', otherTenant)
       .expect(403);
 
@@ -789,6 +944,7 @@ live('T054 live HTTP harness: GET/PUT /companies/current/setup (real Odoo + scra
       await request(app.getHttpServer())
         .post('/companies/current/setup/complete')
         .set('Authorization', `Bearer ${ownerToken}`)
+        .set('X-KEMFAI-Setup-Scope', scope)
         .expect(404);
     } finally {
       await setFlagEnabled(true);
@@ -806,6 +962,7 @@ live('T054 live HTTP harness: GET/PUT /companies/current/setup (real Odoo + scra
       await request(app.getHttpServer())
         .post('/companies/current/setup/complete')
         .set('Authorization', `Bearer ${ownerToken}`)
+        .set('X-KEMFAI-Setup-Scope', scope)
         .expect(403);
     } finally {
       await controlDataSource.query(
@@ -822,12 +979,14 @@ live('T054 live HTTP harness: GET/PUT /companies/current/setup (real Odoo + scra
     await request(app.getHttpServer())
       .put('/companies/current/setup')
       .set('Authorization', `Bearer ${ownerToken}`)
+      .set('X-KEMFAI-Setup-Scope', scope)
       .send({ step: 'country', values: { country: 'AE' } })
       .expect(200);
 
     await request(app.getHttpServer())
       .post('/companies/current/setup/complete')
       .set('Authorization', `Bearer ${ownerToken}`)
+      .set('X-KEMFAI-Setup-Scope', scope)
       .expect(422);
 
     expect(await countAuditEvents('company.setup.completed')).toBe(0);
@@ -846,6 +1005,7 @@ live('T054 live HTTP harness: GET/PUT /companies/current/setup (real Odoo + scra
     const response = await request(app.getHttpServer())
       .post('/companies/current/setup/complete')
       .set('Authorization', `Bearer ${ownerToken}`)
+      .set('X-KEMFAI-Setup-Scope', scope)
       .expect(200);
     expect(response.body.setupComplete).toBe(true);
 
@@ -876,12 +1036,14 @@ live('T054 live HTTP harness: GET/PUT /companies/current/setup (real Odoo + scra
     await request(app.getHttpServer())
       .post('/companies/current/setup/complete')
       .set('Authorization', `Bearer ${ownerToken}`)
+      .set('X-KEMFAI-Setup-Scope', scope)
       .expect(200);
     expect(await countAuditEvents('company.setup.completed')).toBe(1);
 
     const second = await request(app.getHttpServer())
       .post('/companies/current/setup/complete')
       .set('Authorization', `Bearer ${ownerToken}`)
+      .set('X-KEMFAI-Setup-Scope', scope)
       .expect(200);
     expect(second.body.setupComplete).toBe(true);
     expect(await countAuditEvents('company.setup.completed')).toBe(1);
@@ -967,6 +1129,7 @@ live('T054 live HTTP harness: GET/PUT /companies/current/setup (real Odoo + scra
     await request(app.getHttpServer())
       .put('/companies/current/setup')
       .set('Authorization', `Bearer ${ownerToken}`)
+      .set('X-KEMFAI-Setup-Scope', scope)
       .send({ step: 'country', values: { country: 'AE' } })
       .expect(200);
 
@@ -997,6 +1160,7 @@ live('T054 live HTTP harness: GET/PUT /companies/current/setup (real Odoo + scra
     const completeResponse = await request(app.getHttpServer())
       .post('/companies/current/setup/complete')
       .set('Authorization', `Bearer ${ownerToken}`)
+      .set('X-KEMFAI-Setup-Scope', scope)
       .expect(200);
     const versionAfterComplete = completeResponse.body.version as number;
 
