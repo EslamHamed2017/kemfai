@@ -586,7 +586,7 @@ confirm every field persists, RTL fully mirrors, and no native Odoo UI/URL/termi
   - **Acceptance Criteria**: 200/422/409 response codes each exercised and schema-conformant.
   - **Roles**: Primary: Codex · Backup: GLM · Reviewer: Gemini
 
-- [ ] T050 [P] [US3] Integration test: country-dependent VAT/tax validation, including the missing-rule
+- [X] T050 [P] [US3] Integration test: country-dependent VAT/tax validation, including the missing-rule
   configuration-gap 409 in `backend/api/test/integration/company-setup-validation.integration-spec.ts`
   - **Dependencies**: T026
   - **Acceptance Criteria**: Matches Acceptance Scenario 3.5/3.6 and the Edge Case "must not silently accept
