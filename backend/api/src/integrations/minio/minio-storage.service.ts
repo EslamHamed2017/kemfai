@@ -57,4 +57,22 @@ export class MinioStorageService {
   ): Promise<string> {
     return this.client.presignedGetObject(bucket, objectKey, expirySeconds);
   }
+
+  /**
+   * Server-mediated evidence upload used by the multipart customer billing endpoint.
+   * Raw MinIO credentials and presigned upload URLs never cross the BFF boundary.
+   */
+  async putObject(
+    bucket: string,
+    objectKey: string,
+    data: Buffer,
+    metadata: Record<string, string>,
+  ): Promise<void> {
+    await this.client.putObject(bucket, objectKey, data, data.length, metadata);
+  }
+
+  /** Best-effort compensation for an upload whose control-plane transaction rolled back. */
+  async removeObject(bucket: string, objectKey: string): Promise<void> {
+    await this.client.removeObject(bucket, objectKey);
+  }
 }
