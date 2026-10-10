@@ -735,7 +735,7 @@ proof document, submit it, and confirm the submission enters "Pending Review" vi
   - **Acceptance Criteria**: Matches Acceptance Scenario 5.1.
   - **Roles**: Primary: GLM · Backup: Claude · Reviewer: Codex
 
-- [ ] T062 [US5] Implement `GET`/`POST /billing/payment-submissions` (file-type/size validation before row
+- [x] T062 [US5] Implement `GET`/`POST /billing/payment-submissions` (file-type/size validation before row
   creation, MinIO proof upload, append-only `status_history`, emits `billing.payment_submission.created`, 409
   on unresolved duplicate) in `backend/api/src/modules/billing-customer/billing-customer.service.ts`
   - **Dependencies**: T012, T025, T061
