@@ -129,8 +129,13 @@ export class OpenApiContractValidator {
     }
   }
 
-  validateRequestBody(path: string, method: string, body: unknown): void {
-    const schema = this.requestBodySchema(path, method);
+  validateRequestBody(
+    path: string,
+    method: string,
+    body: unknown,
+    contentType = 'application/json',
+  ): void {
+    const schema = this.requestBodySchema(path, method, contentType);
     if (!schema) return; // contract declares no request-body schema — nothing to check
     this.validateAgainst(schema, body, `${method.toUpperCase()} ${path} request body`);
   }
