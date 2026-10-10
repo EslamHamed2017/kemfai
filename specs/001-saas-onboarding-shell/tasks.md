@@ -608,7 +608,7 @@ confirm every field persists, RTL fully mirrors, and no native Odoo UI/URL/termi
     zero axe violations in both locales.
   - **Roles**: Primary: Codex · Backup: Claude · Reviewer: Gemini
 
-- [ ] T105 [P] [US3] Contract test: `GET`/`PUT /companies/current/settings` — a distinct post-completion surface
+- [x] T105 [P] [US3] Contract test: `GET`/`PUT /companies/current/settings` — a distinct post-completion surface
   from the setup wizard — against `contracts/openapi.yaml` in
   `backend/api/test/contract/company-settings.contract-spec.ts` (F3 remediation — see analysis.md; status-code
   contradiction with T106 reconciled in Round 2 remediation — see analysis.md)
