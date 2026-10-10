@@ -715,7 +715,7 @@ proof document, submit it, and confirm the submission enters "Pending Review" vi
     (constraint-level rejection, defense in depth).
   - **Roles**: Primary: Codex · Backup: GLM · Reviewer: Gemini
 
-- [ ] T059 [P] [US5] Integration test: an unsupported file type or over-size upload is rejected (422) with no
+- [x] T059 [P] [US5] Integration test: an unsupported file type or over-size upload is rejected (422) with no
   `PaymentSubmission` row created in `backend/api/test/integration/payment-submission-upload.integration-spec.ts`
   - **Dependencies**: T012
   - **Acceptance Criteria**: Matches Acceptance Scenario 5.4.
