@@ -20,6 +20,7 @@ import { IdempotencyKeyInterceptor } from './common/interceptors/idempotency.int
 import { QueuesModule } from './common/queues/queues.module';
 import { TenantProvisionModule } from './integrations/provisioning/tenant-provision.module';
 import { TrialExpirySweepModule } from './integrations/provisioning/trial-expiry-sweep.module';
+import { BillingCustomerModule } from './modules/billing-customer/billing-customer.module';
 
 @Module({
   imports: [
@@ -30,6 +31,7 @@ import { TrialExpirySweepModule } from './integrations/provisioning/trial-expiry
     PlansModule,
     TenantsModule,
     CompanySetupModule,
+    BillingCustomerModule,
     AccountsModule,
     QueuesModule,
     TrialExpirySweepModule,

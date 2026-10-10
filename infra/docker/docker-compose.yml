@@ -108,6 +108,8 @@ services:
       KEMFAI_ODOO_MASTER_PASSWORD: ${KEMFAI_ODOO_MASTER_PASSWORD:?Set Odoo master password}
       KEMFAI_TENANT_ADMIN_LOGIN: ${KEMFAI_TENANT_ADMIN_LOGIN:?Set tenant admin login}
       KEMFAI_TENANT_ADMIN_PASSWORD: ${KEMFAI_TENANT_ADMIN_PASSWORD:?Set tenant admin password}
+      KEMFAI_BANK_TRANSFER_INSTRUCTIONS_EN: ${KEMFAI_BANK_TRANSFER_INSTRUCTIONS_EN:?Set owner-provided English bank transfer instructions}
+      KEMFAI_BANK_TRANSFER_INSTRUCTIONS_AR: ${KEMFAI_BANK_TRANSFER_INSTRUCTIONS_AR:?Set owner-provided Arabic bank transfer instructions}
       KEYCLOAK_URL: http://keycloak:8080
       # Tokens minted through either browser or backchannel carry this one canonical issuer.
       KEYCLOAK_ISSUER: ${KEYCLOAK_ISSUER:-http://localhost:8080/realms/kemfai-customers}
