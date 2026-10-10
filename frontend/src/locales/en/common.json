@@ -223,5 +223,30 @@
       "offline": "You are offline. We will retry when your connection returns.",
       "unavailable": "We couldn't reach company setup. Please try again."
     }
+  },
+  "companySettings": {
+    "title": "Company settings",
+    "intro": "Update the company details captured during setup without returning to the setup wizard.",
+    "formLabel": "Company settings form",
+    "loading": "Loading company settings…",
+    "saved": "Company settings saved.",
+    "actions": {
+      "save": "Save changes",
+      "saving": "Saving…",
+      "retry": "Try again",
+      "signIn": "Sign in",
+      "openWizard": "Open setup wizard"
+    },
+    "errors": {
+      "general": "We couldn't save your changes. Your edits are still here — please try again.",
+      "configGap": "No VAT/tax validation rule is configured yet for the selected country. Please contact support.",
+      "setupIncomplete": "Finish the initial company setup before editing company settings.",
+      "forbiddenRole": "Only the workspace owner can edit company settings.",
+      "trialExpired": "Your trial window has ended. Activate a subscription to edit company settings.",
+      "featureUnavailable": "Company settings are not available right now.",
+      "sessionExpired": "Your session has expired. Sign in again to continue.",
+      "offline": "You are offline. Reconnect and try again.",
+      "unavailable": "We couldn't reach company settings. Please try again."
+    }
   }
 }
