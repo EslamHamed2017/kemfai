@@ -678,7 +678,7 @@ confirm every field persists, RTL fully mirrors, and no native Odoo UI/URL/termi
     T105's contract test validates against.
   - **Roles**: Primary: GLM · Backup: Claude · Reviewer: Codex
 
-- [ ] T107 [P] [US3] Build the company settings screen (post-completion editing of country/identity/currency/
+- [x] T107 [P] [US3] Build the company settings screen (post-completion editing of country/identity/currency/
   fiscal-year/VAT/industry/accounting-setup fields, reachable independently of the setup wizard) in
   `frontend/src/app/(onboarding)/company-settings/page.tsx` (F3 remediation — see analysis.md; FR-028)
   - **Dependencies**: T024, T106
