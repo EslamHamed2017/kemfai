@@ -660,7 +660,7 @@ confirm every field persists, RTL fully mirrors, and no native Odoo UI/URL/termi
     (FR-013/FR-014).
   - **Roles**: Primary: Claude · Backup: Gemini · Reviewer: Codex
 
-- [ ] T106 [US3] Implement `GET`/`PUT /companies/current/settings` — a distinct endpoint reachable only once
+- [X] T106 [US3] Implement `GET`/`PUT /companies/current/settings` — a distinct endpoint reachable only once
   `Company.setup_complete=true`, allowing authorized users to edit the same setup-wizard-captured fields
   afterward without re-running the wizard, emitting `company.settings.updated` (distinct from
   `company.setup.completed`) — via Odoo JSON-RPC, in
