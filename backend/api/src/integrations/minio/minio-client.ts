@@ -20,6 +20,14 @@ export interface MinioClientLike {
     objectName: string,
     expirySeconds?: number,
   ): Promise<string>;
+  putObject(
+    bucketName: string,
+    objectName: string,
+    data: Buffer,
+    size: number,
+    metadata?: Record<string, string>,
+  ): Promise<unknown>;
+  removeObject(bucketName: string, objectName: string): Promise<void>;
 }
 
 /**

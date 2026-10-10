@@ -245,6 +245,21 @@ describe('GET /billing/subscription (T061)', () => {
       .set('Authorization', `Bearer ${nonOwnerToken}`)
       .expect(403);
   });
+
+  it('rejects an Idempotency-Key on multipart before the global interceptor can fingerprint an empty body', async () => {
+    const response = await request(app.getHttpServer())
+      .post('/billing/payment-submissions')
+      .set('Authorization', `Bearer ${ownerToken}`)
+      .set('Idempotency-Key', 't062-private-multipart-key')
+      .field('bankReference', 'T062-PRIVATE-REFERENCE')
+      .attach('proofFile', Buffer.from('%PDF-1.7 T062 private proof'), {
+        filename: 't062-private-proof.pdf',
+        contentType: 'application/pdf',
+      })
+      .expect(409);
+
+    expect(JSON.stringify(response.body.message)).toMatch(/multipart/i);
+  });
 });
 
 function restoreEnvironment(name: string, value: string | undefined): void {

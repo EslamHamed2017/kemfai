@@ -6,7 +6,7 @@ import {
   NestInterceptor,
 } from '@nestjs/common';
 import { createHash } from 'node:crypto';
-import { Observable, firstValueFrom, from } from 'rxjs';
+import { Observable, firstValueFrom, from, throwError } from 'rxjs';
 import { IdempotencyRecordStatus } from '../../modules/idempotency/entities/idempotency-key.entity';
 import { IdempotencyService } from '../../modules/idempotency/idempotency.service';
 import { TenantScopedRequest } from '../tenant-context/tenant-context.model';
@@ -89,6 +89,20 @@ export class IdempotencyKeyInterceptor implements NestInterceptor {
     const scope = scopeOf(req);
     if (!MUTATING_METHODS.has(req.method) || !idempotencyKey || !scope) {
       return next.handle();
+    }
+    const contentTypeHeader = req.headers['content-type'];
+    const contentType = Array.isArray(contentTypeHeader) ? contentTypeHeader[0] : contentTypeHeader;
+    if (contentType?.toLowerCase().startsWith('multipart/form-data')) {
+      // Global interceptors run before route-scoped FileInterceptor, so req.body/file are
+      // not available here. Hashing `{}` would let a reused key replay a response for a
+      // different proof/reference. Fail closed rather than claim or replay an unsafe slot;
+      // payment-submission duplicate safety still comes from its DB period constraint.
+      return throwError(
+        () =>
+          new ConflictException(
+            'Idempotency-Key cannot be used with multipart requests because the payload cannot be safely fingerprinted.',
+          ),
+      );
     }
     const path = req.path;
     const fingerprint = fingerprintOf(req.body);
