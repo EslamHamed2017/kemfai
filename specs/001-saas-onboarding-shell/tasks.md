@@ -742,7 +742,7 @@ proof document, submit it, and confirm the submission enters "Pending Review" vi
   - **Acceptance Criteria**: Matches Acceptance Scenarios 5.2/5.3/5.4/5.5.
   - **Roles**: Primary: GLM · Backup: Claude · Reviewer: Codex
 
-- [ ] T063 [P] [US5] Build the billing screen (instructions/reference/amount/period, status display) and
+- [x] T063 [P] [US5] Build the billing screen (instructions/reference/amount/period, status display) and
   proof-upload form with localized upload errors in `frontend/src/app/(onboarding)/billing/page.tsx`
   - **Dependencies**: T024, T062
   - **Acceptance Criteria**: Matches Acceptance Scenarios 5.1–5.4; status remains visible without requiring
