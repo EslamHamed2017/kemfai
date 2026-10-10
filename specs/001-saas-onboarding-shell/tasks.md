@@ -707,7 +707,7 @@ proof document, submit it, and confirm the submission enters "Pending Review" vi
   - **Acceptance Criteria**: 200/201/409/422 response codes each exercised and schema-conformant.
   - **Roles**: Primary: Codex · Backup: GLM · Reviewer: Gemini
 
-- [ ] T058 [P] [US5] Integration test: the DB-level unique partial index rejects a second concurrent
+- [x] T058 [P] [US5] Integration test: the DB-level unique partial index rejects a second concurrent
   PendingReview/MoreInfoRequested submission for the same tenant+billing period in
   `backend/api/test/integration/payment-submission-uniqueness.integration-spec.ts`
   - **Dependencies**: T012
