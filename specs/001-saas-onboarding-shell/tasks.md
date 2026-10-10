@@ -729,7 +729,7 @@ proof document, submit it, and confirm the submission enters "Pending Review" vi
 
 ### Implementation for User Story 5
 
-- [ ] T061 [US5] Implement `GET /billing/subscription` (bank instructions, amount, currency, billing period,
+- [x] T061 [US5] Implement `GET /billing/subscription` (bank instructions, amount, currency, billing period,
   unique payment reference) in `backend/api/src/modules/billing-customer/billing-customer.controller.ts`
   - **Dependencies**: T011, T044
   - **Acceptance Criteria**: Matches Acceptance Scenario 5.1.
