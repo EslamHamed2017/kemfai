@@ -248,5 +248,45 @@
       "offline": "You are offline. Reconnect and try again.",
       "unavailable": "We couldn't reach company settings. Please try again."
     }
+  },
+  "billing": {
+    "title": "Billing and payment",
+    "loading": "Loading billing details…",
+    "bankInstructions": "Bank transfer instructions",
+    "paymentDetails": "Payment details",
+    "paymentReference": "Payment reference",
+    "amountDue": "Amount due",
+    "billingPeriod": "Billing period",
+    "periodSeparator": "to",
+    "status": {
+      "title": "Payment submission status",
+      "submittedAt": "Submitted",
+      "pendingReview": "Pending review",
+      "approved": "Approved",
+      "rejected": "Rejected",
+      "moreInfoRequested": "Request more information"
+    },
+    "form": {
+      "title": "Submit payment proof",
+      "bankReference": "Bank transfer reference",
+      "proofFile": "Payment proof",
+      "proofHelp": "Choose a PDF, PNG, or JPEG file within the upload limit.",
+      "submit": "Submit payment proof",
+      "submitting": "Submitting payment proof…"
+    },
+    "actions": {
+      "retry": "Try again",
+      "signIn": "Sign in"
+    },
+    "errors": {
+      "unsupportedType": "This proof file type is not supported. Choose a PDF, PNG, or JPEG file and try again.",
+      "tooLarge": "This proof file is too large. Choose a PDF, PNG, or JPEG file within the upload limit and try again.",
+      "unreadable": "We couldn't read this proof file. Choose a readable PDF, PNG, or JPEG file and try again.",
+      "duplicate": "A payment submission is already under review for this billing period.",
+      "bankReference": "Enter the bank transfer reference and try again.",
+      "general": "We couldn't submit the payment proof. Your file was not accepted; please try again.",
+      "sessionExpired": "Your session has expired. Sign in again to view billing.",
+      "unavailable": "We couldn't load billing details. Please try again."
+    }
   }
 }
