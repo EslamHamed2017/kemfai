@@ -701,7 +701,7 @@ proof document, submit it, and confirm the submission enters "Pending Review" vi
 
 ### Tests for User Story 5
 
-- [ ] T057 [P] [US5] Contract test: `GET /billing/subscription` and `GET`/`POST /billing/payment-submissions`
+- [x] T057 [P] [US5] Contract test: `GET /billing/subscription` and `GET`/`POST /billing/payment-submissions`
   against `contracts/openapi.yaml` in `backend/api/test/contract/billing-customer.contract-spec.ts`
   - **Dependencies**: T022
   - **Acceptance Criteria**: 200/201/409/422 response codes each exercised and schema-conformant.
