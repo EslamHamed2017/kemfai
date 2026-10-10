@@ -601,7 +601,7 @@ confirm every field persists, RTL fully mirrors, and no native Odoo UI/URL/termi
     sessions.
   - **Roles**: Primary: Codex · Backup: GLM · Reviewer: Gemini
 
-- [ ] T052 [P] [US3] Playwright EN/AR-RTL + axe test: full wizard walkthrough including a mid-wizard language
+- [X] T052 [P] [US3] Playwright EN/AR-RTL + axe test: full wizard walkthrough including a mid-wizard language
   switch that preserves unsaved input, in `frontend/tests/e2e/us3-company-setup.spec.ts`
   - **Dependencies**: T023
   - **Acceptance Criteria**: Matches Acceptance Scenario 3.2 and the Edge Case for language switch mid-flow;
