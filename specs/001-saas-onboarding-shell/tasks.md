@@ -721,7 +721,7 @@ proof document, submit it, and confirm the submission enters "Pending Review" vi
   - **Acceptance Criteria**: Matches Acceptance Scenario 5.4.
   - **Roles**: Primary: Codex · Backup: GLM · Reviewer: Gemini
 
-- [ ] T060 [P] [US5] Playwright EN/AR-RTL + axe test: billing screen instructions/reference/amount/period,
+- [x] T060 [P] [US5] Playwright EN/AR-RTL + axe test: billing screen instructions/reference/amount/period,
   proof upload happy path, and duplicate-submission block in `frontend/tests/e2e/us5-billing-customer.spec.ts`
   - **Dependencies**: T023
   - **Acceptance Criteria**: Matches Acceptance Scenarios 5.1–5.3; localized upload-error messaging (FR-012).
