@@ -455,8 +455,9 @@ export class AuditService {
 
   async recordBillingPaymentSubmissionCreated(
     input: BillingPaymentSubmissionCreatedInput,
+    manager?: EntityManager,
   ): Promise<void> {
-    await this.append({
+    const event: AuditEventInput = {
       actorType: AuditActorType.ACCOUNT,
       actorId: input.accountId,
       tenantId: input.tenantId,
@@ -470,7 +471,9 @@ export class AuditService {
         currency: input.currency,
         billing_period: { start: input.billingPeriodStart, end: input.billingPeriodEnd },
       },
-    });
+    };
+    if (manager) await this.append(event, manager);
+    else await this.append(event);
   }
 
   async recordBillingPaymentSubmissionDecided(

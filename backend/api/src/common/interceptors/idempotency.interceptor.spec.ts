@@ -69,6 +69,26 @@ describe('IdempotencyKeyInterceptor (T020)', () => {
     expect(service.claim).not.toHaveBeenCalled();
   });
 
+  it('rejects an Idempotency-Key on multipart before claiming an empty-body fingerprint', async () => {
+    const service = makeService({ claim: jest.fn().mockResolvedValue('claim-1') });
+    const interceptor = new IdempotencyKeyInterceptor(service);
+    const req = makeReq({
+      headers: {
+        'idempotency-key': 'key-1',
+        'content-type': 'multipart/form-data; boundary=t062-private-boundary',
+      },
+      body: undefined,
+    });
+    const handler = makeHandler({ shouldNotRun: true });
+    const handleSpy = jest.spyOn(handler, 'handle');
+
+    await expect(firstValueFrom(interceptor.intercept(makeContext(req), handler))).rejects.toThrow(
+      ConflictException,
+    );
+    expect(service.claim).not.toHaveBeenCalled();
+    expect(handleSpy).not.toHaveBeenCalled();
+  });
+
   it('claims the slot, runs the handler exactly once, and marks it completed with the result', async () => {
     const service = makeService({ claim: jest.fn().mockResolvedValue('claim-1') });
     const interceptor = new IdempotencyKeyInterceptor(service);

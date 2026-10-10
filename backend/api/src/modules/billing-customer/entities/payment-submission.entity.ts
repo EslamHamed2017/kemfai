@@ -22,6 +22,9 @@ export interface PaymentSubmissionStatusHistoryEntry {
   changedAt: string;
   changedBy: string | null;
   notes: string | null;
+  /** Immutable evidence snapshot for customer submission/resubmission transitions (T062). */
+  bankReference?: string;
+  proofObjectKey?: string;
 }
 
 /**

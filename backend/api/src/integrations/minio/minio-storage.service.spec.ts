@@ -8,6 +8,8 @@ function fakeClient(opts: { bucketExists: boolean } = { bucketExists: false }) {
     makeBucket: jest.fn(async () => undefined),
     presignedPutObject: jest.fn(async () => 'https://minio.example/put'),
     presignedGetObject: jest.fn(async () => 'https://minio.example/get'),
+    putObject: jest.fn(async () => undefined),
+    removeObject: jest.fn(async () => undefined),
     setBucketPolicy: jest.fn(async (...args: unknown[]) => {
       calls.setBucketPolicy.push(args);
     }),
@@ -86,6 +88,38 @@ describe('MinioStorageService (T025)', () => {
         'kemfai-tenant-t-abc',
         'payment-submissions/s1/f.pdf',
         60,
+      );
+    });
+  });
+
+  describe('server-mediated objects', () => {
+    it('uploads a private evidence buffer with its exact byte count and metadata', async () => {
+      const { client } = fakeClient();
+      const service = new MinioStorageService(client);
+      const proof = Buffer.from('%PDF-1.7 T062 private proof');
+
+      await service.putObject('kemfai-tenant-t-abc', 'payment-submissions/s1/f.pdf', proof, {
+        'Content-Type': 'application/pdf',
+      });
+
+      expect(client.putObject).toHaveBeenCalledWith(
+        'kemfai-tenant-t-abc',
+        'payment-submissions/s1/f.pdf',
+        proof,
+        proof.length,
+        { 'Content-Type': 'application/pdf' },
+      );
+    });
+
+    it('removes an uploaded object when a caller compensates a failed DB write', async () => {
+      const { client } = fakeClient();
+      const service = new MinioStorageService(client);
+
+      await service.removeObject('kemfai-tenant-t-abc', 'payment-submissions/s1/f.pdf');
+
+      expect(client.removeObject).toHaveBeenCalledWith(
+        'kemfai-tenant-t-abc',
+        'payment-submissions/s1/f.pdf',
       );
     });
   });
