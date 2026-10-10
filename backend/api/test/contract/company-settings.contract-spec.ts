@@ -13,6 +13,13 @@ import { ContractCoverage, OpenApiContractValidator } from '../support/openapi-c
  * case specifically match `CompanySetupIncompleteError` exactly.
  */
 describe('Company settings contract (T055/T105, against contracts/openapi.yaml)', () => {
+  const path = '/companies/current/settings';
+  const methods = ['get', 'put'] as const;
+  const setupIncompleteBody = {
+    statusCode: 409,
+    message: 'settings are not reachable until setup is complete.',
+    setupComplete: false,
+  };
   const validator = new OpenApiContractValidator();
   const coverage = new ContractCoverage(validator);
 
@@ -25,15 +32,11 @@ describe('Company settings contract (T055/T105, against contracts/openapi.yaml)'
     });
 
     it('403: caller is not the Workspace Owner for this tenant', () => {
-      coverage.record('/companies/current/settings', 'get', 403, undefined);
+      coverage.record(path, 'get', 403, undefined);
     });
 
     it('409: setup not yet complete conforms exactly to CompanySetupIncompleteError', () => {
-      coverage.record('/companies/current/settings', 'get', 409, {
-        statusCode: 409,
-        message: 'settings are not reachable until setup is complete.',
-        setupComplete: false,
-      });
+      coverage.record(path, 'get', 409, setupIncompleteBody);
     });
   });
 
@@ -54,30 +57,59 @@ describe('Company settings contract (T055/T105, against contracts/openapi.yaml)'
   });
 
   describe('PUT /companies/current/settings responses', () => {
-    it('200: settings updated, conforms to CompanySettingsView', () => {
-      coverage.record('/companies/current/settings', 'put', 200, {
+    it('200: settings updated using the documented status', () => {
+      coverage.record(path, 'put', 200, {
         values: { legal_name: 'Acme Holdings' },
         setupComplete: true,
       });
     });
 
     it('403: caller is not the Workspace Owner for this tenant', () => {
-      coverage.record('/companies/current/settings', 'put', 403, undefined);
+      coverage.record(path, 'put', 403, undefined);
     });
 
     it('409: setup not yet complete conforms exactly to CompanySetupIncompleteError', () => {
-      coverage.record('/companies/current/settings', 'put', 409, {
-        statusCode: 409,
-        message: 'settings are not reachable until setup is complete.',
-        setupComplete: false,
+      coverage.record(path, 'put', 409, setupIncompleteBody);
+    });
+  });
+
+  describe('canonical pre-completion 409 regression controls', () => {
+    it.each(methods)('%s binds 409 directly to CompanySetupIncompleteError', (method) => {
+      expect(validator.responseSchema(path, method, 409)).toEqual({
+        $ref: '#/components/schemas/CompanySetupIncompleteError',
       });
+    });
+
+    it.each(methods)('%s rejects a different pre-completion status', (method) => {
+      expect(() => validator.assertResponse(path, method, 410, setupIncompleteBody)).toThrow(
+        /undocumented status 410/,
+      );
+    });
+
+    it.each([
+      ['missing setupComplete', { statusCode: 409, message: 'setup incomplete' }],
+      [
+        'wrong statusCode in the body',
+        { statusCode: 403, message: 'setup incomplete', setupComplete: false },
+      ],
+      ['setupComplete=true', { statusCode: 409, message: 'setup incomplete', setupComplete: true }],
+      [
+        'non-string message',
+        { statusCode: 409, message: ['setup incomplete'], setupComplete: false },
+      ],
+    ])('rejects the wrong error shape: %s', (_caseName, body) => {
+      for (const method of methods) {
+        expect(() => validator.assertResponse(path, method, 409, body)).toThrow(
+          /does not match its declared schema/,
+        );
+      }
     });
   });
 
   describe('coverage (T105 acceptance criterion)', () => {
     it('every documented response code for both operations was exercised', () => {
-      coverage.assertFullCoverage('/companies/current/settings', 'get');
-      coverage.assertFullCoverage('/companies/current/settings', 'put');
+      coverage.assertFullCoverage(path, 'get');
+      coverage.assertFullCoverage(path, 'put');
     });
   });
 });
