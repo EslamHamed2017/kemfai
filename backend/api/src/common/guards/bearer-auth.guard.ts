@@ -32,8 +32,19 @@ function resolveJwks(jwksUri: string): JWTVerifyGetKey {
  * tests can point at a per-test, in-process JWKS server via KEYCLOAK_JWKS_URI/KEYCLOAK_ISSUER/
  * KEYCLOAK_API_AUDIENCE without needing a live Keycloak.
  */
-function resolveAuthConfig() {
+function resolveAuthConfig(internalBillingRoute: boolean) {
   const keycloakUrl = process.env.KEYCLOAK_URL ?? 'http://keycloak:8080';
+  if (internalBillingRoute) {
+    const realm = process.env.KEYCLOAK_INTERNAL_REALM ?? 'kemfai-internal';
+    const issuer = process.env.KEYCLOAK_INTERNAL_ISSUER ?? `${keycloakUrl}/realms/${realm}`;
+    const audience =
+      process.env.KEYCLOAK_INTERNAL_API_AUDIENCE ??
+      process.env.KEYCLOAK_API_AUDIENCE ??
+      'kemfai-api';
+    const jwksUri =
+      process.env.KEYCLOAK_INTERNAL_JWKS_URI ?? `${issuer}/protocol/openid-connect/certs`;
+    return { issuer, audience, jwksUri };
+  }
   const realm = process.env.KEYCLOAK_CUSTOMERS_REALM ?? 'kemfai-customers';
   const issuer = process.env.KEYCLOAK_ISSUER ?? `${keycloakUrl}/realms/${realm}`;
   const audience = process.env.KEYCLOAK_API_AUDIENCE ?? 'kemfai-api';
@@ -70,7 +81,10 @@ export class BearerAuthGuard implements CanActivate {
       throw new UnauthorizedException('Missing bearer token');
     }
     const token = header.slice('Bearer '.length).trim();
-    const { issuer, audience, jwksUri } = resolveAuthConfig();
+    const path = req.path ?? req.originalUrl ?? req.url ?? '';
+    const internalBillingRoute =
+      path === '/internal/billing' || path.startsWith('/internal/billing/');
+    const { issuer, audience, jwksUri } = resolveAuthConfig(internalBillingRoute);
 
     let sub: string | undefined;
     let roles: string[] = [];
