@@ -772,7 +772,7 @@ more information on it, independent of re-running Story 5's customer flow.
     identity can ever self-approve (structural, not just configured).
   - **Roles**: Primary: Codex · Backup: GLM · Reviewer: Gemini
 
-- [ ] T065 [P] [US6] Integration test: two concurrent approve calls on the same submission produce exactly one
+- [x] T065 [P] [US6] Integration test: two concurrent approve calls on the same submission produce exactly one
   activation and one `billing.subscription.activated` event; the second call receives 409, in
   `backend/api/test/integration/billing-approval-idempotency.integration-spec.ts`
   - **Dependencies**: T012, T011
