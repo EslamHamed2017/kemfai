@@ -788,7 +788,7 @@ more information on it, independent of re-running Story 5's customer flow.
   - **Acceptance Criteria**: Direct test for SC-007; matches Acceptance Scenario 6.5.
   - **Roles**: Primary: Codex · Backup: GLM · Reviewer: Gemini
 
-- [ ] T067 [P] [US6] Integration test: repeated request-more-info cycles on the same billing period each
+- [x] T067 [P] [US6] Integration test: repeated request-more-info cycles on the same billing period each
   appear individually in `status_history`, and the customer-visible view always shows the latest request, in
   `backend/api/test/integration/billing-more-info-cycles.integration-spec.ts`
   - **Dependencies**: T012
