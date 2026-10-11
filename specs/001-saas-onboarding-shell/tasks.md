@@ -763,7 +763,7 @@ more information on it, independent of re-running Story 5's customer flow.
 
 ### Tests for User Story 6
 
-- [ ] T064 [P] [US6] Role-matrix authorization test: every `/internal/billing/*` endpoint against
+- [X] T064 [P] [US6] Role-matrix authorization test: every `/internal/billing/*` endpoint against
   unauthenticated, Workspace Owner (own tenant), Workspace Owner (foreign tenant), Billing Admin, and Support —
   each run twice (UI-shaped call and raw HTTP replay) — in
   `backend/api/test/integration/billing-admin-authorization.integration-spec.ts`
