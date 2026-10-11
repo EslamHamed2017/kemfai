@@ -780,7 +780,7 @@ more information on it, independent of re-running Story 5's customer flow.
     test strategy.
   - **Roles**: Primary: Codex · Backup: GLM · Reviewer: Gemini
 
-- [ ] T066 [P] [US6] Integration test: the FR-009 field list is asserted verbatim (all named fields present
+- [x] T066 [P] [US6] Integration test: the FR-009 field list is asserted verbatim (all named fields present
   and non-null where required) on every `billing.payment_submission.decided` and
   `billing.subscription.activated` event, in
   `backend/api/test/integration/billing-audit-completeness.integration-spec.ts`
