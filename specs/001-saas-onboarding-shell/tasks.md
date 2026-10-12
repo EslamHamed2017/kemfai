@@ -797,7 +797,7 @@ more information on it, independent of re-running Story 5's customer flow.
 
 ### Implementation for User Story 6
 
-- [ ] T068 [US6] Implement `GET /internal/billing/review-queue` (all PendingReview/MoreInfoRequested
+- [x] T068 [US6] Implement `GET /internal/billing/review-queue` (all PendingReview/MoreInfoRequested
   submissions across tenants, Billing Admin role only) in
   `backend/api/src/modules/billing-admin/billing-admin.controller.ts`
   - **Dependencies**: T012, T018
