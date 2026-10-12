@@ -57,5 +57,11 @@ export function resolveMinioConfig(): {
 }
 
 export function createMinioClient(): MinioClientLike {
-  return new Client(resolveMinioConfig());
+  return new Client({
+    ...resolveMinioConfig(),
+    // MinIO defaults to us-east-1. Supplying it lets the SDK sign short-lived review URLs
+    // locally instead of making a bucket-region request on every queue read. Deployments with
+    // a non-default region remain configuration-driven.
+    region: process.env.STORAGE_REGION ?? 'us-east-1',
+  });
 }
