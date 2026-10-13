@@ -1,5 +1,6 @@
 import { AuditService } from './audit.service';
 import { AuditActorType } from './entities/audit-event.entity';
+import { EntityManager } from 'typeorm';
 
 const TENANT = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 const ACCOUNT = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
@@ -229,46 +230,113 @@ describe('AuditService — FR-007 event catalog (T019)', () => {
 
   it('billing.payment_submission.decided — internal_user actor', async () => {
     const reviewedAt = new Date('2026-09-18T10:00:00Z');
-    await service.recordBillingPaymentSubmissionDecided({
-      reviewerInternalUserId: INTERNAL_USER,
-      tenantId: TENANT,
-      paymentSubmissionId: SUBJECT,
-      decision: 'approve',
-      reviewedAt,
-      notes: 'looks good',
-    });
+    const activatedAt = new Date('2026-09-18T10:05:00Z');
+    const manager = {} as EntityManager;
+    await service.recordBillingPaymentSubmissionDecided(
+      {
+        reviewerInternalUserId: INTERNAL_USER,
+        tenantId: TENANT,
+        paymentSubmissionId: SUBJECT,
+        decision: 'approve',
+        reviewedAt,
+        notes: 'looks good',
+        customer: ACCOUNT,
+        tenant: TENANT,
+        plan: 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee',
+        billingPeriodStart: '2026-09-01',
+        billingPeriodEnd: '2026-09-30',
+        amount: '199.00',
+        currency: 'USD',
+        bankReference: 'REF-123',
+        proofDocumentReference: 'payment-submissions/t069-owned/proof.pdf',
+        reviewedBy: INTERNAL_USER,
+        activatedBy: INTERNAL_USER,
+        activatedAt,
+        statusHistory: [{ status: 'Approved' }],
+      },
+      manager,
+    );
     expect(appendSpy).toHaveBeenCalledWith(
       expect.objectContaining({
         action: 'billing.payment_submission.decided',
         actorType: AuditActorType.INTERNAL_USER,
         actorId: INTERNAL_USER,
         payload: {
+          customer: ACCOUNT,
+          tenant: TENANT,
+          plan: 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee',
+          billing_period: { start: '2026-09-01', end: '2026-09-30' },
+          amount: '199.00',
+          currency: 'USD',
+          bank_reference: 'REF-123',
+          proof_document_reference: 'payment-submissions/t069-owned/proof.pdf',
           decision: 'approve',
           reviewed_by: INTERNAL_USER,
           reviewed_at: reviewedAt.toISOString(),
+          activation_decision: 'approve',
+          activated_by: INTERNAL_USER,
+          activated_at: activatedAt.toISOString(),
           notes: 'looks good',
+          status_history: [{ status: 'Approved' }],
         },
       }),
+      manager,
     );
   });
 
   it('billing.subscription.activated — internal_user actor', async () => {
     const activatedAt = new Date('2026-09-18T10:05:00Z');
-    await service.recordBillingSubscriptionActivated({
-      activatedByInternalUserId: INTERNAL_USER,
-      tenantId: TENANT,
-      subscriptionId: SUBJECT,
-      activatedAt,
-      billingPeriodStart: '2026-09-01',
-      billingPeriodEnd: '2026-09-30',
-    });
+    const reviewedAt = new Date('2026-09-18T10:00:00Z');
+    const manager = {} as EntityManager;
+    await service.recordBillingSubscriptionActivated(
+      {
+        activatedByInternalUserId: INTERNAL_USER,
+        tenantId: TENANT,
+        subscriptionId: SUBJECT,
+        decision: 'approve',
+        activatedAt,
+        billingPeriodStart: '2026-09-01',
+        billingPeriodEnd: '2026-09-30',
+        customer: ACCOUNT,
+        tenant: TENANT,
+        plan: 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee',
+        amount: '199.00',
+        currency: 'USD',
+        bankReference: 'REF-123',
+        proofDocumentReference: 'payment-submissions/t069-owned/proof.pdf',
+        reviewedBy: INTERNAL_USER,
+        reviewedAt,
+        activatedBy: INTERNAL_USER,
+        notes: 'looks good',
+        statusHistory: [{ status: 'Approved' }],
+      },
+      manager,
+    );
     expect(appendSpy).toHaveBeenCalledWith(
       expect.objectContaining({
         action: 'billing.subscription.activated',
         actorType: AuditActorType.INTERNAL_USER,
         subjectType: 'subscription',
-        payload: expect.objectContaining({ activated_by: INTERNAL_USER }),
+        payload: {
+          customer: ACCOUNT,
+          tenant: TENANT,
+          plan: 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee',
+          billing_period: { start: '2026-09-01', end: '2026-09-30' },
+          amount: '199.00',
+          currency: 'USD',
+          bank_reference: 'REF-123',
+          proof_document_reference: 'payment-submissions/t069-owned/proof.pdf',
+          decision: 'approve',
+          reviewed_by: INTERNAL_USER,
+          reviewed_at: reviewedAt.toISOString(),
+          activation_decision: 'approve',
+          activated_by: INTERNAL_USER,
+          activated_at: activatedAt.toISOString(),
+          notes: 'looks good',
+          status_history: [{ status: 'Approved' }],
+        },
       }),
+      manager,
     );
   });
 
