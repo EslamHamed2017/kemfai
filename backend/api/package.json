@@ -19,6 +19,7 @@
     "migration:run": "npm run typeorm -- migration:run -d src/database/data-source.ts",
     "migration:revert": "npm run typeorm -- migration:revert -d src/database/data-source.ts",
     "migration:generate": "npm run typeorm -- migration:generate -d src/database/data-source.ts",
+    "notify:recover": "ts-node src/scripts/recover-billing-decision-notifications.ts",
     "seed:dev": "ts-node src/database/seeds/dev-quickstart.seed.ts"
   },
   "dependencies": {

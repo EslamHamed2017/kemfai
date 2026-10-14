@@ -396,8 +396,13 @@ paths:
       parameters:
         - { name: submissionId, in: path, required: true, schema: { type: string, format: uuid } }
       responses:
-        "200": { description: Activated/renewed }
-        "409": { description: Tenant/period already Active — duplicate activation blocked (Acceptance Scenario 6.6) }
+        "200":
+          description: Activated/renewed
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/BillingApprovalResult" }
+        "404": { description: Unknown payment submission }
+        "409": { description: Tenant/period already Active — duplicate activation blocked (Acceptance Scenario 6.6), or the submission was already decided }
 
   /internal/billing/payment-submissions/{submissionId}/reject:
     post:
@@ -412,9 +417,21 @@ paths:
             schema:
               type: object
               required: [reason]
-              properties: { reason: { type: string } }
+              properties:
+                reason:
+                  type: string
+                  minLength: 1
+                  maxLength: 4000
+                  pattern: '\s*\S[\s\S]*'
       responses:
-        "200": { description: Rejected, audited }
+        "200":
+          description: Rejected, audited, customer notification enqueued
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/BillingDecisionResult" }
+        "404": { description: Unknown payment submission }
+        "409": { description: The submission was already decided }
+        "422": { description: Mandatory reason missing, blank, non-string, or longer than 4000 characters }
 
   /internal/billing/payment-submissions/{submissionId}/request-more-info:
     post:
@@ -429,9 +446,21 @@ paths:
             schema:
               type: object
               required: [details]
-              properties: { details: { type: string } }
+              properties:
+                details:
+                  type: string
+                  minLength: 1
+                  maxLength: 4000
+                  pattern: '\s*\S[\s\S]*'
       responses:
-        "200": { description: Request recorded as a new status_history cycle }
+        "200":
+          description: Request recorded as a new status_history cycle
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/BillingDecisionResult" }
+        "404": { description: Unknown payment submission }
+        "409": { description: The submission was already decided (a MoreInfoRequested row first needs the customer's resubmission) }
+        "422": { description: Mandatory details missing, blank, non-string, or longer than 4000 characters }
 
   /onboarding/checklist:
     get:
@@ -716,6 +745,28 @@ components:
             currency: { type: string }
             bankReference: { type: string }
             proofDownloadUrl: { type: string }
+
+    BillingDecisionResult:
+      type: object
+      required: [submissionId, status, decision, decisionNotes, decidedAt]
+      properties:
+        submissionId: { type: string, format: uuid }
+        status: { type: string, enum: [Rejected, MoreInfoRequested] }
+        decision: { type: string, enum: [reject, more_info] }
+        decisionNotes: { type: string }
+        decidedAt: { type: string, format: date-time }
+
+    BillingApprovalResult:
+      type: object
+      required:
+        [submissionId, subscriptionId, status, billingPeriodStart, billingPeriodEnd, activatedAt]
+      properties:
+        submissionId: { type: string, format: uuid }
+        subscriptionId: { type: string, format: uuid }
+        status: { type: string, enum: [Active] }
+        billingPeriodStart: { type: string, format: date }
+        billingPeriodEnd: { type: string, format: date }
+        activatedAt: { type: string, format: date-time }
 
     ChecklistState:
       type: object

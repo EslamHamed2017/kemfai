@@ -16,6 +16,10 @@ import {
   billingDecisionNotificationJobId,
 } from '../../common/queues/queue-names';
 import {
+  BillingDecisionNotificationOutboxRow,
+  BillingDecisionNotificationOutboxService,
+} from './billing-decision-notification-outbox.service';
+import {
   AuditService,
   BillingActivationAuditFields,
   BillingDecision,
@@ -71,6 +75,7 @@ export class BillingAdminService {
     private readonly audit: AuditService,
     @InjectQueue(QUEUE_NOTIFICATION_BILLING_DECISION)
     private readonly billingDecisionNotificationQueue: Queue,
+    private readonly notificationOutbox: BillingDecisionNotificationOutboxService,
   ) {}
 
   async getReviewQueue(): Promise<PaymentSubmissionAdminView[]> {
@@ -95,7 +100,7 @@ export class BillingAdminService {
     submissionId: string,
     reviewerKeycloakUserId: string,
   ): Promise<BillingApprovalResult> {
-    return controlDataSource.transaction(async (manager) => {
+    const outcome = await controlDataSource.transaction(async (manager) => {
       const paymentRepository = manager.getRepository(PaymentSubmission);
       const submission = await paymentRepository.findOne({
         where: { id: submissionId },
@@ -205,15 +210,38 @@ export class BillingAdminService {
         manager,
       );
 
-      return {
+      // FR-035 (T070 review finding 3): approvals notify the customer too. The
+      // notification intent commits INSIDE the same transaction as the activation —
+      // T069's atomicity is preserved, just carried by one more row — and the enqueue
+      // happens only after the transaction resolves.
+      const notificationOutboxRow = await this.notificationOutbox.recordPending(manager, {
         submissionId: savedSubmission.id,
-        subscriptionId: savedSubscription.id,
-        status: SubscriptionStatus.ACTIVE,
-        billingPeriodStart: savedSubscription.currentPeriodStart,
-        billingPeriodEnd: savedSubscription.currentPeriodEnd,
-        activatedAt: decidedAt.toISOString(),
+        tenantId: savedSubmission.tenantId,
+        decision: 'approve',
+        notes: null,
+        occurredAt: decidedAt,
+        jobId: billingDecisionNotificationJobId(
+          savedSubmission.id,
+          'approve',
+          savedSubmission.statusHistory.length - 1,
+        ),
+      });
+
+      return {
+        approval: {
+          submissionId: savedSubmission.id,
+          subscriptionId: savedSubscription.id,
+          status: SubscriptionStatus.ACTIVE,
+          billingPeriodStart: savedSubscription.currentPeriodStart,
+          billingPeriodEnd: savedSubscription.currentPeriodEnd,
+          activatedAt: decidedAt.toISOString(),
+        } satisfies BillingApprovalResult,
+        notificationOutboxRow,
       };
     });
+
+    await this.dispatchDecisionNotification(outcome.notificationOutboxRow);
+    return outcome.approval;
   }
 
   /**
@@ -235,7 +263,7 @@ export class BillingAdminService {
       PaymentSubmissionStatus.REJECTED,
       notes,
     );
-    await this.enqueueDecisionNotification(outcome);
+    await this.dispatchDecisionNotification(outcome.notificationOutboxRow);
     return outcome.result;
   }
 
@@ -258,7 +286,7 @@ export class BillingAdminService {
       PaymentSubmissionStatus.MORE_INFO_REQUESTED,
       notes,
     );
-    await this.enqueueDecisionNotification(outcome);
+    await this.dispatchDecisionNotification(outcome.notificationOutboxRow);
     return outcome.result;
   }
 
@@ -277,8 +305,7 @@ export class BillingAdminService {
     notes: string,
   ): Promise<{
     result: BillingDecisionResult;
-    tenantId: string;
-    decidedAt: Date;
+    notificationOutboxRow: BillingDecisionNotificationOutboxRow;
   }> {
     const outcome = await controlDataSource.transaction(async (manager) => {
       const paymentRepository = manager.getRepository(PaymentSubmission);
@@ -365,7 +392,25 @@ export class BillingAdminService {
         manager,
       );
 
-      return { savedSubmission, decidedAt };
+      // T070 durability (review finding 1): the FR-035 notification intent commits in
+      // the SAME transaction as the decision, history append, and audit — commit or
+      // roll back together. The occurrence is the 0-based index of this decision's own
+      // history entry, so repeated more-info cycles never collide at the queue (review
+      // finding 2) while a retried SAME-occurrence write stays idempotent.
+      const notificationOutboxRow = await this.notificationOutbox.recordPending(manager, {
+        submissionId: savedSubmission.id,
+        tenantId: savedSubmission.tenantId,
+        decision,
+        notes,
+        occurredAt: decidedAt,
+        jobId: billingDecisionNotificationJobId(
+          savedSubmission.id,
+          decision,
+          savedSubmission.statusHistory.length - 1,
+        ),
+      });
+
+      return { savedSubmission, decidedAt, notificationOutboxRow };
     });
 
     return {
@@ -376,40 +421,30 @@ export class BillingAdminService {
         decisionNotes: notes,
         decidedAt: outcome.decidedAt.toISOString(),
       },
-      tenantId: outcome.savedSubmission.tenantId,
-      decidedAt: outcome.decidedAt,
+      notificationOutboxRow: outcome.notificationOutboxRow,
     };
   }
 
   /**
-   * FR-035 customer notification — enqueued strictly AFTER the decision transaction
-   * resolves (a rolled-back decision must never notify) using the events.md idempotency
-   * key `submission_id` + decision via the shared helper, so a retried decision path can
-   * never produce a second job. Per events.md the job is "retried with backoff" and, like
-   * every established producer in this codebase, an enqueue failure is logged for ops —
-   * the durable, audited decision itself never fails because Redis is briefly unavailable.
+   * FR-035 customer notification — dispatches the outbox row committed with the
+   * decision, strictly AFTER the decision transaction resolves (a rolled-back decision
+   * must never notify, and its outbox row rolled back with it). The enqueue reuses the
+   * exact job name/data/options the recovery path uses; BullMQ dedupes on the
+   * occurrence-keyed job id. An enqueue or mark failure is logged for ops and left to
+   * the durable `pending` row — the in-process recovery worker and the operator command
+   * (`npm run notify:recover`) converge it with bounded backoff; the durable, audited
+   * decision itself never fails because Redis is briefly unavailable.
    */
-  private async enqueueDecisionNotification(outcome: {
-    result: BillingDecisionResult;
-    tenantId: string;
-    decidedAt: Date;
-  }): Promise<void> {
-    const { result, tenantId, decidedAt } = outcome;
+  private async dispatchDecisionNotification(
+    row: BillingDecisionNotificationOutboxRow,
+  ): Promise<void> {
     try {
-      await this.billingDecisionNotificationQueue.add(
-        'notify',
-        {
-          submissionId: result.submissionId,
-          tenantId,
-          decision: result.decision,
-          notes: result.decisionNotes,
-          occurredAt: decidedAt.toISOString(),
-        },
-        { jobId: billingDecisionNotificationJobId(result.submissionId, result.decision) },
-      );
+      await this.notificationOutbox.dispatch(row, this.billingDecisionNotificationQueue);
     } catch (error) {
       this.logger.error(
-        `notification.billing_decision enqueue failed for submission ${result.submissionId} (${result.decision}) — decision is durable and audited; notification needs operator follow-up`,
+        `notification.billing_decision enqueue failed for submission ${row.submissionId} ` +
+          `(${row.decision}, job ${row.jobId}) — decision is durable and audited; the pending ` +
+          `outbox row will be recovered with backoff`,
         error as Error,
       );
     }

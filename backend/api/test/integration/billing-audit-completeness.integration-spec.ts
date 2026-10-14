@@ -2,9 +2,12 @@ import { randomUUID } from 'node:crypto';
 import type { AddressInfo } from 'node:net';
 import { INestApplication } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
+import { Queue } from 'bullmq';
 import request = require('supertest');
 import { AppModule } from '../../src/app.module';
 import controlDataSource from '../../src/database/data-source';
+import { QUEUE_NOTIFICATION_BILLING_DECISION } from '../../src/common/queues/queue-names';
+import { redisConnectionFromUrl } from '../../src/common/queues/redis-connection';
 import { Account, BillingCycle } from '../../src/modules/accounts/entities/account.entity';
 import {
   PaymentSubmission,
@@ -219,6 +222,28 @@ describe('Billing audit completeness (T066)', () => {
     };
 
     try {
+      // T070 companion hygiene: this suite's approval now enqueues a real
+      // notification.billing_decision job (FR-035 covers every decision outcome). Remove
+      // the outbox-recorded jobs for this suite's submission so the shared test Redis DB
+      // stays clean for T021's queue-emptiness contract.
+      if (submissionId) {
+        await attempt(async () => {
+          const notificationQueue = new Queue(QUEUE_NOTIFICATION_BILLING_DECISION, {
+            connection: redisConnectionFromUrl(),
+          });
+          try {
+            const rows = (await controlDataSource.query(
+              'SELECT job_id FROM billing_decision_notification_outbox WHERE submission_id = $1',
+              [submissionId],
+            )) as Array<{ job_id: string }>;
+            for (const row of rows) {
+              await notificationQueue.remove(row.job_id).catch(() => undefined);
+            }
+          } finally {
+            await notificationQueue.close().catch(() => undefined);
+          }
+        });
+      }
       if (controlDataSource.isInitialized) {
         await attempt(() =>
           controlDataSource.query('DELETE FROM audit_event WHERE tenant_id = $1', [tenantId]),
@@ -279,7 +304,11 @@ describe('Billing audit completeness (T066)', () => {
       .getRepository(PaymentSubmission)
       .findOneByOrFail({ id: submissionId });
     expect(submission.status).toBe(PaymentSubmissionStatus.APPROVED);
-    expect(submission.reviewedBy).toBe(billingAdminAccountId);
+    // Accepted T069 internal-identity doctrine: the internal-realm reviewer never
+    // aliases into the customer-only `reviewed_by` Account FK; the actor is preserved
+    // in the history entry below and in the FR-009 audit payload (`reviewed_by` there
+    // carries the internal subject).
+    expect(submission.reviewedBy).toBeNull();
     expect(submission.reviewedAt).toBeInstanceOf(Date);
     expect(submission.statusHistory).toHaveLength(initialHistory.length + 1);
     expect(submission.statusHistory[submission.statusHistory.length - 1]).toMatchObject({
@@ -292,7 +321,7 @@ describe('Billing audit completeness (T066)', () => {
       .findOneByOrFail({ id: subscriptionId });
     expect(subscription).toMatchObject({
       status: SubscriptionStatus.ACTIVE,
-      activatedBy: billingAdminAccountId,
+      activatedBy: null,
     });
     expect(subscription.activatedAt).toBeInstanceOf(Date);
 

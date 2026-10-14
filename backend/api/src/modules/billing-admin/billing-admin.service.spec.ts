@@ -5,7 +5,15 @@ import controlDataSource from '../../database/data-source';
 import { MinioStorageService } from '../../integrations/minio/minio-storage.service';
 import { Account } from '../accounts/entities/account.entity';
 import { AuditService } from '../audit/audit.service';
-import { billingDecisionNotificationJobId } from '../../common/queues/queue-names';
+import {
+  BILLING_DECISION_NOTIFICATION_ATTEMPTS,
+  BILLING_DECISION_NOTIFICATION_BACKOFF,
+  billingDecisionNotificationJobId,
+} from '../../common/queues/queue-names';
+import {
+  BillingDecisionNotificationOutboxRow,
+  BillingDecisionNotificationOutboxService,
+} from './billing-decision-notification-outbox.service';
 import {
   PaymentSubmission,
   PaymentSubmissionStatus,
@@ -24,6 +32,60 @@ const REVIEWER_SUB = '69000000-0000-4000-8000-000000000007';
 const PERIOD_START = '2026-11-01';
 const PERIOD_END = '2026-11-30';
 
+/** The outbox collaborator every BillingAdminService construction site needs (T070 durability). */
+function makeOutboxService() {
+  const markEnqueued = jest.fn().mockResolvedValue(undefined);
+  return {
+    // Returns a row derived from the recorded input, so the post-commit dispatch
+    // carries the real decision's data through to queue.add.
+    recordPending: jest.fn(
+      async (
+        _manager: unknown,
+        input: {
+          submissionId: string;
+          tenantId: string;
+          decision: string;
+          notes: string | null;
+          occurredAt: Date;
+          jobId: string;
+        },
+      ) =>
+        ({
+          id: 'outbox-1',
+          ...input,
+          state: 'pending',
+          retryCount: 0,
+          leaseOwner: null,
+          leaseExpiresAt: null,
+        }) as BillingDecisionNotificationOutboxRow,
+    ),
+    markEnqueued,
+    // Faithful stand-in for the real dispatch: enqueue with the occurrence job id and
+    // the events.md retry options, then mark — so the service-under-test's real call
+    // path (delegating to the outbox) still exercises queue.add + markEnqueued.
+    dispatch: jest.fn(
+      async (outboxRow: BillingDecisionNotificationOutboxRow, queue: { add: jest.Mock }) => {
+        await queue.add(
+          'notify',
+          {
+            submissionId: outboxRow.submissionId,
+            tenantId: outboxRow.tenantId,
+            decision: outboxRow.decision,
+            notes: outboxRow.notes,
+            occurredAt: outboxRow.occurredAt.toISOString(),
+          },
+          {
+            jobId: outboxRow.jobId,
+            attempts: BILLING_DECISION_NOTIFICATION_ATTEMPTS,
+            backoff: BILLING_DECISION_NOTIFICATION_BACKOFF,
+          },
+        );
+        await markEnqueued(outboxRow.id);
+      },
+    ),
+  } as unknown as BillingDecisionNotificationOutboxService;
+}
+
 describe('BillingAdminService review queue (T068)', () => {
   afterEach(() => {
     jest.restoreAllMocks();
@@ -36,6 +98,7 @@ describe('BillingAdminService review queue (T068)', () => {
       {} as MinioStorageService,
       {} as AuditService,
       {} as Queue,
+      makeOutboxService(),
     );
 
     await service.getReviewQueue();
@@ -67,6 +130,8 @@ describe('BillingAdminService approval (T069)', () => {
     recordBillingPaymentSubmissionDecided: jest.Mock;
     recordBillingSubscriptionActivated: jest.Mock;
   };
+  let notificationQueue: { add: jest.Mock };
+  let outbox: ReturnType<typeof makeOutboxService>;
   let submission: PaymentSubmission;
   let subscription: Subscription;
   let service: BillingAdminService;
@@ -130,10 +195,18 @@ describe('BillingAdminService approval (T069)', () => {
       .mockImplementation((async (
         callback: (transactionManager: EntityManager) => Promise<unknown>,
       ) => callback(manager as unknown as EntityManager)) as typeof controlDataSource.transaction);
+    notificationQueue = { add: jest.fn().mockResolvedValue(undefined) };
+    outbox = makeOutboxService();
+    jest
+      .spyOn(controlDataSource, 'transaction')
+      .mockImplementation((async (
+        callback: (transactionManager: EntityManager) => Promise<unknown>,
+      ) => callback(manager as unknown as EntityManager)) as typeof controlDataSource.transaction);
     service = new BillingAdminService(
       {} as MinioStorageService,
       audit as unknown as AuditService,
-      { add: jest.fn() } as unknown as Queue,
+      notificationQueue as unknown as Queue,
+      outbox,
     );
   });
 
@@ -216,6 +289,35 @@ describe('BillingAdminService approval (T069)', () => {
       }),
       manager,
     );
+    // FR-035 (reviewer finding 3): approvals notify too. The outbox row is committed
+    // inside the SAME transaction as the activation (atomicity preserved), and the
+    // enqueue happens only after it resolves.
+    expect(outbox.recordPending).toHaveBeenCalledWith(
+      manager,
+      expect.objectContaining({
+        submissionId: SUBMISSION_ID,
+        tenantId: TENANT_ID,
+        decision: 'approve',
+        notes: null,
+        jobId: billingDecisionNotificationJobId(SUBMISSION_ID, 'approve', 1),
+        occurredAt: expect.any(Date),
+      }),
+    );
+    expect(notificationQueue.add).toHaveBeenCalledWith(
+      'notify',
+      expect.objectContaining({
+        submissionId: SUBMISSION_ID,
+        tenantId: TENANT_ID,
+        decision: 'approve',
+        notes: null,
+      }),
+      {
+        jobId: billingDecisionNotificationJobId(SUBMISSION_ID, 'approve', 1),
+        attempts: BILLING_DECISION_NOTIFICATION_ATTEMPTS,
+        backoff: BILLING_DECISION_NOTIFICATION_BACKOFF,
+      },
+    );
+    expect(outbox.markEnqueued).toHaveBeenCalledWith('outbox-1');
     expect(result).toEqual(
       expect.objectContaining({
         submissionId: SUBMISSION_ID,
@@ -236,6 +338,8 @@ describe('BillingAdminService approval (T069)', () => {
     expect(subscriptionRepository.save).not.toHaveBeenCalled();
     expect(audit.recordBillingPaymentSubmissionDecided).not.toHaveBeenCalled();
     expect(audit.recordBillingSubscriptionActivated).not.toHaveBeenCalled();
+    expect(outbox.recordPending).not.toHaveBeenCalled();
+    expect(notificationQueue.add).not.toHaveBeenCalled();
   });
 
   it('renews an active subscription from an earlier period onto the submitted period', async () => {
@@ -347,6 +451,7 @@ describe('BillingAdminService decisions (T070)', () => {
   let manager: { getRepository: jest.Mock };
   let audit: { recordBillingPaymentSubmissionDecided: jest.Mock };
   let notificationQueue: { add: jest.Mock };
+  let outbox: ReturnType<typeof makeOutboxService>;
   let submission: PaymentSubmission;
   let service: BillingAdminService;
 
@@ -395,6 +500,7 @@ describe('BillingAdminService decisions (T070)', () => {
       recordBillingPaymentSubmissionDecided: jest.fn().mockResolvedValue(undefined),
     };
     notificationQueue = { add: jest.fn().mockResolvedValue(undefined) };
+    outbox = makeOutboxService();
     jest
       .spyOn(controlDataSource, 'transaction')
       .mockImplementation((async (
@@ -404,6 +510,7 @@ describe('BillingAdminService decisions (T070)', () => {
       {} as MinioStorageService,
       audit as unknown as AuditService,
       notificationQueue as unknown as Queue,
+      outbox,
     );
   });
 
@@ -463,6 +570,21 @@ describe('BillingAdminService decisions (T070)', () => {
       manager,
     );
 
+    // T070 durability (reviewer finding 1): the pending-notification outbox row is
+    // committed INSIDE the decision transaction via the same manager — commit or roll
+    // back together — keyed by the decision occurrence's status_history index.
+    expect(outbox.recordPending).toHaveBeenCalledWith(
+      manager,
+      expect.objectContaining({
+        submissionId: SUBMISSION_ID,
+        tenantId: TENANT_ID,
+        decision: 'reject',
+        notes: REJECT_REASON,
+        jobId: billingDecisionNotificationJobId(SUBMISSION_ID, 'reject', 1),
+        occurredAt: expect.any(Date),
+      }),
+    );
+
     expect(notificationQueue.add).toHaveBeenCalledWith(
       'notify',
       expect.objectContaining({
@@ -471,8 +593,13 @@ describe('BillingAdminService decisions (T070)', () => {
         decision: 'reject',
         notes: REJECT_REASON,
       }),
-      { jobId: billingDecisionNotificationJobId(SUBMISSION_ID, 'reject') },
+      {
+        jobId: billingDecisionNotificationJobId(SUBMISSION_ID, 'reject', 1),
+        attempts: BILLING_DECISION_NOTIFICATION_ATTEMPTS,
+        backoff: BILLING_DECISION_NOTIFICATION_BACKOFF,
+      },
     );
+    expect(outbox.markEnqueued).toHaveBeenCalledWith('outbox-1');
     expect(result).toEqual({
       submissionId: SUBMISSION_ID,
       status: PaymentSubmissionStatus.REJECTED,
@@ -513,7 +640,11 @@ describe('BillingAdminService decisions (T070)', () => {
     expect(notificationQueue.add).toHaveBeenCalledWith(
       'notify',
       expect.objectContaining({ decision: 'more_info', notes: MORE_INFO_DETAILS }),
-      { jobId: billingDecisionNotificationJobId(SUBMISSION_ID, 'more_info') },
+      {
+        jobId: billingDecisionNotificationJobId(SUBMISSION_ID, 'more_info', 1),
+        attempts: BILLING_DECISION_NOTIFICATION_ATTEMPTS,
+        backoff: BILLING_DECISION_NOTIFICATION_BACKOFF,
+      },
     );
     expect(result).toMatchObject({
       submissionId: SUBMISSION_ID,
@@ -521,6 +652,47 @@ describe('BillingAdminService decisions (T070)', () => {
       decision: 'more_info',
       decisionNotes: MORE_INFO_DETAILS,
     });
+  });
+
+  it('enqueues a distinct occurrence-keyed job for a repeated more-info cycle carrying the latest notes', async () => {
+    // Reviewer finding 2: the submission row already carries one completed more-info/
+    // resubmission cycle, and a prior BullMQ job may still exist under the FIRST
+    // cycle's key. The new decision must produce its own job keyed by its own
+    // status_history occurrence, with the latest notes.
+    const priorCycleHistory = [
+      ...originalHistory,
+      {
+        status: PaymentSubmissionStatus.MORE_INFO_REQUESTED,
+        changedAt: '2026-11-13T08:00:00.000Z',
+        changedBy: REVIEWER_SUB,
+        notes: 'First request.',
+      },
+      {
+        status: PaymentSubmissionStatus.PENDING_REVIEW,
+        changedAt: '2026-11-14T08:00:00.000Z',
+        changedBy: CUSTOMER_ID,
+        notes: null,
+      },
+    ];
+    submission.statusHistory = priorCycleHistory.map((entry) => ({ ...entry }));
+
+    await service.requestMoreInfo(SUBMISSION_ID, REVIEWER_SUB, MORE_INFO_DETAILS);
+
+    expect(outbox.recordPending).toHaveBeenCalledWith(
+      manager,
+      expect.objectContaining({
+        decision: 'more_info',
+        notes: MORE_INFO_DETAILS,
+        jobId: billingDecisionNotificationJobId(SUBMISSION_ID, 'more_info', 3),
+      }),
+    );
+    expect(notificationQueue.add).toHaveBeenCalledWith(
+      'notify',
+      expect.objectContaining({ decision: 'more_info', notes: MORE_INFO_DETAILS }),
+      expect.objectContaining({
+        jobId: billingDecisionNotificationJobId(SUBMISSION_ID, 'more_info', 3),
+      }),
+    );
   });
 
   it('trims surrounding whitespace from notes before persisting them', async () => {
@@ -592,7 +764,20 @@ describe('BillingAdminService decisions (T070)', () => {
     expect(notificationQueue.add).not.toHaveBeenCalled();
   });
 
-  it('keeps the decided response successful when the enqueue fails (events.md: retried, non-blocking)', async () => {
+  it('never enqueues the notification when the in-transaction audit append fails', async () => {
+    audit.recordBillingPaymentSubmissionDecided.mockRejectedValue(new Error('audit store down'));
+
+    await expect(
+      service.requestMoreInfo(SUBMISSION_ID, REVIEWER_SUB, MORE_INFO_DETAILS),
+    ).rejects.toThrow('audit store down');
+
+    // The audit failure aborts the whole decision transaction — the notification must
+    // never be dispatched for a decision that did not durably commit.
+    expect(notificationQueue.add).not.toHaveBeenCalled();
+    expect(outbox.markEnqueued).not.toHaveBeenCalled();
+  });
+
+  it('keeps the decided response successful when the enqueue fails, leaving the outbox row pending for recovery (events.md: retried, non-blocking)', async () => {
     notificationQueue.add.mockRejectedValue(new Error('redis unavailable'));
 
     const result = await service.requestMoreInfo(SUBMISSION_ID, REVIEWER_SUB, MORE_INFO_DETAILS);
@@ -602,5 +787,10 @@ describe('BillingAdminService decisions (T070)', () => {
       expect.anything(),
       manager,
     );
+    // Reviewer finding 1: a Redis-add failure must leave a persisted, recoverable
+    // pending row — the row is committed with the decision, and only a successful
+    // add() may transition it to enqueued.
+    expect(outbox.recordPending).toHaveBeenCalledWith(manager, expect.anything());
+    expect(outbox.markEnqueued).not.toHaveBeenCalled();
   });
 });

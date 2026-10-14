@@ -134,20 +134,30 @@ describe('BullMQ queue registration (T021)', () => {
     expect(await emailVerification.getJob(emailVerificationJobId(accountId, 'v2'))).toBeDefined();
   });
 
-  it('keys notification.billing_decision jobs on submission_id + decision', async () => {
+  it('keys notification.billing_decision jobs on submission_id + decision + decision occurrence', async () => {
     const notification = queues[2];
     const submissionId = 'dddddddd-dddd-4ddd-8ddd-dddddddddddd';
     await notification.add(
       'notify',
       {},
-      { jobId: billingDecisionNotificationJobId(submissionId, 'approve') },
+      { jobId: billingDecisionNotificationJobId(submissionId, 'more_info', 1) },
     );
 
     expect(
-      await notification.getJob(billingDecisionNotificationJobId(submissionId, 'approve')),
+      await notification.getJob(billingDecisionNotificationJobId(submissionId, 'more_info', 1)),
     ).toBeDefined();
+    // A different occurrence of the same decision on the same submission is a distinct,
+    // non-suppressing job (repeated more-info cycles, FR-035)...
     expect(
-      await notification.getJob(billingDecisionNotificationJobId(submissionId, 'reject')),
+      await notification.getJob(billingDecisionNotificationJobId(submissionId, 'more_info', 3)),
     ).toBeUndefined();
+    // ...while a re-add under the SAME occurrence key dedupes to the one waiting job.
+    await notification.add(
+      'notify',
+      {},
+      { jobId: billingDecisionNotificationJobId(submissionId, 'more_info', 1) },
+    );
+    const counts = await notification.getJobCounts();
+    expect(counts.waiting).toBe(1);
   });
 });

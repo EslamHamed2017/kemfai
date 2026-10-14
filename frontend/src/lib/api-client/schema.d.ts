@@ -269,6 +269,7 @@ export interface paths {
             };
             requestBody?: never;
             responses: {
+                /** @description Account-owned tenant status; tenantId is null until the worker creates the row */
                 200: {
                     headers: {
                         [name: string]: unknown;
@@ -276,6 +277,20 @@ export interface paths {
                     content: {
                         "application/json": components["schemas"]["TenantStatus"];
                     };
+                };
+                /** @description Email is not verified */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description No account for authenticated subject */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
                 };
             };
         };
@@ -306,15 +321,40 @@ export interface paths {
             };
             requestBody?: never;
             responses: {
-                /** @description Retry enqueued */
+                /** @description A retry is queued (or was already queued). An ordinary Failed retry returns Pending; the one exceptional case — a Ready tenant with a provisioned Odoo database but no captured company id — returns Ready while that mapping is repaired. */
                 202: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["TenantStatus"];
+                    };
+                };
+                /** @description Email is not verified */
+                403: {
                     headers: {
                         [name: string]: unknown;
                     };
                     content?: never;
                 };
-                /** @description Tenant already Ready or Creating — no-op with current status returned */
+                /** @description No account for authenticated subject */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description Tenant already Ready or Creating (or job active) — no-op with current status returned */
                 409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["TenantStatus"];
+                    };
+                };
+                /** @description Retry queue unavailable; tenant state remains unchanged */
+                503: {
                     headers: {
                         [name: string]: unknown;
                     };
@@ -359,7 +399,10 @@ export interface paths {
         put: {
             parameters: {
                 query?: never;
-                header?: never;
+                header: {
+                    /** @description T056 round 3 — REQUIRED on every call, including a session's first mutation: the opaque `CompanySetupState.scope` this wizard session last observed via GET. The server recomputes the scope for the authenticated tenant/account/ company BEFORE this mutation runs and rejects a missing, blank, or mismatched value with 412, so a session/account transition (or a caller skipping the prerequisite GET) can never mutate a different company using values displayed for the previous one. */
+                    "X-KEMFAI-Setup-Scope": string;
+                };
                 path?: never;
                 cookie?: never;
             };
@@ -369,15 +412,24 @@ export interface paths {
                 };
             };
             responses: {
-                /** @description Step saved */
+                /** @description Step saved, values preserved (Acceptance Scenario 3.3); `stale=true` if another wizard session's save landed first (last-write-wins, Edge Case). */
                 200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["CompanySetupState"];
+                    };
+                };
+                /** @description Country validation rule missing for this country — configuration gap */
+                409: {
                     headers: {
                         [name: string]: unknown;
                     };
                     content?: never;
                 };
-                /** @description Country validation rule missing for this country — configuration gap */
-                409: {
+                /** @description T056 — X-KEMFAI-Setup-Scope no longer matches the authenticated tenant/account/company; rejected before any Odoo mutation */
+                412: {
                     headers: {
                         [name: string]: unknown;
                     };
@@ -412,20 +464,39 @@ export interface paths {
         post: {
             parameters: {
                 query?: never;
-                header?: never;
+                header: {
+                    /** @description T056 round 3 — REQUIRED, same precondition as the PUT above (missing/blank/ mismatched all rejected with 412), checked before the completion handoff/Odoo RPC runs. */
+                    "X-KEMFAI-Setup-Scope": string;
+                };
                 path?: never;
                 cookie?: never;
             };
             requestBody?: never;
             responses: {
-                /** @description Company marked setup complete; audit event recorded (Acceptance Scenario 3.7) */
+                /** @description Company marked setup complete; `company.setup.completed` audit event recorded exactly once (Acceptance Scenario 3.7). A repeated call after completion is a no-op 200 (idempotent) and does not append a second audit event. Explicitly `200`, not the Nest POST default `201` — this is an idempotent finalize, not a resource-creation response. */
                 200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["CompanySetupState"];
+                    };
+                };
+                /** @description Caller is not the Workspace Owner for this tenant */
+                403: {
                     headers: {
                         [name: string]: unknown;
                     };
                     content?: never;
                 };
-                /** @description One or more required steps incomplete */
+                /** @description T056 — X-KEMFAI-Setup-Scope no longer matches the authenticated tenant/account/company; rejected before the completion handoff/Odoo RPC */
+                412: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description One or more required steps incomplete — no completion */
                 422: {
                     headers: {
                         [name: string]: unknown;
@@ -465,6 +536,13 @@ export interface paths {
                         "application/json": components["schemas"]["CompanySettingsView"];
                     };
                 };
+                /** @description Caller is not the Workspace Owner for this tenant */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
                 /** @description THE single documented pre-completion response: `Company.setup_complete=false`. Settings are not yet reachable — use /companies/current/setup (T054) instead. This is the one canonical status code for this condition; no other task/spec text may restate a different code for it (Round 2 remediation — see analysis.md). */
                 409: {
                     headers: {
@@ -480,7 +558,10 @@ export interface paths {
         put: {
             parameters: {
                 query?: never;
-                header?: never;
+                header?: {
+                    /** @description Optional, but the only mechanism that makes a retry of this call safe: when supplied, the `company.settings.updated` audit event for this edit is DB-deduplicated on (tenant, this key), so re-sending the same key after a failed attempt or a lost response never produces a second audit row for the same logical edit. Omitting it means every call is treated as a distinct edit, each with its own audit row. */
+                    "Idempotency-Key"?: string;
+                };
                 path?: never;
                 cookie?: never;
             };
@@ -878,6 +959,15 @@ export interface paths {
                     headers: {
                         [name: string]: unknown;
                     };
+                    content: {
+                        "application/json": components["schemas"]["BillingApprovalResult"];
+                    };
+                };
+                /** @description Unknown payment submission */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
                     content?: never;
                 };
                 /** @description Tenant/period already Active — duplicate activation blocked (Acceptance Scenario 6.6) */
@@ -922,8 +1012,31 @@ export interface paths {
                 };
             };
             responses: {
-                /** @description Rejected */
+                /** @description Rejected, audited, customer notification enqueued */
                 200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["BillingDecisionResult"];
+                    };
+                };
+                /** @description Unknown payment submission */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description The submission was already decided */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description Mandatory reason missing */
+                422: {
                     headers: {
                         [name: string]: unknown;
                     };
@@ -966,6 +1079,29 @@ export interface paths {
             responses: {
                 /** @description Request recorded as a new status_history cycle */
                 200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["BillingDecisionResult"];
+                    };
+                };
+                /** @description Unknown payment submission */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description The submission was already decided (a MoreInfoRequested row first needs the customer's resubmission) */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description Mandatory details missing */
+                422: {
                     headers: {
                         [name: string]: unknown;
                     };
@@ -1184,23 +1320,33 @@ export interface components {
         };
         TenantStatus: {
             /** Format: uuid */
-            tenantId?: string;
+            tenantId: string | null;
             /** @enum {string} */
-            status?: "Pending" | "Creating" | "Ready" | "Failed";
-            failureReason?: string | null;
+            status: "Pending" | "Creating" | "Ready" | "Failed";
+            failureReason: string | null;
         };
         CompanySetupState: {
-            currentStep?: string;
-            setupComplete?: boolean;
-            values?: {
-                [key: string]: unknown;
-            };
-        };
-        CompanySetupStepInput: {
-            step: string;
+            /** @enum {string} */
+            currentStep: "country" | "identity" | "currency" | "fiscal_year" | "vat_tax" | "industry" | "accounting_setup";
+            setupComplete: boolean;
             values: {
                 [key: string]: unknown;
             };
+            /** @description Current `res.company.setup_wizard_version` (T054 arbiter resolution point 1). Pass this back as `baseVersion` on the next `PUT` to detect a concurrent save from another wizard session. */
+            version: number;
+            /** @description `true` only on a `PUT` response whose `baseVersion` no longer matched the locked `setup_wizard_version` at save time (last-write-wins: the save still succeeded field-by-field). Always `false` on `GET` — there is no `baseVersion` to compare on a read. */
+            stale: boolean;
+            /** @description T056 — an opaque, server-authenticated token binding this response to the caller's authenticated tenant/account/company. The client must treat it as opaque (equality-compare only, e.g. to detect an account/company transition before restoring a locally-held draft) and must never parse it, derive authority from it, or substitute a client-selected value for it. */
+            scope: string;
+        };
+        CompanySetupStepInput: {
+            /** @enum {string} */
+            step: "country" | "identity" | "currency" | "fiscal_year" | "vat_tax" | "industry" | "accounting_setup";
+            values: {
+                [key: string]: unknown;
+            };
+            /** @description The `version` this wizard session last read (T054 arbiter resolution point 1). Omitted/null on a first save; the response's `stale` flag reports whether another session's save landed first. */
+            baseVersion?: number | null;
         };
         CompanySettingsView: {
             values?: {
@@ -1288,6 +1434,31 @@ export interface components {
             currency?: string;
             bankReference?: string;
             proofDownloadUrl?: string;
+        };
+        BillingDecisionResult: {
+            /** Format: uuid */
+            submissionId: string;
+            /** @enum {string} */
+            status: "Rejected" | "MoreInfoRequested";
+            /** @enum {string} */
+            decision: "reject" | "more_info";
+            decisionNotes: string;
+            /** Format: date-time */
+            decidedAt: string;
+        };
+        BillingApprovalResult: {
+            /** Format: uuid */
+            submissionId: string;
+            /** Format: uuid */
+            subscriptionId: string;
+            /** @enum {string} */
+            status: "Active";
+            /** Format: date */
+            billingPeriodStart: string;
+            /** Format: date */
+            billingPeriodEnd: string;
+            /** Format: date-time */
+            activatedAt: string;
         };
         ChecklistState: {
             customerAdded?: boolean;

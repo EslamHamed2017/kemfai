@@ -40,7 +40,7 @@ retrievable audit record") and for the Test Strategy's audit-completeness tests 
 |---|---|---|---|---|
 | `tenant.provision` | `account.email_verified` | `account_id` (unique job id) | Tenant → Ready, `tenant.provisioning.succeeded` | Tenant → Failed, `tenant.provisioning.failed`, retryable |
 | `email.send_verification` | signup, resend-verification | `account_id` + issued token version | Email dispatched | Retried with backoff; does not block signup response |
-| `notification.billing_decision` | `billing.payment_submission.decided` | `submission_id` + decision | Customer notified (FR-035) | Retried with backoff |
+| `notification.billing_decision` | `billing.payment_submission.decided` | `submission_id` + decision + decision occurrence (the decision's own `status_history` entry index) | Customer notified (FR-035) — one job per decision occurrence, repeated more-info cycles included | Retried with backoff; the durable `billing_decision_notification_outbox` row committed with the decision guarantees the enqueue itself survives Redis failures and process crashes (recovery worker + operator `npm run notify:recover`) |
 | `support_access.expiry_sweep` | Scheduled, every 30s | N/A (sweep, not per-entity) | Expired grants flipped, `support_access.grant.expired` emitted per grant | Logged; next tick self-heals |
 | `trial.expiry_sweep` | Scheduled, every 30s | N/A (sweep, not per-entity) | Newly-crossed-threshold unpaid tenants detected, `tenant.trial.restricted` emitted per tenant (F2 remediation — mirrors `support_access.expiry_sweep`) | Logged; next tick self-heals; live `TrialWindowGuard` enforcement is unaffected by a missed tick |
 

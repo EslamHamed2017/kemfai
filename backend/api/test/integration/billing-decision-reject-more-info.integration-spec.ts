@@ -191,12 +191,13 @@ describe('Billing Admin reject and request-more-info decisions (T070)', () => {
       concurrencySubmissionId,
       alreadyDecidedSubmissionId,
     ]) {
-      await notificationQueue
-        .remove(billingDecisionNotificationJobId(submissionId, 'reject'))
-        .catch(() => undefined);
-      await notificationQueue
-        .remove(billingDecisionNotificationJobId(submissionId, 'more_info'))
-        .catch(() => undefined);
+      for (const decision of ['reject', 'more_info', 'approve'] as const) {
+        for (let occurrence = 0; occurrence < 8; occurrence += 1) {
+          await notificationQueue
+            .remove(billingDecisionNotificationJobId(submissionId, decision, occurrence))
+            .catch(() => undefined);
+        }
+      }
     }
 
     const planRepository = controlDataSource.getRepository(Plan);
@@ -327,18 +328,32 @@ describe('Billing Admin reject and request-more-info decisions (T070)', () => {
 
     try {
       if (notificationQueue) {
+        // The outbox rows enumerate every occurrence-keyed job this suite's decisions
+        // created; belt-and-braces the seeded history also gets swept by pattern.
+        if (controlDataSource.isInitialized) {
+          const rows = (await controlDataSource.query(
+            'SELECT job_id FROM billing_decision_notification_outbox WHERE tenant_id = $1',
+            [tenantId],
+          )) as Array<{ job_id: string }>;
+          for (const row of rows) {
+            await attempt(() => notificationQueue.remove(row.job_id));
+          }
+        }
         for (const submissionId of [
           rejectSubmissionId,
           moreInfoSubmissionId,
           concurrencySubmissionId,
           alreadyDecidedSubmissionId,
         ]) {
-          await attempt(() =>
-            notificationQueue.remove(billingDecisionNotificationJobId(submissionId, 'reject')),
-          );
-          await attempt(() =>
-            notificationQueue.remove(billingDecisionNotificationJobId(submissionId, 'more_info')),
-          );
+          for (const decision of ['reject', 'more_info', 'approve'] as const) {
+            for (let occurrence = 0; occurrence < 8; occurrence += 1) {
+              await attempt(() =>
+                notificationQueue
+                  .remove(billingDecisionNotificationJobId(submissionId, decision, occurrence))
+                  .catch(() => undefined),
+              );
+            }
+          }
         }
         await attempt(() => notificationQueue.close());
       }
@@ -462,9 +477,11 @@ describe('Billing Admin reject and request-more-info decisions (T070)', () => {
 
     expect(await countActivationEvents()).toBe(0);
 
-    // events.md: notification.billing_decision keyed by submission_id + decision.
+    // events.md: notification.billing_decision keyed by submission_id + decision +
+    // decision occurrence (status_history cycle index — initialRejectHistory has one
+    // entry, so this rejection's own history entry is occurrence 1).
     const job = await notificationQueue.getJob(
-      billingDecisionNotificationJobId(rejectSubmissionId, 'reject'),
+      billingDecisionNotificationJobId(rejectSubmissionId, 'reject', 1),
     );
     expect(job).toBeDefined();
     expect(job?.data).toMatchObject({
@@ -539,8 +556,10 @@ describe('Billing Admin reject and request-more-info decisions (T070)', () => {
     });
     expect(await countActivationEvents()).toBe(0);
 
+    // priorMoreInfoHistory has three entries; this decision appends its own entry at
+    // index 3 — a distinct occurrence job from any prior more_info cycle (finding 2).
     const job = await notificationQueue.getJob(
-      billingDecisionNotificationJobId(moreInfoSubmissionId, 'more_info'),
+      billingDecisionNotificationJobId(moreInfoSubmissionId, 'more_info', 3),
     );
     expect(job).toBeDefined();
     expect(job?.data).toMatchObject({
@@ -573,25 +592,36 @@ describe('Billing Admin reject and request-more-info decisions (T070)', () => {
       priorMoreInfoHistory,
     );
     expect(await countDecidedEvents()).toBe(2); // only the two decided events from the tests above
-    // The 422 path enqueues nothing new: the two earlier jobs still exist, no others do.
+    // The 422 path enqueues nothing new: the two earlier occurrence jobs still exist,
+    // no second occurrence for either submission does.
     expect(
       await notificationQueue.getJob(
-        billingDecisionNotificationJobId(rejectSubmissionId, 'reject'),
+        billingDecisionNotificationJobId(rejectSubmissionId, 'reject', 1),
       ),
     ).toBeDefined();
     expect(
       await notificationQueue.getJob(
-        billingDecisionNotificationJobId(moreInfoSubmissionId, 'more_info'),
+        billingDecisionNotificationJobId(moreInfoSubmissionId, 'more_info', 3),
       ),
     ).toBeDefined();
     expect(
       await notificationQueue.getJob(
-        billingDecisionNotificationJobId(moreInfoSubmissionId, 'reject'),
+        billingDecisionNotificationJobId(rejectSubmissionId, 'reject', 2),
       ),
     ).toBeUndefined();
     expect(
       await notificationQueue.getJob(
-        billingDecisionNotificationJobId(alreadyDecidedSubmissionId, 'reject'),
+        billingDecisionNotificationJobId(moreInfoSubmissionId, 'more_info', 4),
+      ),
+    ).toBeUndefined();
+    expect(
+      await notificationQueue.getJob(
+        billingDecisionNotificationJobId(moreInfoSubmissionId, 'reject', 1),
+      ),
+    ).toBeUndefined();
+    expect(
+      await notificationQueue.getJob(
+        billingDecisionNotificationJobId(alreadyDecidedSubmissionId, 'reject', 1),
       ),
     ).toBeUndefined();
   });
@@ -640,9 +670,10 @@ describe('Billing Admin reject and request-more-info decisions (T070)', () => {
     // Exactly one decided event for this submission (from the successful rejection); the
     // 409 duplicates appended neither history nor audit rows.
     expect(await readDecidedEvents(alreadyDecidedSubmissionId)).toHaveLength(1);
-    // Exactly one reject notification job exists — from the successful rejection, not the 409s.
+    // Exactly one reject notification job exists — from the successful rejection, not
+    // the 409s (idempotent for the SAME decision occurrence: one history entry, one job).
     const rejectJob = await notificationQueue.getJob(
-      billingDecisionNotificationJobId(alreadyDecidedSubmissionId, 'reject'),
+      billingDecisionNotificationJobId(alreadyDecidedSubmissionId, 'reject', 1),
     );
     expect(rejectJob).toBeDefined();
     expect(rejectJob?.data).toMatchObject({
@@ -650,6 +681,11 @@ describe('Billing Admin reject and request-more-info decisions (T070)', () => {
       decision: 'reject',
       notes: 'Closing this cycle after all.',
     });
+    expect(
+      await notificationQueue.getJob(
+        billingDecisionNotificationJobId(alreadyDecidedSubmissionId, 'reject', 2),
+      ),
+    ).toBeUndefined();
 
     // A MoreInfoRequested row is not decidable either: it first needs the customer's
     // resubmission (data-model.md state machine, same source-state rule as T069 approve).
@@ -675,9 +711,14 @@ describe('Billing Admin reject and request-more-info decisions (T070)', () => {
     expect(await readDecidedEvents(concurrencySubmissionId)).toHaveLength(1);
 
     const job = await notificationQueue.getJob(
-      billingDecisionNotificationJobId(concurrencySubmissionId, 'reject'),
+      billingDecisionNotificationJobId(concurrencySubmissionId, 'reject', 1),
     );
     expect(job).toBeDefined();
+    expect(
+      await notificationQueue.getJob(
+        billingDecisionNotificationJobId(concurrencySubmissionId, 'reject', 2),
+      ),
+    ).toBeUndefined();
   });
 
   function postDecision(
