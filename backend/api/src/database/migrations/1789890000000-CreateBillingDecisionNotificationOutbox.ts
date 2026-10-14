@@ -36,6 +36,7 @@ export class CreateBillingDecisionNotificationOutbox1789890000000 implements Mig
         "submission_id" uuid NOT NULL,
         "tenant_id" uuid NOT NULL,
         "decision" text NOT NULL,
+        "decision_occurrence" int NOT NULL,
         "notes" text NULL,
         "occurred_at" timestamptz NOT NULL,
         "job_id" text NOT NULL,

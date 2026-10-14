@@ -14,6 +14,7 @@ export interface BillingDecisionNotificationOutboxRow {
   submissionId: string;
   tenantId: string;
   decision: string;
+  decisionOccurrence: number;
   notes: string | null;
   occurredAt: Date;
   jobId: string;
@@ -27,6 +28,8 @@ export interface BillingDecisionNotificationOutboxInput {
   submissionId: string;
   tenantId: string;
   decision: string;
+  /** 0-based index of this decision's own status_history entry — the occurrence key. */
+  decisionOccurrence: number;
   notes: string | null;
   occurredAt: Date;
   /** The BullMQ job id (`billingDecisionNotificationJobId`) — unique per decision occurrence. */
@@ -44,6 +47,7 @@ interface OutboxInsertQueryResult {
   submission_id: string;
   tenant_id: string;
   decision: string;
+  decision_occurrence: number;
   notes: string | null;
   occurred_at: string | Date;
   job_id: string;
@@ -59,6 +63,7 @@ function mapRow(row: OutboxInsertQueryResult): BillingDecisionNotificationOutbox
     submissionId: row.submission_id,
     tenantId: row.tenant_id,
     decision: row.decision,
+    decisionOccurrence: row.decision_occurrence,
     notes: row.notes,
     occurredAt: new Date(row.occurred_at),
     jobId: row.job_id,
@@ -93,14 +98,15 @@ export class BillingDecisionNotificationOutboxService {
   ): Promise<BillingDecisionNotificationOutboxRow> {
     const inserted = (await manager.query(
       `INSERT INTO "billing_decision_notification_outbox"
-         ("submission_id","tenant_id","decision","notes","occurred_at","job_id")
-       VALUES ($1,$2,$3,$4,$5,$6)
+         ("submission_id","tenant_id","decision","decision_occurrence","notes","occurred_at","job_id")
+       VALUES ($1,$2,$3,$4,$5,$6,$7)
        ON CONFLICT ("job_id") DO UPDATE SET "updated_at" = now()
        RETURNING *`,
       [
         input.submissionId,
         input.tenantId,
         input.decision,
+        input.decisionOccurrence,
         input.notes,
         input.occurredAt.toISOString(),
         input.jobId,
@@ -188,6 +194,7 @@ export class BillingDecisionNotificationOutboxService {
         submissionId: row.submissionId,
         tenantId: row.tenantId,
         decision: row.decision,
+        decisionOccurrence: row.decisionOccurrence,
         notes: row.notes,
         occurredAt: row.occurredAt.toISOString(),
       },

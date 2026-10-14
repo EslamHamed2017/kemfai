@@ -5,12 +5,10 @@ import { Queue } from 'bullmq';
 import { QUEUE_NOTIFICATION_BILLING_DECISION } from '../../common/queues/queue-names';
 import { BillingDecisionNotificationOutboxService } from './billing-decision-notification-outbox.service';
 
-const POLL_INTERVAL_MS = Number(process.env.KEMFAI_BILLING_NOTIFICATION_RECOVERY_POLL_MS ?? 5_000);
-const LEASE_DURATION_MS = Number(
-  process.env.KEMFAI_BILLING_NOTIFICATION_RECOVERY_LEASE_MS ?? 30_000,
-);
-const BATCH_SIZE = Number(process.env.KEMFAI_BILLING_NOTIFICATION_RECOVERY_BATCH_SIZE ?? 10);
-const BACKOFF_MS = Number(process.env.KEMFAI_BILLING_NOTIFICATION_RECOVERY_BACKOFF_MS ?? 15_000);
+const DEFAULT_POLL_INTERVAL_MS = 5_000;
+const DEFAULT_LEASE_DURATION_MS = 30_000;
+const DEFAULT_BATCH_SIZE = 10;
+const DEFAULT_BACKOFF_MS = 15_000;
 
 /**
  * T070 durability (Codex review finding 1) — the FR-035 notification reconciler,
@@ -35,6 +33,10 @@ const BACKOFF_MS = Number(process.env.KEMFAI_BILLING_NOTIFICATION_RECOVERY_BACKO
 export class BillingDecisionNotificationRecoveryWorker implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(BillingDecisionNotificationRecoveryWorker.name);
   private readonly workerId = `billing-notification-recovery-${randomUUID()}`;
+  private readonly pollIntervalMs: number;
+  private readonly leaseDurationMs: number;
+  private readonly batchSize: number;
+  private readonly backoffMs: number;
   private timer: NodeJS.Timeout | null = null;
   private ticking = false;
   private stopped = false;
@@ -43,7 +45,23 @@ export class BillingDecisionNotificationRecoveryWorker implements OnModuleInit, 
     private readonly outbox: BillingDecisionNotificationOutboxService,
     @InjectQueue(QUEUE_NOTIFICATION_BILLING_DECISION)
     private readonly notificationQueue: Queue,
-  ) {}
+  ) {
+    // Read at CONSTRUCTION (not import) time: operators can size deployments per
+    // environment, and tests can spin dedicated replica instances with short leases
+    // to exercise genuine lease-takeover between two workers.
+    this.pollIntervalMs = Number(
+      process.env.KEMFAI_BILLING_NOTIFICATION_RECOVERY_POLL_MS ?? DEFAULT_POLL_INTERVAL_MS,
+    );
+    this.leaseDurationMs = Number(
+      process.env.KEMFAI_BILLING_NOTIFICATION_RECOVERY_LEASE_MS ?? DEFAULT_LEASE_DURATION_MS,
+    );
+    this.batchSize = Number(
+      process.env.KEMFAI_BILLING_NOTIFICATION_RECOVERY_BATCH_SIZE ?? DEFAULT_BATCH_SIZE,
+    );
+    this.backoffMs = Number(
+      process.env.KEMFAI_BILLING_NOTIFICATION_RECOVERY_BACKOFF_MS ?? DEFAULT_BACKOFF_MS,
+    );
+  }
 
   onModuleInit(): void {
     // Escape hatch for unit/contract test module graphs that boot the module without a
@@ -53,7 +71,7 @@ export class BillingDecisionNotificationRecoveryWorker implements OnModuleInit, 
     }
     this.timer = setInterval(() => {
       void this.tick();
-    }, POLL_INTERVAL_MS);
+    }, this.pollIntervalMs);
   }
 
   onModuleDestroy(): void {
@@ -73,9 +91,9 @@ export class BillingDecisionNotificationRecoveryWorker implements OnModuleInit, 
       const result = await this.outbox.runRecoveryPass({
         queue: this.notificationQueue,
         leaseOwner: this.workerId,
-        leaseDurationMs: LEASE_DURATION_MS,
-        batchSize: BATCH_SIZE,
-        backoffMs: BACKOFF_MS,
+        leaseDurationMs: this.leaseDurationMs,
+        batchSize: this.batchSize,
+        backoffMs: this.backoffMs,
         onError: (row, error) => {
           this.logger.warn(
             `billing decision notification recovery attempt failed for submission ` +

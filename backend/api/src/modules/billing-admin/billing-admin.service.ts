@@ -218,6 +218,7 @@ export class BillingAdminService {
         submissionId: savedSubmission.id,
         tenantId: savedSubmission.tenantId,
         decision: 'approve',
+        decisionOccurrence: savedSubmission.statusHistory.length - 1,
         notes: null,
         occurredAt: decidedAt,
         jobId: billingDecisionNotificationJobId(
@@ -397,17 +398,15 @@ export class BillingAdminService {
       // roll back together. The occurrence is the 0-based index of this decision's own
       // history entry, so repeated more-info cycles never collide at the queue (review
       // finding 2) while a retried SAME-occurrence write stays idempotent.
+      const decisionOccurrence = savedSubmission.statusHistory.length - 1;
       const notificationOutboxRow = await this.notificationOutbox.recordPending(manager, {
         submissionId: savedSubmission.id,
         tenantId: savedSubmission.tenantId,
         decision,
+        decisionOccurrence,
         notes,
         occurredAt: decidedAt,
-        jobId: billingDecisionNotificationJobId(
-          savedSubmission.id,
-          decision,
-          savedSubmission.statusHistory.length - 1,
-        ),
+        jobId: billingDecisionNotificationJobId(savedSubmission.id, decision, decisionOccurrence),
       });
 
       return { savedSubmission, decidedAt, notificationOutboxRow };

@@ -28,6 +28,7 @@ describe('BillingDecisionNotificationRecoveryWorker (T070, unit)', () => {
       submissionId: '11111111-1111-4111-8111-111111111111',
       tenantId: '22222222-2222-4222-8222-222222222222',
       decision: 'reject' as const,
+      decisionOccurrence: 1,
       notes: 'Amount mismatch.',
       occurredAt: new Date('2026-10-05T00:00:00.000Z'),
       jobId: billingDecisionNotificationJobId('11111111-1111-4111-8111-111111111111', 'reject', 1),

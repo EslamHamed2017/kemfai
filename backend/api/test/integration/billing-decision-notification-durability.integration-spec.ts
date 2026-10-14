@@ -265,8 +265,8 @@ describe('Billing decision notification durability (T070)', () => {
     // seeded here exactly as production would have persisted it.
     await controlDataSource.query(
       `INSERT INTO ${OUTBOX_TABLE}
-         (submission_id, tenant_id, decision, notes, occurred_at, job_id)
-       VALUES ($1, $2, 'reject', $3, $4, $5)`,
+         (submission_id, tenant_id, decision, decision_occurrence, notes, occurred_at, job_id)
+       VALUES ($1, $2, 'reject', 1, $3, $4, $5)`,
       [crashSubmissionId, tenantId, CRASH_REJECT_REASON, '2026-10-05T08:00:00.000Z', crashJobId],
     );
 

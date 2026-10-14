@@ -1,23 +1,39 @@
 # Runbook: Billing decision customer notifications (FR-035, T070)
 
-Scope: the durable enqueue of `notification.billing_decision` jobs for every Billing
-Admin decision (approve / reject / request-more-info) on
+Scope: the durable enqueue AND the customer delivery of `notification.billing_decision`
+notifications for every Billing Admin decision (approve / reject / request-more-info) on
 `POST /internal/billing/payment-submissions/{id}/{approve|reject|request-more-info}`.
 
-## What this system guarantees (and what it does NOT)
+## What this system guarantees
 
-**Guaranteed (this slice, T070):** every decision that commits durably (status flip +
-append-only history + FR-009 audit + outbox row, all in ONE PostgreSQL transaction)
-eventually gets a `notification.billing_decision` job enqueued into Redis/BullMQ —
-exactly one job per decision occurrence — even when Redis is down at decision time or
-the API process crashes between commit and enqueue.
+**Durable enqueue:** every decision that commits durably (status flip + append-only
+history + FR-009 audit + outbox row, all in ONE PostgreSQL transaction) eventually gets
+a `notification.billing_decision` job enqueued into Redis/BullMQ — exactly one job per
+decision occurrence — even when Redis is down at decision time or the API process
+crashes between commit and enqueue.
 
-**NOT in this slice (delivery boundary):** there is no consumer/processor for
-`notification.billing_decision` in this repository yet, and no email/SMS transport is
-wired. T070's contract ends at the durable queue handoff (contracts/events.md). When a
-notification delivery task lands, the jobs already carry their retry contract
-(`attempts: 5`, exponential `backoff: 5s` delay — see `BILLING_DECISION_NOTIFICATION_*`
-in `backend/api/src/common/queues/queue-names.ts`).
+**Actual customer delivery (Acceptance Scenarios 6.3/6.4):**
+`BillingDecisionNotificationProcessor` (registered in `BillingAdminModule`, the standard
+BullMQ worker lifecycle — no extra scheduler) consumes the queue, re-reads the sealed
+decision from the control plane, verifies the decision occurrence still matches the
+append-only `status_history` (stale jobs are rejected), and sends the workspace owner a
+localized (en/ar, per `account.preferred_locale`) email with the outcome and the
+rejection reason / requested specifics through the configured SMTP transport
+(`SmtpBillingDecisionNotificationTransport`: a dependency-free RFC 5321/5322 client over
+node `net`/`tls`). Delivery failures (relay down, misconfiguration) fail the job and are
+retried by BullMQ with backoff (`attempts: 5`, exponential 5s — see
+`BILLING_DECISION_NOTIFICATION_*` in `backend/api/src/common/queues/queue-names.ts`);
+delivery is at-least-once per decision occurrence, exactly-once at the queue.
+
+## Configuration
+
+| Variable | Required | Purpose |
+|---|---|---|
+| `SMTP_URL` | yes for delivery | Relay endpoint, `smtp://host:port` (or `smtps://` for implicit TLS); credentials via `smtp://user:pass@host:port` |
+| `SMTP_FROM` | yes for delivery | Envelope/From header, e.g. `KEMFAI Billing <billing@kemfai.example>` |
+
+Missing SMTP configuration or an unreachable relay fails the delivery jobs (visible as
+`failed` jobs with the transport's error) — a notification is never silently dropped.
 
 ## How durability works
 
@@ -51,6 +67,12 @@ SELECT job_id, submission_id, decision, retry_count, next_attempt_at, lease_owne
 
 A healthy steady state is zero rows. Rows with growing `retry_count` and advancing
 `next_attempt_at` mean Redis (or the DB) is refusing enqueues — see below.
+
+Delivery-side health is the BullMQ queue itself (`notification.billing_decision`): a
+healthy steady state is zero `waiting`/`failed` jobs; `failedReason` on failed jobs
+carries the SMTP transport error (relay refused, timeout, misconfiguration). Successful
+deliveries are also logged by the processor
+(`billing decision notification delivered: submission … to …`).
 
 ## Operator recovery command
 
