@@ -127,23 +127,36 @@ export interface BillingPaymentSubmissionCreatedInput {
 
 export type BillingDecision = 'approve' | 'reject' | 'more_info';
 
-export interface BillingPaymentSubmissionDecidedInput {
+export interface BillingActivationAuditFields {
+  customer: string;
+  tenant: string;
+  plan: string;
+  billingPeriodStart: string;
+  billingPeriodEnd: string;
+  amount: string;
+  currency: string;
+  bankReference: string;
+  proofDocumentReference: string;
+  reviewedBy: string;
+  reviewedAt: Date;
+  decision: BillingDecision;
+  activatedBy: string;
+  activatedAt: Date;
+  notes: string | null;
+  statusHistory: unknown[];
+}
+
+export interface BillingPaymentSubmissionDecidedInput extends BillingActivationAuditFields {
   reviewerInternalUserId: string;
   tenantId: string;
   paymentSubmissionId: string;
-  decision: BillingDecision;
-  reviewedAt: Date;
-  notes: string | null;
   occurredAt?: Date;
 }
 
-export interface BillingSubscriptionActivatedInput {
+export interface BillingSubscriptionActivatedInput extends BillingActivationAuditFields {
   activatedByInternalUserId: string;
   tenantId: string;
   subscriptionId: string;
-  activatedAt: Date;
-  billingPeriodStart: string;
-  billingPeriodEnd: string;
   occurredAt?: Date;
 }
 
@@ -478,8 +491,9 @@ export class AuditService {
 
   async recordBillingPaymentSubmissionDecided(
     input: BillingPaymentSubmissionDecidedInput,
+    manager?: EntityManager,
   ): Promise<void> {
-    await this.append({
+    const event: AuditEventInput = {
       actorType: AuditActorType.INTERNAL_USER,
       actorId: input.reviewerInternalUserId,
       tenantId: input.tenantId,
@@ -487,19 +501,17 @@ export class AuditService {
       subjectType: 'payment_submission',
       subjectId: input.paymentSubmissionId,
       occurredAt: input.occurredAt ?? new Date(),
-      payload: {
-        decision: input.decision,
-        reviewed_by: input.reviewerInternalUserId,
-        reviewed_at: input.reviewedAt.toISOString(),
-        notes: input.notes,
-      },
-    });
+      payload: billingActivationPayload(input),
+    };
+    if (manager) await this.append(event, manager);
+    else await this.append(event);
   }
 
   async recordBillingSubscriptionActivated(
     input: BillingSubscriptionActivatedInput,
+    manager?: EntityManager,
   ): Promise<void> {
-    await this.append({
+    const event: AuditEventInput = {
       actorType: AuditActorType.INTERNAL_USER,
       actorId: input.activatedByInternalUserId,
       tenantId: input.tenantId,
@@ -507,12 +519,10 @@ export class AuditService {
       subjectType: 'subscription',
       subjectId: input.subscriptionId,
       occurredAt: input.occurredAt ?? new Date(),
-      payload: {
-        activated_by: input.activatedByInternalUserId,
-        activated_at: input.activatedAt.toISOString(),
-        billing_period: { start: input.billingPeriodStart, end: input.billingPeriodEnd },
-      },
-    });
+      payload: billingActivationPayload(input),
+    };
+    if (manager) await this.append(event, manager);
+    else await this.append(event);
   }
 
   async recordSupportAccessGrantCreated(input: SupportAccessGrantCreatedInput): Promise<void> {
@@ -614,4 +624,25 @@ export class AuditService {
       },
     });
   }
+}
+
+function billingActivationPayload(input: BillingActivationAuditFields): Record<string, unknown> {
+  return {
+    customer: input.customer,
+    tenant: input.tenant,
+    plan: input.plan,
+    billing_period: { start: input.billingPeriodStart, end: input.billingPeriodEnd },
+    amount: input.amount,
+    currency: input.currency,
+    bank_reference: input.bankReference,
+    proof_document_reference: input.proofDocumentReference,
+    decision: input.decision,
+    reviewed_by: input.reviewedBy,
+    reviewed_at: input.reviewedAt.toISOString(),
+    activation_decision: input.decision,
+    activated_by: input.activatedBy,
+    activated_at: input.activatedAt.toISOString(),
+    notes: input.notes,
+    status_history: input.statusHistory,
+  };
 }
