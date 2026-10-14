@@ -4,10 +4,16 @@ import type { AddressInfo } from 'node:net';
 import { resolve } from 'node:path';
 import { INestApplication } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
+import { Queue } from 'bullmq';
 import { load as loadYaml } from 'js-yaml';
 import request = require('supertest');
 import { AppModule } from '../../src/app.module';
 import controlDataSource from '../../src/database/data-source';
+import {
+  QUEUE_NOTIFICATION_BILLING_DECISION,
+  billingDecisionNotificationJobId,
+} from '../../src/common/queues/queue-names';
+import { redisConnectionFromUrl } from '../../src/common/queues/redis-connection';
 import { Account, BillingCycle } from '../../src/modules/accounts/entities/account.entity';
 import {
   PaymentSubmission,
@@ -330,6 +336,27 @@ describe('Billing Admin endpoint role matrix (T064)', () => {
     };
 
     try {
+      // T070 companion hygiene: the billing-admin matrix rows that now reach the real
+      // decision routes enqueue notification.billing_decision jobs keyed on this suite's
+      // submission id. Remove exactly those job ids so the shared test Redis DB stays
+      // clean for T021's queue-emptiness contract — no assertion above is weakened.
+      if (submissionId) {
+        await attempt(async () => {
+          const notificationQueue = new Queue(QUEUE_NOTIFICATION_BILLING_DECISION, {
+            connection: redisConnectionFromUrl(),
+          });
+          try {
+            await notificationQueue
+              .remove(billingDecisionNotificationJobId(submissionId, 'reject'))
+              .catch(() => undefined);
+            await notificationQueue
+              .remove(billingDecisionNotificationJobId(submissionId, 'more_info'))
+              .catch(() => undefined);
+          } finally {
+            await notificationQueue.close().catch(() => undefined);
+          }
+        });
+      }
       if (controlDataSource.isInitialized) {
         for (const tenantId of [ownTenantId, foreignTenantId]) {
           if (!tenantId) continue;

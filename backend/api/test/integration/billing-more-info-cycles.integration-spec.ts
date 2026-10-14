@@ -2,9 +2,15 @@ import { randomUUID } from 'node:crypto';
 import type { AddressInfo } from 'node:net';
 import { INestApplication } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
+import { Queue } from 'bullmq';
 import request = require('supertest');
 import { AppModule } from '../../src/app.module';
 import controlDataSource from '../../src/database/data-source';
+import {
+  QUEUE_NOTIFICATION_BILLING_DECISION,
+  billingDecisionNotificationJobId,
+} from '../../src/common/queues/queue-names';
+import { redisConnectionFromUrl } from '../../src/common/queues/redis-connection';
 import { Account, BillingCycle } from '../../src/modules/accounts/entities/account.entity';
 import {
   PaymentSubmission,
@@ -208,6 +214,24 @@ describe('Repeated billing request-more-info cycles (T067)', () => {
     };
 
     try {
+      // T070 companion hygiene: this suite's successful request-more-info call enqueues a
+      // real notification.billing_decision job keyed on this submission id. Remove exactly
+      // that job id so the shared test Redis DB stays clean for T021's queue-emptiness
+      // contract — no assertion above is weakened.
+      if (submissionId) {
+        await attempt(async () => {
+          const notificationQueue = new Queue(QUEUE_NOTIFICATION_BILLING_DECISION, {
+            connection: redisConnectionFromUrl(),
+          });
+          try {
+            await notificationQueue
+              .remove(billingDecisionNotificationJobId(submissionId, 'more_info'))
+              .catch(() => undefined);
+          } finally {
+            await notificationQueue.close().catch(() => undefined);
+          }
+        });
+      }
       if (controlDataSource.isInitialized) {
         await attempt(() =>
           controlDataSource.query('DELETE FROM audit_event WHERE tenant_id = $1', [tenantId]),
