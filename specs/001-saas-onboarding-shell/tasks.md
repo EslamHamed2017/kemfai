@@ -805,7 +805,7 @@ more information on it, independent of re-running Story 5's customer flow.
     billing period, amount, currency, bank reference, proof document) is present.
   - **Roles**: Primary: GLM · Backup: Claude · Reviewer: Codex
 
-- [ ] T069 [US6] Implement `POST /internal/billing/payment-submissions/{id}/approve` (atomic subscription
+- [x] T069 [US6] Implement `POST /internal/billing/payment-submissions/{id}/approve` (atomic subscription
   activation/renewal in the same transaction, duplicate-activation 409, emits
   `billing.payment_submission.decided` + `billing.subscription.activated` with the full FR-009 field set) in
   `backend/api/src/modules/billing-admin/billing-admin.service.ts`
