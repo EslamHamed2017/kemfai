@@ -53,7 +53,7 @@ paths:
           application/json:
             schema: { $ref: "#/components/schemas/SignupRequest" }
       responses:
-        "201": { description: Unverified account created, verification email sent (FR-019) }
+        "201": { description: "Unverified account created, verification email sent (FR-019)" }
         "409":
           description: Email already registered and verified — generic message only (Acceptance Scenario 1.6)
           content:
@@ -83,9 +83,8 @@ paths:
               required: [token]
               properties: { token: { type: string } }
       responses:
-        "200": { description: Account verified; tenant provisioning enqueued (FR-022) }
-        "410": { description: Expired, invalid, or superseded token (Edge Cases) }
-
+        "200": { description: "Account verified; tenant provisioning enqueued (FR-022)" }
+        "410": { description: "Expired, invalid, or superseded token (Edge Cases)" }
   /accounts/resend-verification:
     post:
       tags: [accounts]
@@ -100,22 +99,19 @@ paths:
               required: [email]
               properties: { email: { type: string, format: email } }
       responses:
-        "202": { description: New link sent if the account exists and is unverified (no account-existence leak) }
-
+        "202": { description: "New link sent if the account exists and is unverified (no account-existence leak)" }
   /accounts/mfa/enroll:
     post:
       tags: [accounts]
       summary: Begin MFA (TOTP) enrollment for the authenticated, verified account (FR-020)
       responses:
-        "200": { description: Enrollment challenge (delegated to Keycloak required action) }
-
+        "200": { description: "Enrollment challenge (delegated to Keycloak required action)" }
   /accounts/mfa/confirm:
     post:
       tags: [accounts]
       summary: Confirm MFA enrollment is active (FR-020, Acceptance Scenario 1.4)
       responses:
-        "200": { description: MFA active }
-
+        "200": { description: "MFA active" }
   /tenants/me:
     get:
       tags: [tenants]
@@ -126,9 +122,8 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/TenantStatus" }
-        "403": { description: Email is not verified }
-        "404": { description: No account for authenticated subject }
-
+        "403": { description: "Email is not verified" }
+        "404": { description: "No account for authenticated subject" }
   /tenants/me/provisioning-retry:
     post:
       tags: [tenants]
@@ -148,16 +143,16 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/TenantStatus" }
-        "403": { description: Email is not verified }
-        "404": { description: No account for authenticated subject }
-        "503": { description: Retry queue unavailable; tenant state remains unchanged }
-
+        "403": { description: "Email is not verified" }
+        "404": { description: "No account for authenticated subject" }
+        "503": { description: "Retry queue unavailable; tenant state remains unchanged" }
   /companies/current/setup:
     get:
       tags: [company-setup]
       summary: Get current wizard state, resuming at first incomplete step (FR-027)
       responses:
         "200":
+          description: The current setup-wizard state for the authenticated company
           content:
             application/json:
               schema: { $ref: "#/components/schemas/CompanySetupState" }
@@ -190,8 +185,8 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/CompanySetupState" }
-        "422": { description: Field-level validation failure, incl. country-specific VAT format (FR-026) }
-        "409": { description: Country validation rule missing for this country — configuration gap, not silently accepted (Edge Cases) }
+        "422": { description: "Field-level validation failure, incl. country-specific VAT format (FR-026)" }
+        "409": { description: "Country validation rule missing for this country — configuration gap, not silently accepted (Edge Cases)" }
         "412": { description: "T056 — X-KEMFAI-Setup-Scope no longer matches the authenticated tenant/account/company; rejected before any Odoo mutation" }
 
   /companies/current/setup/complete:
@@ -218,8 +213,8 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/CompanySetupState" }
-        "403": { description: Caller is not the Workspace Owner for this tenant, or the tenant's trial window has elapsed unpaid }
-        "422": { description: One or more required steps incomplete — no completion, no audit event }
+        "403": { description: "Caller is not the Workspace Owner for this tenant, or the tenant's trial window has elapsed unpaid" }
+        "422": { description: "One or more required steps incomplete — no completion, no audit event" }
         "412": { description: "T056 — X-KEMFAI-Setup-Scope no longer matches the authenticated tenant/account/company; rejected before the completion handoff/Odoo RPC" }
 
   /companies/current/settings:
@@ -230,10 +225,11 @@ paths:
         once Company.setup_complete=true (FR-028, F3 remediation; see analysis.md)
       responses:
         "200":
+          description: The persisted company settings for the authenticated tenant
           content:
             application/json:
               schema: { $ref: "#/components/schemas/CompanySettingsView" }
-        "403": { description: Caller is not the Workspace Owner for this tenant, or the tenant's trial window has elapsed unpaid }
+        "403": { description: "Caller is not the Workspace Owner for this tenant, or the tenant's trial window has elapsed unpaid" }
         "409":
           description: >
             THE single documented pre-completion response: `Company.setup_complete=false`. Settings are not yet
@@ -265,8 +261,8 @@ paths:
           application/json:
             schema: { $ref: "#/components/schemas/CompanySettingsInput" }
       responses:
-        "200": { description: Settings updated; company.settings.updated audit event recorded }
-        "403": { description: Caller is not the Workspace Owner for this tenant, or the tenant's trial window has elapsed unpaid }
+        "200": { description: "Settings updated; company.settings.updated audit event recorded" }
+        "403": { description: "Caller is not the Workspace Owner for this tenant, or the tenant's trial window has elapsed unpaid" }
         "409":
           description: >
             THE single documented pre-completion response: `Company.setup_complete=false`. Settings are not yet
@@ -289,7 +285,7 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/PreferredLocaleResponse" }
-        "401": { description: Not authenticated }
+        "401": { description: "Not authenticated" }
     patch:
       tags: [accounts]
       summary: >
@@ -301,15 +297,15 @@ paths:
           application/json:
             schema: { $ref: "#/components/schemas/LocaleUpdateRequest" }
       responses:
-        "200": { description: Locale preference persisted on Account; used as the initial locale on future sessions once authenticated }
-        "422": { description: Unsupported locale value }
-
+        "200": { description: "Locale preference persisted on Account; used as the initial locale on future sessions once authenticated" }
+        "422": { description: "Unsupported locale value" }
   /entitlements/me:
     get:
       tags: [entitlements]
       summary: Current tenant's plan → feature → limit entitlements, incl. trial window (FR-030, FR-030a)
       responses:
         "200":
+          description: The authenticated tenant plan/feature/limit entitlement set
           content:
             application/json:
               schema: { $ref: "#/components/schemas/EntitlementSet" }
@@ -320,6 +316,7 @@ paths:
       summary: Available modules with plan-inclusion/upgrade indicators (FR-029, Acceptance Scenario 4.1)
       responses:
         "200":
+          description: Available modules with plan-inclusion/upgrade indicators
           content:
             application/json:
               schema:
@@ -340,15 +337,15 @@ paths:
               properties:
                 featureKeys: { type: array, items: { type: string } }
       responses:
-        "200": { description: Selection saved and reflected immediately (Acceptance Scenario 4.2) }
-        "403": { description: One or more feature keys not entitled by current plan (Acceptance Scenario 4.3) }
-
+        "200": { description: "Selection saved and reflected immediately (Acceptance Scenario 4.2)" }
+        "403": { description: "One or more feature keys not entitled by current plan (Acceptance Scenario 4.3)" }
   /billing/subscription:
     get:
       tags: [billing-customer]
       summary: Current subscription, incl. bank-transfer instructions/reference/amount/period when awaiting payment (FR-031)
       responses:
         "200":
+          description: The current subscription view (US5)
           content:
             application/json:
               schema: { $ref: "#/components/schemas/SubscriptionView" }
@@ -359,6 +356,7 @@ paths:
       summary: This tenant's payment submissions and their status/history (Acceptance Scenario 5.3)
       responses:
         "200":
+          description: This tenant's payment submissions with append-only status history
           content:
             application/json:
               schema:
@@ -373,16 +371,16 @@ paths:
           multipart/form-data:
             schema: { $ref: "#/components/schemas/PaymentSubmissionInput" }
       responses:
-        "201": { description: Submission created, status PendingReview }
-        "409": { description: An unresolved submission already exists for this tenant/period (FR-033) }
-        "422": { description: Unsupported file type or over size limit — no row created (FR-032 edge case) }
-
+        "201": { description: "Submission created, status PendingReview" }
+        "409": { description: "An unresolved submission already exists for this tenant/period (FR-033)" }
+        "422": { description: "Unsupported file type or over size limit — no row created (FR-032 edge case)" }
   /internal/billing/review-queue:
     get:
       tags: [billing-admin]
       summary: All PendingReview (and MoreInfoRequested) submissions across tenants (FR-034, Billing Admin role only)
       responses:
         "200":
+          description: PendingReview and MoreInfoRequested submissions across tenants (FR-034)
           content:
             application/json:
               schema:
@@ -401,9 +399,8 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/BillingApprovalResult" }
-        "404": { description: Unknown payment submission }
-        "409": { description: Tenant/period already Active — duplicate activation blocked (Acceptance Scenario 6.6), or the submission was already decided }
-
+        "404": { description: "Unknown payment submission" }
+        "409": { description: "Tenant/period already Active — duplicate activation blocked (Acceptance Scenario 6.6), or the submission was already decided" }
   /internal/billing/payment-submissions/{submissionId}/reject:
     post:
       tags: [billing-admin]
@@ -429,10 +426,9 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/BillingDecisionResult" }
-        "404": { description: Unknown payment submission }
-        "409": { description: The submission was already decided }
-        "422": { description: Mandatory reason missing, blank, non-string, or longer than 4000 characters }
-
+        "404": { description: "Unknown payment submission" }
+        "409": { description: "The submission was already decided" }
+        "422": { description: "Mandatory reason missing, blank, non-string, or longer than 4000 characters" }
   /internal/billing/payment-submissions/{submissionId}/request-more-info:
     post:
       tags: [billing-admin]
@@ -458,16 +454,16 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/BillingDecisionResult" }
-        "404": { description: Unknown payment submission }
-        "409": { description: The submission was already decided (a MoreInfoRequested row first needs the customer's resubmission) }
-        "422": { description: Mandatory details missing, blank, non-string, or longer than 4000 characters }
-
+        "404": { description: "Unknown payment submission" }
+        "409": { description: "The submission was already decided (a MoreInfoRequested row first needs the customer's resubmission)" }
+        "422": { description: "Mandatory details missing, blank, non-string, or longer than 4000 characters" }
   /onboarding/checklist:
     get:
       tags: [checklist]
       summary: Live-computed checklist state for the current tenant (FR-037, FR-038)
       responses:
         "200":
+          description: Live-computed checklist state (FR-037, FR-038)
           content:
             application/json:
               schema: { $ref: "#/components/schemas/ChecklistState" }
@@ -478,6 +474,7 @@ paths:
       summary: This tenant's support-access history (Acceptance Scenario 8.5)
       responses:
         "200":
+          description: This tenant's support-access history (Acceptance Scenario 8.5)
           content:
             application/json:
               schema:
@@ -492,8 +489,7 @@ paths:
           application/json:
             schema: { $ref: "#/components/schemas/SupportAccessGrantInput" }
       responses:
-        "201": { description: Grant created }
-
+        "201": { description: "Grant created" }
   /support-access/grants/{grantId}/revoke:
     post:
       tags: [support-access]
@@ -501,8 +497,7 @@ paths:
       parameters:
         - { name: grantId, in: path, required: true, schema: { type: string, format: uuid } }
       responses:
-        "200": { description: Revoked, audited }
-
+        "200": { description: "Revoked, audited" }
   /internal/audit-events:
     get:
       tags: [audit]
@@ -512,6 +507,7 @@ paths:
         - { name: action, in: query, schema: { type: string } }
       responses:
         "200":
+          description: Read-only audit log rows matching the filters (FR-007..FR-009)
           content:
             application/json:
               schema:

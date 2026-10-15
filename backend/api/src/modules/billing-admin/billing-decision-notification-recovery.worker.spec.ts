@@ -33,6 +33,7 @@ describe('BillingDecisionNotificationRecoveryWorker (T070, unit)', () => {
       occurredAt: new Date('2026-10-05T00:00:00.000Z'),
       jobId: billingDecisionNotificationJobId('11111111-1111-4111-8111-111111111111', 'reject', 1),
       state: 'pending' as const,
+      deliveredAt: null,
       retryCount: 0,
       leaseOwner: null,
       leaseExpiresAt: null,

@@ -41,6 +41,7 @@ export class CreateBillingDecisionNotificationOutbox1789890000000 implements Mig
         "occurred_at" timestamptz NOT NULL,
         "job_id" text NOT NULL,
         "state" "billing_decision_notification_state_enum" NOT NULL DEFAULT 'pending',
+        "delivered_at" timestamptz NULL,
         "retry_count" int NOT NULL DEFAULT 0,
         "next_attempt_at" timestamptz NULL,
         "lease_owner" text NULL,

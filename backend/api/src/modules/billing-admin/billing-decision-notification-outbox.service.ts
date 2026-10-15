@@ -19,6 +19,7 @@ export interface BillingDecisionNotificationOutboxRow {
   occurredAt: Date;
   jobId: string;
   state: BillingDecisionNotificationState;
+  deliveredAt: Date | null;
   retryCount: number;
   leaseOwner: string | null;
   leaseExpiresAt: Date | null;
@@ -52,6 +53,7 @@ interface OutboxInsertQueryResult {
   occurred_at: string | Date;
   job_id: string;
   state: BillingDecisionNotificationState;
+  delivered_at: string | Date | null;
   retry_count: number;
   lease_owner: string | null;
   lease_expires_at: string | Date | null;
@@ -68,6 +70,7 @@ function mapRow(row: OutboxInsertQueryResult): BillingDecisionNotificationOutbox
     occurredAt: new Date(row.occurred_at),
     jobId: row.job_id,
     state: row.state,
+    deliveredAt: row.delivered_at ? new Date(row.delivered_at) : null,
     retryCount: row.retry_count,
     leaseOwner: row.lease_owner,
     leaseExpiresAt: row.lease_expires_at ? new Date(row.lease_expires_at) : null,
@@ -239,6 +242,29 @@ export class BillingDecisionNotificationOutboxService {
       }
     }
     return { claimed: batch.length, enqueued, failed };
+  }
+
+  /**
+   * T070 same-occurrence delivery idempotency (Codex round-3 finding 2): the durable
+   * per-occurrence "customer notified" marker. `null` means "not (yet) provably
+   * delivered" — the consumer must treat that as sendable, never as delivered.
+   */
+  async findDeliveredAt(jobId: string): Promise<Date | null> {
+    const rows = (await controlDataSource.query(
+      'SELECT delivered_at FROM "billing_decision_notification_outbox" WHERE "job_id" = $1',
+      [jobId],
+    )) as Array<{ delivered_at: string | Date | null }>;
+    return rows[0]?.delivered_at ? new Date(rows[0].delivered_at) : null;
+  }
+
+  /** Idempotent single-write transition: first success wins, replays are no-ops. */
+  async markDelivered(jobId: string): Promise<void> {
+    await controlDataSource.query(
+      `UPDATE "billing_decision_notification_outbox"
+        SET "delivered_at" = now(), "updated_at" = now()
+        WHERE "job_id" = $1 AND "delivered_at" IS NULL`,
+      [jobId],
+    );
   }
 
   /** Ops/monitoring surface: how many notification intents are still not in Redis. */

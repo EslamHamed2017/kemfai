@@ -63,7 +63,7 @@ export interface paths {
                 };
             };
             responses: {
-                /** @description Unverified account created */
+                /** @description Unverified account created, verification email sent (FR-019) */
                 201: {
                     headers: {
                         [name: string]: unknown;
@@ -128,7 +128,7 @@ export interface paths {
                     };
                     content?: never;
                 };
-                /** @description Expired */
+                /** @description Expired, invalid, or superseded token (Edge Cases) */
                 410: {
                     headers: {
                         [name: string]: unknown;
@@ -385,6 +385,7 @@ export interface paths {
             };
             requestBody?: never;
             responses: {
+                /** @description The current setup-wizard state for the authenticated company */
                 200: {
                     headers: {
                         [name: string]: unknown;
@@ -421,7 +422,7 @@ export interface paths {
                         "application/json": components["schemas"]["CompanySetupState"];
                     };
                 };
-                /** @description Country validation rule missing for this country — configuration gap */
+                /** @description Country validation rule missing for this country — configuration gap, not silently accepted (Edge Cases) */
                 409: {
                     headers: {
                         [name: string]: unknown;
@@ -435,7 +436,7 @@ export interface paths {
                     };
                     content?: never;
                 };
-                /** @description Field-level validation failure */
+                /** @description Field-level validation failure, incl. country-specific VAT format (FR-026) */
                 422: {
                     headers: {
                         [name: string]: unknown;
@@ -482,7 +483,7 @@ export interface paths {
                         "application/json": components["schemas"]["CompanySetupState"];
                     };
                 };
-                /** @description Caller is not the Workspace Owner for this tenant */
+                /** @description Caller is not the Workspace Owner for this tenant, or the tenant's trial window has elapsed unpaid */
                 403: {
                     headers: {
                         [name: string]: unknown;
@@ -496,7 +497,7 @@ export interface paths {
                     };
                     content?: never;
                 };
-                /** @description One or more required steps incomplete — no completion */
+                /** @description One or more required steps incomplete — no completion, no audit event */
                 422: {
                     headers: {
                         [name: string]: unknown;
@@ -528,6 +529,7 @@ export interface paths {
             };
             requestBody?: never;
             responses: {
+                /** @description The persisted company settings for the authenticated tenant */
                 200: {
                     headers: {
                         [name: string]: unknown;
@@ -536,7 +538,7 @@ export interface paths {
                         "application/json": components["schemas"]["CompanySettingsView"];
                     };
                 };
-                /** @description Caller is not the Workspace Owner for this tenant */
+                /** @description Caller is not the Workspace Owner for this tenant, or the tenant's trial window has elapsed unpaid */
                 403: {
                     headers: {
                         [name: string]: unknown;
@@ -578,7 +580,7 @@ export interface paths {
                     };
                     content?: never;
                 };
-                /** @description Caller is not the Workspace Owner for this tenant */
+                /** @description Caller is not the Workspace Owner for this tenant, or the tenant's trial window has elapsed unpaid */
                 403: {
                     headers: {
                         [name: string]: unknown;
@@ -692,6 +694,7 @@ export interface paths {
             };
             requestBody?: never;
             responses: {
+                /** @description The authenticated tenant plan/feature/limit entitlement set */
                 200: {
                     headers: {
                         [name: string]: unknown;
@@ -727,6 +730,7 @@ export interface paths {
             };
             requestBody?: never;
             responses: {
+                /** @description Available modules with plan-inclusion/upgrade indicators */
                 200: {
                     headers: {
                         [name: string]: unknown;
@@ -809,6 +813,7 @@ export interface paths {
             };
             requestBody?: never;
             responses: {
+                /** @description The current subscription view (US5) */
                 200: {
                     headers: {
                         [name: string]: unknown;
@@ -844,6 +849,7 @@ export interface paths {
             };
             requestBody?: never;
             responses: {
+                /** @description This tenant's payment submissions with append-only status history */
                 200: {
                     headers: {
                         [name: string]: unknown;
@@ -869,7 +875,7 @@ export interface paths {
                 };
             };
             responses: {
-                /** @description Submission created */
+                /** @description Submission created, status PendingReview */
                 201: {
                     headers: {
                         [name: string]: unknown;
@@ -915,6 +921,7 @@ export interface paths {
             };
             requestBody?: never;
             responses: {
+                /** @description PendingReview and MoreInfoRequested submissions across tenants (FR-034) */
                 200: {
                     headers: {
                         [name: string]: unknown;
@@ -970,7 +977,7 @@ export interface paths {
                     };
                     content?: never;
                 };
-                /** @description Tenant/period already Active — duplicate activation blocked (Acceptance Scenario 6.6) */
+                /** @description Tenant/period already Active — duplicate activation blocked (Acceptance Scenario 6.6), or the submission was already decided */
                 409: {
                     headers: {
                         [name: string]: unknown;
@@ -1035,7 +1042,7 @@ export interface paths {
                     };
                     content?: never;
                 };
-                /** @description Mandatory reason missing */
+                /** @description Mandatory reason missing, blank, non-string, or longer than 4000 characters */
                 422: {
                     headers: {
                         [name: string]: unknown;
@@ -1100,7 +1107,7 @@ export interface paths {
                     };
                     content?: never;
                 };
-                /** @description Mandatory details missing */
+                /** @description Mandatory details missing, blank, non-string, or longer than 4000 characters */
                 422: {
                     headers: {
                         [name: string]: unknown;
@@ -1132,6 +1139,7 @@ export interface paths {
             };
             requestBody?: never;
             responses: {
+                /** @description Live-computed checklist state (FR-037, FR-038) */
                 200: {
                     headers: {
                         [name: string]: unknown;
@@ -1167,6 +1175,7 @@ export interface paths {
             };
             requestBody?: never;
             responses: {
+                /** @description This tenant's support-access history (Acceptance Scenario 8.5) */
                 200: {
                     headers: {
                         [name: string]: unknown;
@@ -1228,7 +1237,7 @@ export interface paths {
             };
             requestBody?: never;
             responses: {
-                /** @description Revoked */
+                /** @description Revoked, audited */
                 200: {
                     headers: {
                         [name: string]: unknown;
@@ -1263,6 +1272,7 @@ export interface paths {
             };
             requestBody?: never;
             responses: {
+                /** @description Read-only audit log rows matching the filters (FR-007..FR-009) */
                 200: {
                     headers: {
                         [name: string]: unknown;

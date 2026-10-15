@@ -22,7 +22,9 @@ import {
   SubscriptionBillingCycle,
   SubscriptionStatus,
 } from '../../src/modules/billing-customer/entities/subscription.entity';
+import { BILLING_DECISION_NOTIFICATION_TRANSPORT } from '../../src/modules/billing-admin/billing-decision-notification-transport.contract';
 import { BillingDecisionNotificationProcessor } from '../../src/modules/billing-admin/billing-decision-notification.processor';
+import { BillingDecisionNotificationOutboxService } from '../../src/modules/billing-admin/billing-decision-notification-outbox.service';
 import { Plan } from '../../src/modules/entitlements/entities/plan.entity';
 import { Tenant, TenantStatus } from '../../src/modules/tenants/entities/tenant.entity';
 import { FakeKeycloak, startFakeKeycloak } from '../support/fake-keycloak';
@@ -105,6 +107,35 @@ describe('Billing decision customer notification delivery, FR-035 (T070)', () =>
   ];
   const priorCycleJobId = billingDecisionNotificationJobId(cycleSubmissionId, 'more_info', 1);
   const latestCycleJobId = billingDecisionNotificationJobId(cycleSubmissionId, 'more_info', 3);
+  const crashSubmissionId = randomUUID();
+  const CRASH_REQUEST = 'Please provide the SWIFT copy for the transfer.';
+  const crashHistory: PaymentSubmissionStatusHistoryEntry[] = [
+    {
+      status: PaymentSubmissionStatus.PENDING_REVIEW,
+      changedAt: '2027-03-01T08:00:00.000Z',
+      changedBy: enOwnerId,
+      notes: null,
+    },
+    {
+      status: PaymentSubmissionStatus.MORE_INFO_REQUESTED,
+      changedAt: '2027-03-02T08:00:00.000Z',
+      changedBy: billingAdminSubject,
+      notes: FIRST_CYCLE_REQUEST,
+    },
+    {
+      status: PaymentSubmissionStatus.PENDING_REVIEW,
+      changedAt: '2027-03-03T08:00:00.000Z',
+      changedBy: enOwnerId,
+      notes: null,
+    },
+    {
+      status: PaymentSubmissionStatus.MORE_INFO_REQUESTED,
+      changedAt: '2027-03-04T08:00:00.000Z',
+      changedBy: billingAdminSubject,
+      notes: CRASH_REQUEST,
+    },
+  ];
+  const crashJobId = billingDecisionNotificationJobId(crashSubmissionId, 'more_info', 3);
   const originalEnvironment = {
     redisUrl: process.env.REDIS_URL,
     smtpUrl: process.env.SMTP_URL,
@@ -250,6 +281,13 @@ describe('Billing decision customer notification delivery, FR-035 (T070)', () =>
                 period: ['2026-12-01', '2026-12-31'],
                 changedBy: enOwnerId,
               },
+              {
+                id: crashSubmissionId,
+                status: PaymentSubmissionStatus.MORE_INFO_REQUESTED,
+                statusHistory: crashHistory,
+                period: ['2027-03-01', '2027-03-31'],
+                changedBy: enOwnerId,
+              },
             ]
           : [
               {
@@ -281,6 +319,15 @@ describe('Billing decision customer notification delivery, FR-035 (T070)', () =>
         ),
       );
     }
+
+    // The crash-window occurrence has its production-shaped outbox row (state
+    // enqueued) so the durable delivered marker has a home for this fixture.
+    await controlDataSource.query(
+      `INSERT INTO ${OUTBOX_TABLE}
+         (submission_id, tenant_id, decision, decision_occurrence, notes, occurred_at, job_id, state)
+       VALUES ($1, $2, 'more_info', 3, $3, $4, $5, 'enqueued')`,
+      [crashSubmissionId, enTenantId, CRASH_REQUEST, '2027-03-04T08:00:00.000Z', crashJobId],
+    );
 
     ownerTokenEn = await customerKeycloak.signAccessToken({
       sub: enOwnerId,
@@ -464,6 +511,65 @@ describe('Billing decision customer notification delivery, FR-035 (T070)', () =>
     expect(response.status).toBe(200);
   });
 
+  it('is idempotent per decision occurrence: replaying an already-delivered job never resends (Codex round-3 finding 2)', async () => {
+    const rejectionJobId = billingDecisionNotificationJobId(rejectSubmissionId, 'reject', 1);
+    const job = await queue.getJob(rejectionJobId);
+    expect(job).toBeDefined();
+    expect(await job!.getState()).toBe('completed');
+
+    const before = countMailsTo(enEmail);
+    // A real post-completion replay (redelivery, manual reprocess, retry-after-crash
+    // once the durable delivered marker exists) must be a silent no-op.
+    const processor = app.get(BillingDecisionNotificationProcessor);
+    await processor.process(job!);
+    await processor.process(job!);
+    await new Promise((resolve) => setTimeout(resolve, 500));
+
+    expect(countMailsTo(enEmail)).toBe(before);
+  }, 30_000);
+
+  it('documents the SMTP acceptance boundary honestly: a crash between relay acceptance and the durable mark resends (never silently drops), then never again', async () => {
+    const before = countMailsTo(enEmail);
+    const realTransport = app.get(BILLING_DECISION_NOTIFICATION_TRANSPORT);
+    // REAL socket delivery, then a simulated process death BEFORE the delivered mark.
+    const crashingTransport = {
+      send: async (email: { to: string; subject: string; body: string }) => {
+        await realTransport.send(email);
+        throw new Error('simulated crash after SMTP acceptance');
+      },
+    };
+    const crashingProcessor = new BillingDecisionNotificationProcessor(
+      crashingTransport as never,
+      app.get(BillingDecisionNotificationOutboxService),
+    );
+    const crashJobData = {
+      submissionId: crashSubmissionId,
+      tenantId: enTenantId,
+      decision: 'more_info' as const,
+      decisionOccurrence: 3,
+      notes: CRASH_REQUEST,
+      occurredAt: '2027-03-04T08:00:00.000Z',
+    };
+
+    // Attempt 1: the relay accepted (sink +1), the "process" died before marking.
+    await expect(crashingProcessor.process({ data: crashJobData } as never)).rejects.toThrow(
+      'simulated crash after SMTP acceptance',
+    );
+    expect(countMailsTo(enEmail)).toBe(before + 1);
+
+    // Attempt 2 (production processor): the ambiguity is resolved in favor of delivery
+    // — at-least-once across the irreducible crash window, never a silent loss.
+    const processor = app.get(BillingDecisionNotificationProcessor);
+    await processor.process({ data: crashJobData } as never);
+    expect(countMailsTo(enEmail)).toBe(before + 2);
+
+    // Every later replay of the SAME occurrence is a silent no-op (durable marker).
+    await processor.process({ data: crashJobData } as never);
+    await processor.process({ data: crashJobData } as never);
+    await new Promise((resolve) => setTimeout(resolve, 500));
+    expect(countMailsTo(enEmail)).toBe(before + 2);
+  }, 30_000);
+
   function postDecision(
     submissionId: string,
     action: 'approve' | 'reject' | 'request-more-info',
@@ -494,6 +600,10 @@ describe('Billing decision customer notification delivery, FR-035 (T070)', () =>
       }
       await new Promise((resolve) => setTimeout(resolve, 100));
     }
+  }
+
+  function countMailsTo(recipient: string): number {
+    return sink.mails.filter((mail) => mail.recipients.includes(recipient)).length;
   }
 
   function configureAuthRealms(): void {

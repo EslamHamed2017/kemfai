@@ -24,6 +24,13 @@ export interface SmtpTransportOptions {
   user?: string;
   pass?: string;
   from: string;
+  /** PEM bundle of trusted CA certificates for relay TLS verification (or SMTP_CA). */
+  ca?: string;
+  /**
+   * Dial target override (defaults to `host`) for hosts-file-mapped relays and tests;
+   * TLS servername/hostname verification always uses `host` and is never weakened.
+   */
+  connectHost?: string;
 }
 
 export function smtpTransportOptionsFromEnv(env: NodeJS.ProcessEnv): SmtpTransportOptions {
@@ -43,6 +50,7 @@ export function smtpTransportOptionsFromEnv(env: NodeJS.ProcessEnv): SmtpTranspo
     user: parsed.username ? decodeURIComponent(parsed.username) : undefined,
     pass: parsed.password ? decodeURIComponent(parsed.password) : undefined,
     from,
+    ca: env.SMTP_CA,
   };
 }
 
@@ -50,13 +58,18 @@ const REPLY_TIMEOUT_MS = 15_000;
 
 /**
  * Smallest REAL email transport with zero new dependencies: a minimal RFC 5321/5322
- * SMTP client over node's own `net`/`tls` sockets — EHLO, optional AUTH PLAIN, MAIL
- * FROM, RCPT TO, DATA with base64 UTF-8 body (dot-stuffing-safe by construction),
- * QUIT. It speaks the actual wire protocol to the relay configured by `SMTP_URL`
- * (`smtp://` clear/STARTTLS-capable relay hop, `smtps://` implicit TLS), the same
- * contract any real deployment's mail relay satisfies. Configuration is missing or
- * the relay is unreachable → `send` rejects and BullMQ retries the job with backoff
- * (events.md: "Retried with backoff") — a notification is never silently dropped.
+ * SMTP client over node's own `net`/`tls` sockets — EHLO, verified opportunistic
+ * STARTTLS, AUTH PLAIN (TLS only), MAIL FROM, RCPT TO, DATA with base64 UTF-8 body
+ * (dot-stuffing-safe by construction), QUIT.
+ *
+ * Security invariants (Codex round-3 finding 1):
+ * - `smtps://` connects with implicit TLS and FULL certificate + hostname verification
+ *   (trusted roots plus `SMTP_CA`); nothing is ever sent before the verified handshake.
+ * - `smtp://` upgrades with STARTTLS (same verification) whenever the relay offers it;
+ *   credentials are transmitted ONLY over verified TLS.
+ * - A relay that offers no STARTTLS is accepted ONLY for an explicitly loopback host
+ *   WITHOUT credentials — the local ESMTP sink used by the integration suite. Any
+ *   other plaintext endpoint is refused, and credentials never touch a plaintext wire.
  */
 @Injectable()
 export class SmtpBillingDecisionNotificationTransport extends BillingDecisionNotificationTransport {
@@ -73,8 +86,27 @@ export class SmtpBillingDecisionNotificationTransport extends BillingDecisionNot
     const config = this.options();
     const envelopeFrom = bareAddress(config.from);
     await withSmtpSession(config, async (session) => {
-      await session.expectCommand('EHLO kemfai-bff.local', 250);
+      let capabilities = await session.ehlo();
+      if (!config.secure && /(^|\n)250[ -]STARTTLS/i.test(capabilities)) {
+        await session.startTls();
+        capabilities = await session.ehlo();
+      } else if (!config.secure) {
+        if (!isLoopbackHost(config.host)) {
+          throw new Error(
+            `plaintext SMTP refused: relay ${config.host} offers no STARTTLS ` +
+              '(use smtps:// or a STARTTLS-capable relay)',
+          );
+        }
+        if (config.user || config.pass) {
+          throw new Error(
+            'credentials refused on plaintext: loopback sink sessions must not carry credentials',
+          );
+        }
+      }
       if (config.user && config.pass) {
+        if (!session.isSecure()) {
+          throw new Error('AUTH refused: session is not TLS-verified');
+        }
         const credentials = Buffer.from(`\0${config.user}\0${config.pass}`, 'utf8').toString(
           'base64',
         );
@@ -90,21 +122,35 @@ export class SmtpBillingDecisionNotificationTransport extends BillingDecisionNot
   }
 }
 
-/** RFC 5321 envelope addresses are bare addr-specs; display names are header-only. */
-function bareAddress(address: string): string {
-  const bracketed = address.match(/<([^>]+)>/);
-  return (bracketed ? bracketed[1] : address).trim();
+function isLoopbackHost(host: string): boolean {
+  const normalized = host.trim().toLowerCase();
+  return (
+    normalized === 'localhost' ||
+    normalized === '::1' ||
+    normalized === '127.0.0.1' ||
+    normalized.startsWith('127.')
+  );
 }
 
 async function withSmtpSession(
   config: SmtpTransportOptions,
   dialogue: (session: SmtpSession) => Promise<void>,
 ): Promise<void> {
-  const socket: net.Socket = config.secure
-    ? tls.connect({ host: config.host, port: config.port, rejectUnauthorized: false })
-    : net.connect({ host: config.host, port: config.port });
+  const dialHost = config.connectHost ?? config.host;
+  let socket: net.Socket;
+  if (config.secure) {
+    socket = tls.connect({
+      host: dialHost,
+      port: config.port,
+      servername: config.host,
+      rejectUnauthorized: true,
+      ca: config.ca,
+    });
+  } else {
+    socket = net.connect({ host: dialHost, port: config.port });
+  }
   socket.setNoDelay(true);
-  const session = new SmtpSession(socket);
+  const session = new SmtpSession(socket, config);
   try {
     await session.expectGreeting(220);
     await dialogue(session);
@@ -114,34 +160,66 @@ async function withSmtpSession(
 }
 
 interface SmtpWaiter {
-  resolve: (line: string) => void;
+  resolve: (reply: string) => void;
   reject: (error: Error) => void;
   timer: NodeJS.Timeout;
 }
 
 class SmtpSession {
+  private socket: net.Socket;
   private buffer = '';
   private readonly pending: SmtpWaiter[] = [];
   private closed = false;
 
-  constructor(private readonly socket: net.Socket) {
-    socket.on('data', (chunk: Buffer) => {
-      this.buffer += chunk.toString('utf8');
-      this.drain();
-    });
-    socket.on('error', (error: Error) => this.failAll(error));
-    socket.on('close', () => this.failAll(new Error('SMTP connection closed unexpectedly')));
+  constructor(
+    socket: net.Socket,
+    private readonly config: SmtpTransportOptions,
+  ) {
+    this.socket = socket;
+    this.attachSocket(socket);
+  }
+
+  isSecure(): boolean {
+    return this.socket instanceof tls.TLSSocket && this.socket.encrypted === true;
   }
 
   async expectGreeting(code: number): Promise<void> {
-    const line = await this.readLine();
-    assertReplyCode(line, code);
+    await this.readLine(code);
+  }
+
+  async ehlo(): Promise<string> {
+    this.socket.write('EHLO kemfai-bff.local\r\n');
+    return this.readLine(250);
+  }
+
+  /** RFC 3207 STARTTLS upgrade with full certificate/hostname verification. */
+  startTls(): Promise<void> {
+    return new Promise<void>((resolve, reject) => {
+      this.socket.write('STARTTLS\r\n');
+      this.readLine(220)
+        .then(() => {
+          this.detachSocket(this.socket);
+          const upgraded = tls.connect({
+            socket: this.socket,
+            servername: this.config.host,
+            rejectUnauthorized: true,
+            ca: this.config.ca,
+          });
+          upgraded.setNoDelay(true);
+          upgraded.once('secure', () => {
+            this.socket = upgraded;
+            this.attachSocket(upgraded);
+            resolve();
+          });
+          upgraded.once('error', (error: Error) => reject(error));
+        })
+        .catch(reject);
+    });
   }
 
   async expectCommand(command: string, code: number | number[]): Promise<void> {
     this.socket.write(`${command}\r\n`);
-    const line = await this.readLine();
-    assertReplyCode(line, code);
+    await this.readLine(code);
   }
 
   async send(payload: string): Promise<void> {
@@ -151,18 +229,18 @@ class SmtpSession {
   /** Signals end-of-data; the server's final reply is awaited by expect('.', …). */
   async expect(payload: string, code: number | number[]): Promise<void> {
     this.socket.write(`${payload}\r\n`);
-    const line = await this.readLine();
-    assertReplyCode(line, code);
+    await this.readLine(code);
   }
 
   destroy(): void {
     this.closed = true;
     for (const waiter of this.pending) clearTimeout(waiter.timer);
     this.pending.length = 0;
+    this.detachSocket(this.socket);
     this.socket.destroy();
   }
 
-  private readLine(): Promise<string> {
+  private readLine(expectedCode: number | number[]): Promise<string> {
     if (this.closed) {
       return Promise.reject(new Error('SMTP session already closed'));
     }
@@ -172,9 +250,14 @@ class SmtpSession {
         reject(new Error('SMTP reply timed out'));
       }, REPLY_TIMEOUT_MS);
       const waiter: SmtpWaiter = {
-        resolve: (line: string) => {
+        resolve: (reply: string) => {
           clearTimeout(timer);
-          resolve(line);
+          try {
+            assertReplyCode(reply, expectedCode);
+            resolve(reply);
+          } catch (error) {
+            reject(error as Error);
+          }
         },
         reject: (error: Error) => {
           clearTimeout(timer);
@@ -187,21 +270,45 @@ class SmtpSession {
     });
   }
 
+  private attachSocket(socket: net.Socket): void {
+    socket.on('data', (chunk: Buffer) => {
+      this.buffer += chunk.toString('utf8');
+      this.drain();
+    });
+    socket.on('error', (error: Error) => this.failAll(error));
+    socket.on('close', () => this.failAll(new Error('SMTP connection closed unexpectedly')));
+  }
+
+  private detachSocket(socket: net.Socket): void {
+    socket.removeAllListeners('data');
+    socket.removeAllListeners('error');
+    socket.removeAllListeners('close');
+  }
+
+  /**
+   * Resolves the oldest waiter with the COMPLETE reply once its final `NNN ` line has
+   * arrived: `NNN-` continuation lines accumulate into `stash` and only the final line
+   * settles the waiter (with all lines joined by `\n`).
+   */
   private drain(): void {
     for (;;) {
       const newline = this.buffer.indexOf('\n');
       if (newline < 0) return;
       const line = this.buffer.slice(0, newline).replace(/\r$/, '');
       this.buffer = this.buffer.slice(newline + 1);
-      // Multi-line replies (`250-…` continuation lines) resolve on the final `NNN ` line.
-      const isFinal = /^[0-9]{3} /.test(line) || !/^[0-9]{3}-/.test(line);
-      if (isFinal) {
-        const waiter = this.pending.shift();
-        if (waiter) waiter.resolve(line);
-        return;
+      if (/^[0-9]{3}-/.test(line)) {
+        (this.stash ??= []).push(line);
+        continue;
       }
+      const stashed = this.stash ?? [];
+      this.stash = undefined;
+      const waiter = this.pending.shift();
+      if (waiter) waiter.resolve([...stashed, line].join('\n'));
+      return;
     }
   }
+
+  private stash: string[] | undefined;
 
   private removeFromPending(waiter: SmtpWaiter): void {
     const index = this.pending.indexOf(waiter);
@@ -218,14 +325,21 @@ class SmtpSession {
   }
 }
 
-function assertReplyCode(line: string, expected: number | number[]): void {
+function assertReplyCode(reply: string, expected: number | number[]): void {
   const codes = Array.isArray(expected) ? expected : [expected];
-  const actual = Number(line.slice(0, 3));
+  const finalLine = reply.split('\n').pop() ?? reply;
+  const actual = Number(finalLine.slice(0, 3));
   if (!codes.includes(actual)) {
     throw new Error(
-      `SMTP reply ${JSON.stringify(line)} does not match expected ${codes.join('/')}`,
+      `SMTP reply ${JSON.stringify(finalLine)} does not match expected ${codes.join('/')}`,
     );
   }
+}
+
+/** RFC 5321 envelope addresses are bare addr-specs; display names are header-only. */
+function bareAddress(address: string): string {
+  const bracketed = address.match(/<([^>]+)>/);
+  return (bracketed ? bracketed[1] : address).trim();
 }
 
 /** Renders an RFC 5322 message with a base64 UTF-8 body (dot-stuffing-safe by encoding). */

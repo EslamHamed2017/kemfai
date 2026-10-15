@@ -135,4 +135,39 @@ describe('Billing admin decision contract (T070, against contracts/openapi.yaml)
       }
     });
   });
+
+  describe('response object structure (Codex round-3 finding 3)', () => {
+    /**
+     * Unquoted commas inside `{ description: … }` flow mappings make YAML parse the
+     * fragment into illegal extra Response Object keys — the committed contract then
+     * differs structurally from a valid OpenAPI document even though status codes and
+     * schemas still resolve. This guard walks EVERY documented response of EVERY
+     * operation and rejects any Response Object that is not structurally valid, so the
+     * class of defect can never reach the committed YAML again.
+     */
+    it('every documented Response Object has exactly the allowed OpenAPI keys', () => {
+      const allowedResponseKeys = new Set(['description', 'headers', 'content', 'links', '$ref']);
+      const paths = validator.document.paths as unknown as Record<
+        string,
+        Record<string, { responses?: Record<string, Record<string, unknown>> }>
+      >;
+      const offenders: string[] = [];
+      for (const [path, pathItem] of Object.entries(paths)) {
+        for (const [method, operation] of Object.entries(pathItem)) {
+          if (!['get', 'post', 'put', 'patch', 'delete'].includes(method)) continue;
+          const responses = operation.responses ?? {};
+          for (const [status, response] of Object.entries(responses)) {
+            const keys = Object.keys(response ?? {});
+            const stray = keys.filter((key) => !allowedResponseKeys.has(key));
+            if (stray.length > 0 || !keys.includes('description')) {
+              offenders.push(
+                `${method.toUpperCase()} ${path} ${status}: keys=[${keys.join(', ')}]`,
+              );
+            }
+          }
+        }
+      }
+      expect(offenders).toEqual([]);
+    });
+  });
 });

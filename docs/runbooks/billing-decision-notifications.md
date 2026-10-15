@@ -29,11 +29,24 @@ delivery is at-least-once per decision occurrence, exactly-once at the queue.
 
 | Variable | Required | Purpose |
 |---|---|---|
-| `SMTP_URL` | yes for delivery | Relay endpoint, `smtp://host:port` (or `smtps://` for implicit TLS); credentials via `smtp://user:pass@host:port` |
+| `SMTP_URL` | yes for delivery | Relay endpoint, `smtps://host:port` (implicit TLS) or `smtp://host:port` (STARTTLS-capable); credentials via `smtp://user:pass@host:port` |
 | `SMTP_FROM` | yes for delivery | Envelope/From header, e.g. `KEMFAI Billing <billing@kemfai.example>` |
+| `SMTP_CA` | no | PEM bundle of trusted CAs for relay certificate verification (private relay CAs) |
 
-Missing SMTP configuration or an unreachable relay fails the delivery jobs (visible as
-`failed` jobs with the transport's error) — a notification is never silently dropped.
+Transport security invariants: `smtps://` performs full certificate-chain and hostname
+verification before any command; `smtp://` upgrades with STARTTLS (same verification)
+whenever the relay advertises it; credentials are transmitted only over verified TLS; a
+plaintext (no-TLS) session is accepted only to an explicitly loopback host without
+credentials (the local integration sink). Any other plaintext endpoint, and any
+cleartext authentication attempt, is refused — the job fails visibly and retries.
+
+Same-occurrence idempotency: the durable `delivered_at` marker on the occurrence's
+outbox row is the delivery boundary. It is written only after a successful SMTP
+transaction; any later replay of the same occurrence (redelivery, manual reprocess,
+retry after a crash that followed the marker write) is a silent no-op — the customer is
+never notified twice for one decision occurrence. Between the relay's final acceptance
+and the marker write there is an irreducible crash window in which a retry resends the
+email (at-least-once, never a silent loss, never a second send after the marker).
 
 ## How durability works
 
