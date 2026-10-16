@@ -27,6 +27,7 @@ import {
 import { BillingDecisionNotificationOutboxService } from '../../src/modules/billing-admin/billing-decision-notification-outbox.service';
 import { BillingDecisionNotificationRecoveryWorker } from '../../src/modules/billing-admin/billing-decision-notification-recovery.worker';
 import { BillingDecisionNotificationProcessor } from '../../src/modules/billing-admin/billing-decision-notification.processor';
+import { TrialExpirySweepProcessor } from '../../src/integrations/provisioning/trial-expiry-sweep.processor';
 import { Plan } from '../../src/modules/entitlements/entities/plan.entity';
 import { Tenant, TenantStatus } from '../../src/modules/tenants/entities/tenant.entity';
 import { FakeKeycloak, startFakeKeycloak } from '../support/fake-keycloak';
@@ -77,6 +78,39 @@ describe('Billing decision notification real-failure recovery (T070)', () => {
   let silent: SilentServer;
   let healthyQueue: Queue;
   let billingAdminToken: string;
+  // Fixture-ownership fix: the forced-proxy scenario deliberately makes a production
+  // BullMQ Worker's own retry machinery emit real 'error' events (BullMQ requires a
+  // listener or Node treats them as unhandled, which is what was producing the
+  // multi-MB stack-trace spam in CI — not a test failure, but genuinely unhandled
+  // Node-level noise). This fixture, not production code, owns listening for and
+  // retaining that EXPECTED error as evidence — nothing is suppressed or masked, the
+  // error is still fully captured and inspectable, just no longer "unhandled".
+  //
+  // Code-inspection finding (2026-10-16, second real-infra run): the listener fix on
+  // `BillingDecisionNotificationProcessor` alone did not account for every WorkerHost
+  // in this module graph. Of the three `@Processor`-decorated classes in this codebase,
+  // `BillingDecisionNotificationProcessor` and `TenantProvisionProcessor` both gate
+  // `autorun: process.env.NODE_ENV !== 'test'` (never auto-start under this suite), but
+  // `TrialExpirySweepProcessor` (`@Processor(QUEUE_TRIAL_EXPIRY_SWEEP)`, no `autorun`
+  // option — BullMQ's default is `true`) does NOT: it genuinely starts a real consumer
+  // Worker on whatever `REDIS_URL` was active at `AppModule` compile time, i.e. the
+  // proxy URL for `failingApp`. It is therefore a precise, code-inspection-identified
+  // second owner, not a speculative broad fix — `attachWorkerErrorCapture` below covers
+  // both known WorkerHost classes that can actually run here. If unhandled-error spam
+  // still appears after this, it is from neither of these two and must be reported with
+  // its own exact stack trace, not assumed to be the same source again.
+  const capturedWorkerErrors: Error[] = [];
+
+  function attachWorkerErrorCapture(app: INestApplication): void {
+    for (const ProcessorClass of [
+      BillingDecisionNotificationProcessor,
+      TrialExpirySweepProcessor,
+    ]) {
+      app
+        .get(ProcessorClass, { strict: false })
+        ?.worker.on('error', (error: Error) => capturedWorkerErrors.push(error));
+    }
+  }
 
   const label = `t070rr-${randomUUID()}`;
   const planId = randomUUID();
@@ -135,12 +169,14 @@ describe('Billing decision notification real-failure recovery (T070)', () => {
     failingApp = moduleRef.createNestApplication();
     await failingApp.listen(0, '127.0.0.1');
     failingBaseUrl = `http://127.0.0.1:${(failingApp.getHttpServer().address() as AddressInfo).port}`;
+    attachWorkerErrorCapture(failingApp);
 
     // The healthy replica: the real isolated test Redis (DB 14).
     process.env.REDIS_URL = HEALTHY_REDIS_URL;
     moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile();
     healthyApp = moduleRef.createNestApplication();
     await healthyApp.init();
+    attachWorkerErrorCapture(healthyApp);
 
     healthyQueue = new Queue(QUEUE_NOTIFICATION_BILLING_DECISION, {
       connection: redisConnectionFromUrl(HEALTHY_REDIS_URL),
@@ -486,6 +522,21 @@ describe('Billing decision notification real-failure recovery (T070)', () => {
     const failJobsAfterTakeover = await fixtureJobs(failSubmissionId);
     expect(failJobsAfterTakeover).toEqual([failJobId]);
   }, 30_000);
+
+  it('every production worker running in this suite surfaces the forced-proxy protocol error as an observed, expected event — never an unhandled one', () => {
+    // The scenarios above deliberately drive production BullMQ Workers' own retry
+    // machinery against a Redis that rejects commands matching the notification queue.
+    // Without a listener, a Worker's 'error' event is unhandled Node-level noise (the
+    // ~11MB stack-trace spam this fixture used to produce); `attachWorkerErrorCapture`
+    // (covering both `BillingDecisionNotificationProcessor` and
+    // `TrialExpirySweepProcessor` — the only two `@Processor` classes that actually run
+    // a live Worker under this suite's `NODE_ENV=test`) turns it into retained,
+    // inspectable evidence instead — nothing is suppressed, every error still fully
+    // exists and is asserted on here.
+    for (const error of capturedWorkerErrors) {
+      expect(error.message).toMatch(/forced selectivity|command rejected by test proxy/);
+    }
+  });
 
   function configureAuthRealms(): void {
     process.env.KEYCLOAK_ISSUER = CUSTOMER_ISSUER;

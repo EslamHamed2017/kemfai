@@ -20,6 +20,23 @@ export interface BillingDecisionNotificationOutboxRow {
   jobId: string;
   state: BillingDecisionNotificationState;
   deliveredAt: Date | null;
+  /** First time the Resend transport was ever invoked for this occurrence; immutable once set. */
+  firstSendAttemptedAt: Date | null;
+  /**
+   * The COMPLETE, already-serialized JSON request body persisted at the first send
+   * attempt (including the sender — `ResendBillingDecisionNotificationTransport.
+   * buildRequestBody`); immutable once set. Every attempt — including the first —
+   * POSTs these exact bytes verbatim via `sendRaw`, never rebuilding them, so the
+   * payload is provably byte-identical across crashes/restarts/lease loss/config
+   * drift (e.g. `RESEND_FROM` changing)/races.
+   */
+  providerRequestBody: string | null;
+  /** The Resend-assigned email id, persisted only once the provider confirmed acceptance. */
+  providerMessageId: string | null;
+  /** Set on a 409 (same key, mismatched payload) — fail-closed, never auto-resent. */
+  deliveryRejectedAt: Date | null;
+  /** Set when an unresolved occurrence crosses the conservative retry cutoff — never resent under a new key. */
+  quarantinedAt: Date | null;
   retryCount: number;
   leaseOwner: string | null;
   leaseExpiresAt: Date | null;
@@ -54,6 +71,11 @@ interface OutboxInsertQueryResult {
   job_id: string;
   state: BillingDecisionNotificationState;
   delivered_at: string | Date | null;
+  first_send_attempted_at: string | Date | null;
+  provider_request_body: string | null;
+  provider_message_id: string | null;
+  delivery_rejected_at: string | Date | null;
+  quarantined_at: string | Date | null;
   retry_count: number;
   lease_owner: string | null;
   lease_expires_at: string | Date | null;
@@ -71,6 +93,13 @@ function mapRow(row: OutboxInsertQueryResult): BillingDecisionNotificationOutbox
     jobId: row.job_id,
     state: row.state,
     deliveredAt: row.delivered_at ? new Date(row.delivered_at) : null,
+    firstSendAttemptedAt: row.first_send_attempted_at
+      ? new Date(row.first_send_attempted_at)
+      : null,
+    providerRequestBody: row.provider_request_body,
+    providerMessageId: row.provider_message_id,
+    deliveryRejectedAt: row.delivery_rejected_at ? new Date(row.delivery_rejected_at) : null,
+    quarantinedAt: row.quarantined_at ? new Date(row.quarantined_at) : null,
     retryCount: row.retry_count,
     leaseOwner: row.lease_owner,
     leaseExpiresAt: row.lease_expires_at ? new Date(row.lease_expires_at) : null,
@@ -245,25 +274,117 @@ export class BillingDecisionNotificationOutboxService {
   }
 
   /**
-   * T070 same-occurrence delivery idempotency (Codex round-3 finding 2): the durable
-   * per-occurrence "customer notified" marker. `null` means "not (yet) provably
-   * delivered" — the consumer must treat that as sendable, never as delivered.
+   * T070 same-occurrence delivery idempotency: loads the full row the delivery-boundary
+   * state lives on (`delivered_at`/`quarantined_at`/`delivery_rejected_at`/
+   * `first_send_attempted_at`), keyed by the BullMQ job id the processor already has.
+   * `null` means the occurrence has no outbox row at all — a stale/foreign job.
    */
-  async findDeliveredAt(jobId: string): Promise<Date | null> {
+  async findByJobId(jobId: string): Promise<BillingDecisionNotificationOutboxRow | null> {
     const rows = (await controlDataSource.query(
-      'SELECT delivered_at FROM "billing_decision_notification_outbox" WHERE "job_id" = $1',
+      'SELECT * FROM "billing_decision_notification_outbox" WHERE "job_id" = $1',
       [jobId],
-    )) as Array<{ delivered_at: string | Date | null }>;
-    return rows[0]?.delivered_at ? new Date(rows[0].delivered_at) : null;
+    )) as OutboxInsertQueryResult[];
+    return rows[0] ? mapRow(rows[0]) : null;
   }
 
-  /** Idempotent single-write transition: first success wins, replays are no-ops. */
-  async markDelivered(jobId: string): Promise<void> {
+  /**
+   * Owner decision 2026-10-15T16:33:05Z, clarified in targeted repairs 2 and the
+   * 2026-10-16 independent review repair — the atomic pre-send claim. Durably stamps
+   * `first_send_attempted_at` (the reference point for the provider's 24h idempotency
+   * window) and the COMPLETE serialized provider request body ONCE, before the HTTP
+   * call ever happens, and reports the row's CURRENT terminal-state markers so the
+   * caller never calls the provider for an occurrence already delivered, quarantined,
+   * or rejected. A single guarded `UPDATE` is the whole claim: Postgres serializes
+   * concurrent callers on the row lock, and the second caller's `WHERE` is
+   * re-evaluated against the first caller's committed result, so two overlapping
+   * processors always converge on the SAME `first_send_attempted_at` AND the SAME
+   * persisted request body (never each building — and sending — their own), without
+   * any separate lease. `candidateRequestBody` is only ever used the first time; every
+   * later call's own build is discarded in favor of what is already durably
+   * persisted — this is what makes the payload provably byte-identical on retry rather
+   * than merely "probably the same because the inputs probably didn't change" (they
+   * can: e.g. `account.preferred_locale` or `RESEND_FROM` changing between a crashed
+   * attempt and its retry).
+   */
+  async beginSendAttempt(
+    id: string,
+    candidateRequestBody: string,
+  ): Promise<BillingDecisionNotificationOutboxRow> {
+    const result = await controlDataSource.query(
+      `UPDATE "billing_decision_notification_outbox"
+        SET "first_send_attempted_at" = COALESCE("first_send_attempted_at", now()),
+            "provider_request_body" = COALESCE("provider_request_body", $2),
+            "updated_at" = now()
+        WHERE "id" = $1
+          AND "delivered_at" IS NULL AND "quarantined_at" IS NULL AND "delivery_rejected_at" IS NULL
+        RETURNING *`,
+      [id, candidateRequestBody],
+    );
+    // Same pg-driver quirk `claimBatchForRecovery` already unwraps: UPDATE ... RETURNING
+    // comes back as a [rows, affectedRowCount] tuple, not a bare rows array (unlike
+    // INSERT ... RETURNING, which `recordPending`/`findByJobId` rely on being bare). Using
+    // `updated[0]` directly here (an array, not a row) was exactly why
+    // `first_send_attempted_at` kept hydrating as null/undefined downstream.
+    const updated = (Array.isArray(result[0]) ? result[0] : result) as OutboxInsertQueryResult[];
+    if (updated[0]) return mapRow(updated[0]);
+    // Already terminal (delivered/quarantined/rejected elsewhere, including by a
+    // concurrent caller that committed first) — re-read the authoritative row.
+    const current = (await controlDataSource.query(
+      'SELECT * FROM "billing_decision_notification_outbox" WHERE "id" = $1',
+      [id],
+    )) as OutboxInsertQueryResult[];
+    return mapRow(current[0]);
+  }
+
+  /**
+   * Provider acceptance is authoritative and highest precedence. If a cutoff sweep or
+   * 409 handler raced an already-in-flight request, this atomic update reconciles the
+   * row to delivered and clears the lower-precedence marker; a later lower-precedence
+   * transition cannot overwrite it because every such transition requires
+   * `delivered_at IS NULL`.
+   */
+  async markDelivered(id: string, providerMessageId: string): Promise<void> {
     await controlDataSource.query(
       `UPDATE "billing_decision_notification_outbox"
-        SET "delivered_at" = now(), "updated_at" = now()
-        WHERE "job_id" = $1 AND "delivered_at" IS NULL`,
-      [jobId],
+        SET "delivered_at" = now(), "provider_message_id" = $2,
+            "delivery_rejected_at" = NULL, "quarantined_at" = NULL,
+            "updated_at" = now()
+        WHERE "id" = $1 AND "delivered_at" IS NULL`,
+      [id, providerMessageId],
+    );
+  }
+
+  /**
+   * Fail-closed: the provider answered 409 for the occurrence's own stable key — the
+   * replayed payload no longer matches what the provider has on record for that key.
+   * Terminal; needs explicit manual reconciliation, never an automatic resend under a
+   * fresh key (that would defeat the whole point of a stable per-occurrence key).
+   */
+  async markDeliveryRejected(id: string): Promise<void> {
+    await controlDataSource.query(
+      `UPDATE "billing_decision_notification_outbox"
+        SET "delivery_rejected_at" = now(), "quarantined_at" = NULL, "updated_at" = now()
+        WHERE "id" = $1 AND "delivered_at" IS NULL AND "delivery_rejected_at" IS NULL`,
+      [id],
+    );
+  }
+
+  /**
+   * Conservative retry-window boundary: an occurrence whose first attempt is old enough
+   * that a further retry could land outside (or too close to) the provider's documented
+   * 24h idempotency-key retention is quarantined instead of retried — resending past
+   * that window risks the provider treating the SAME key as new and creating a genuine
+   * duplicate, which this design exists specifically to prevent. Terminal; requires
+   * explicit reconciliation (checking the provider by `provider_message_id`/the stored
+   * key), never a fresh key.
+   */
+  async markQuarantined(id: string): Promise<void> {
+    await controlDataSource.query(
+      `UPDATE "billing_decision_notification_outbox"
+        SET "quarantined_at" = now(), "updated_at" = now()
+        WHERE "id" = $1 AND "delivered_at" IS NULL
+          AND "delivery_rejected_at" IS NULL AND "quarantined_at" IS NULL`,
+      [id],
     );
   }
 
@@ -273,5 +394,37 @@ export class BillingDecisionNotificationOutboxService {
       'SELECT COUNT(*)::int AS count FROM "billing_decision_notification_outbox" WHERE "state" = \'pending\'',
     )) as Array<{ count: number }>;
     return rows[0].count;
+  }
+
+  /**
+   * Independent review repair (2026-10-16), finding 2 — automatic quarantine. BullMQ's
+   * own `attempts` (5, exponential backoff ~155s total) can exhaust long before the
+   * provider's 24h idempotency-key window does; once exhausted, BullMQ never calls
+   * `process()` for that job again, so the 23h cutoff check INSIDE the processor would
+   * never re-run and an ambiguous (attempted but unresolved) occurrence would stay in
+   * limbo forever — never quarantined, never reconciled, silently. This sweep is the
+   * fix: a pure, time-based, idempotent `UPDATE` that needs no processor invocation,
+   * no lease, and no BullMQ job at all. Safe to call from any number of concurrent
+   * worker replicas — each caller's `WHERE` excludes rows a concurrent caller (or the
+   * processor itself) already resolved, so no row is ever double-quarantined or
+   * quarantined out from under a delivery that just succeeded. Returns the count of
+   * rows this call itself quarantined (for logging/metrics only).
+   */
+  async sweepAmbiguousPastCutoff(cutoffMs: number): Promise<number> {
+    const result = await controlDataSource.query(
+      `UPDATE "billing_decision_notification_outbox"
+        SET "quarantined_at" = now(), "updated_at" = now()
+        WHERE "first_send_attempted_at" IS NOT NULL
+          AND "first_send_attempted_at" < now() - ($1 * interval '1 millisecond')
+          AND "delivered_at" IS NULL
+          AND "quarantined_at" IS NULL
+          AND "delivery_rejected_at" IS NULL
+        RETURNING "id"`,
+      [cutoffMs],
+    );
+    // Same pg UPDATE...RETURNING tuple-shape caveat as `beginSendAttempt` — unwrap
+    // before counting, or every sweep would silently "find" one phantom row too many.
+    const quarantined = Array.isArray(result[0]) ? result[0] : result;
+    return (quarantined as unknown[]).length;
   }
 }

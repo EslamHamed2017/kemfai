@@ -4,6 +4,7 @@ import { InjectQueue } from '@nestjs/bullmq';
 import { Queue } from 'bullmq';
 import { QUEUE_NOTIFICATION_BILLING_DECISION } from '../../common/queues/queue-names';
 import { BillingDecisionNotificationOutboxService } from './billing-decision-notification-outbox.service';
+import { RESEND_RETRY_CUTOFF_MS } from './resend-idempotency-key';
 
 const DEFAULT_POLL_INTERVAL_MS = 5_000;
 const DEFAULT_LEASE_DURATION_MS = 30_000;
@@ -25,6 +26,18 @@ const DEFAULT_BACKOFF_MS = 15_000;
  *   a crash between `queue.add` and `markEnqueued` heals to the same single job;
  * - lease-based `FOR UPDATE SKIP LOCKED` claiming is safe with multiple API replicas;
  * - failures back off bounded (`next_attempt_at`), never hot-looping a down Redis.
+ *
+ * Independent review repair (2026-10-16), finding 2 — the SAME tick ALSO runs the
+ * automatic-quarantine sweep (`sweepAmbiguousPastCutoff`). BullMQ's own `attempts` (5,
+ * exponential backoff, ~155s total) can exhaust long before the provider's 24h
+ * idempotency-key window does; once exhausted, BullMQ never calls `process()` for that
+ * job again, so the processor's own cutoff check would never re-run and the row would
+ * stay ambiguous — attempted but never resolved — forever. The sweep needs no BullMQ
+ * job, no lease, and no processor invocation: it is a pure, time-based, idempotent
+ * `UPDATE` that every running API replica's tick converges on independently. This never
+ * claims exactly-once delivery beyond the provider's own window, and never silently
+ * drops anything — a swept row is quarantined (durable, visible, requiring explicit
+ * reconciliation), never deleted or resent under a fresh key.
  *
  * `tick()` is exposed (not just the interval) so tests and operators can trigger one
  * deterministic pass instead of racing the poll interval.
@@ -103,6 +116,16 @@ export class BillingDecisionNotificationRecoveryWorker implements OnModuleInit, 
       });
       if (result.enqueued > 0) {
         this.logger.log(`recovered ${result.enqueued} pending billing decision notification(s)`);
+      }
+      // Finding 2: independent of (and after) the enqueue-recovery pass above — an
+      // ambiguous occurrence has nothing to do with whether its job is still in Redis;
+      // it is purely about how long ago the FIRST provider attempt happened.
+      const quarantined = await this.outbox.sweepAmbiguousPastCutoff(RESEND_RETRY_CUTOFF_MS);
+      if (quarantined > 0) {
+        this.logger.warn(
+          `quarantined ${quarantined} ambiguous billing decision notification(s) past the ` +
+            'conservative provider idempotency-key retry window — needs manual reconciliation',
+        );
       }
     } catch (error) {
       this.logger.error(`billing notification recovery tick failed: ${(error as Error).message}`);

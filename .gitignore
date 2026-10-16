@@ -48,3 +48,6 @@ blob-report/
 
 # Autonomous runner circuit-breaker state
 /scripts/.state/
+
+# Run-local review/repair evidence (never committed)
+/.artifacts/

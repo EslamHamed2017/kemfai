@@ -10,6 +10,7 @@ import {
   BillingDecisionNotificationOutboxService,
 } from './billing-decision-notification-outbox.service';
 import { BillingDecisionNotificationRecoveryWorker } from './billing-decision-notification-recovery.worker';
+import { RESEND_RETRY_CUTOFF_MS } from './resend-idempotency-key';
 
 /**
  * T070 durability (reviewer finding 1) — unit coverage of the recovery worker's own
@@ -20,6 +21,13 @@ import { BillingDecisionNotificationRecoveryWorker } from './billing-decision-no
  * registered in the production module graph and genuinely re-enqueues a row another
  * process left behind — is proven against real Postgres/Redis in
  * `test/integration/billing-decision-notification-durability.integration-spec.ts`.
+ *
+ * Independent review repair (2026-10-16), finding 2: the SAME tick also runs the
+ * automatic-quarantine sweep, independent of the enqueue-recovery pass — covered below
+ * with `sweepAmbiguousPastCutoff` mocked, since the real time-boundary behavior is unit
+ * -tested directly against `beginSendAttempt`'s query shape in
+ * `billing-decision-notification-outbox.service.spec.ts` and exercised end-to-end
+ * against real Postgres in the (not-yet-run-here) integration suite.
  */
 describe('BillingDecisionNotificationRecoveryWorker (T070, unit)', () => {
   function makeRow(overrides: Partial<BillingDecisionNotificationOutboxRow> = {}) {
@@ -34,6 +42,11 @@ describe('BillingDecisionNotificationRecoveryWorker (T070, unit)', () => {
       jobId: billingDecisionNotificationJobId('11111111-1111-4111-8111-111111111111', 'reject', 1),
       state: 'pending' as const,
       deliveredAt: null,
+      firstSendAttemptedAt: null,
+      providerRequestBody: null,
+      providerMessageId: null,
+      deliveryRejectedAt: null,
+      quarantinedAt: null,
       retryCount: 0,
       leaseOwner: null,
       leaseExpiresAt: null,
@@ -85,17 +98,27 @@ describe('BillingDecisionNotificationRecoveryWorker (T070, unit)', () => {
         return { claimed: batch.length, enqueued: batch.length - failed, failed };
       },
     );
+    const sweepAmbiguousPastCutoff = jest.fn().mockResolvedValue(0);
     const outbox = {
       runRecoveryPass,
       claimBatchForRecovery,
       markEnqueued,
       scheduleRetryBackoff,
+      sweepAmbiguousPastCutoff,
     } as unknown as BillingDecisionNotificationOutboxService;
 
     const queue = { add } as unknown as Queue;
 
     const worker = new BillingDecisionNotificationRecoveryWorker(outbox, queue);
-    return { worker, outbox, add, claimBatchForRecovery, markEnqueued, scheduleRetryBackoff };
+    return {
+      worker,
+      outbox,
+      add,
+      claimBatchForRecovery,
+      markEnqueued,
+      scheduleRetryBackoff,
+      sweepAmbiguousPastCutoff,
+    };
   }
 
   afterEach(() => {
@@ -155,5 +178,31 @@ describe('BillingDecisionNotificationRecoveryWorker (T070, unit)', () => {
 
     expect(claimBatchForRecovery).toHaveBeenCalledTimes(1);
     expect(QUEUE_NOTIFICATION_BILLING_DECISION).toBe('notification.billing_decision');
+  });
+
+  describe('finding 2 — automatic quarantine sweep runs every tick, independent of enqueue recovery', () => {
+    it('runs the ambiguous-occurrence sweep with the exact conservative cutoff, every tick', async () => {
+      const { worker, sweepAmbiguousPastCutoff } = makeWorker([]);
+
+      await worker.tick();
+
+      expect(sweepAmbiguousPastCutoff).toHaveBeenCalledWith(RESEND_RETRY_CUTOFF_MS);
+    });
+
+    it('runs the sweep even when there is nothing to recover (no pending rows at all)', async () => {
+      const { worker, sweepAmbiguousPastCutoff, claimBatchForRecovery } = makeWorker([]);
+
+      await worker.tick();
+
+      expect(claimBatchForRecovery).toHaveBeenCalledTimes(1);
+      expect(sweepAmbiguousPastCutoff).toHaveBeenCalledTimes(1);
+    });
+
+    it('a tick failure in the sweep is caught and logged, never thrown out of tick()', async () => {
+      const { worker, sweepAmbiguousPastCutoff } = makeWorker([]);
+      sweepAmbiguousPastCutoff.mockRejectedValueOnce(new Error('control DB unavailable'));
+
+      await expect(worker.tick()).resolves.toBeUndefined();
+    });
   });
 });

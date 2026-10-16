@@ -1,5 +1,3 @@
-import * as net from 'node:net';
-import * as tls from 'node:tls';
 import { Injectable, Optional } from '@nestjs/common';
 
 export interface BillingDecisionNotificationEmail {
@@ -8,118 +6,129 @@ export interface BillingDecisionNotificationEmail {
   body: string;
 }
 
+export interface BillingDecisionNotificationSendResult {
+  /** The provider-assigned email id — persisted so an operator can look the send up by it. */
+  providerMessageId: string;
+}
+
 /**
- * The customer-facing delivery channel for FR-035: an outbound email carrying the
- * decision outcome to the workspace owner. Implementations are injected into
- * `BillingDecisionNotificationProcessor` via `BILLING_DECISION_NOTIFICATION_TRANSPORT`.
+ * Thrown when the provider answers 409 for a replayed Idempotency-Key: the SAME key was
+ * sent with a payload that no longer matches what the provider recorded for it. This is
+ * the documented fail-closed outcome
+ * (https://resend.com/docs/dashboard/emails/idempotency-keys) — the caller must never
+ * retry it under a fresh key.
+ */
+export class IdempotencyKeyConflictError extends Error {
+  constructor() {
+    super('Resend rejected the idempotent replay (HTTP 409 payload conflict)');
+    this.name = 'IdempotencyKeyConflictError';
+  }
+}
+
+/**
+ * The customer-facing delivery channel for FR-035. Split in two (independent review
+ * repair, 2026-10-16, finding 1) so the exact bytes POSTed can be persisted ONCE and
+ * reused verbatim on every retry:
+ *
+ * - `buildRequestBody` is a pure, synchronous builder — no network call — that bakes in
+ *   every byte the provider will see, INCLUDING the sender (`RESEND_FROM`). Persisting
+ *   only `to`/`subject`/`body` and re-reading the sender live at send time was exactly
+ *   the gap that let a config change (or a redeploy with a different `RESEND_FROM`)
+ *   between a first attempt and its retry silently change the request body under the
+ *   SAME idempotency key, turning a legitimate retry into a provider-side 409.
+ * - `sendRaw` POSTs an already-built body VERBATIM — it never reconstructs anything,
+ *   so there is no code path left that can send bytes other than what was persisted.
+ *
+ * Implementations are injected into `BillingDecisionNotificationProcessor` via
+ * `BILLING_DECISION_NOTIFICATION_TRANSPORT`.
  */
 export abstract class BillingDecisionNotificationTransport {
-  abstract send(email: BillingDecisionNotificationEmail): Promise<void>;
+  abstract buildRequestBody(email: BillingDecisionNotificationEmail): string;
+  abstract sendRaw(
+    serializedBody: string,
+    idempotencyKey: string,
+  ): Promise<BillingDecisionNotificationSendResult>;
 }
 
-export interface SmtpTransportOptions {
-  host: string;
-  port: number;
-  secure: boolean;
-  user?: string;
-  pass?: string;
+export interface ResendTransportOptions {
+  apiKey: string;
   from: string;
-  /** PEM bundle of trusted CA certificates for relay TLS verification (or SMTP_CA). */
-  ca?: string;
   /**
-   * Dial target override (defaults to `host`) for hosts-file-mapped relays and tests;
-   * TLS servername/hostname verification always uses `host` and is never weakened.
+   * Resend's email-send endpoint (https://resend.com/docs/api-reference/emails/send-email).
+   * Overridable ONLY via the explicit test-fixture opt-in
+   * (`RESEND_ALLOW_LOOPBACK_FIXTURE=1`) to point at the local protocol-test fixture
+   * (`test/support/fake-resend.ts`) — never to weaken TLS/origin pinning for a real send.
    */
-  connectHost?: string;
+  baseUrl: string;
+  /** Request timeout; a provider that never answers is ambiguous, not a silent hang. */
+  timeoutMs?: number;
 }
 
-export function smtpTransportOptionsFromEnv(env: NodeJS.ProcessEnv): SmtpTransportOptions {
-  const url = env.SMTP_URL;
-  if (!url) {
-    throw new Error('SMTP_URL is not configured — billing decision notifications cannot be sent');
+/** The ONLY origin production sends are ever allowed to reach — no alternate host/port. */
+const PRODUCTION_RESEND_ORIGIN = 'https://api.resend.com';
+const DEFAULT_TIMEOUT_MS = 15_000;
+const MAX_RESPONSE_BYTES = 64 * 1024;
+
+export function resendTransportOptionsFromEnv(env: NodeJS.ProcessEnv): ResendTransportOptions {
+  const apiKey = env.RESEND_API_KEY;
+  if (!apiKey) {
+    throw new Error(
+      'RESEND_API_KEY is not configured — billing decision notifications cannot be sent',
+    );
   }
-  const parsed = new URL(url);
-  const from = env.SMTP_FROM;
+  const from = env.RESEND_FROM;
   if (!from) {
-    throw new Error('SMTP_FROM is not configured — billing decision notifications cannot be sent');
+    throw new Error(
+      'RESEND_FROM is not configured — billing decision notifications cannot be sent',
+    );
   }
-  return {
-    host: parsed.hostname,
-    port: parsed.port ? Number(parsed.port) : 25,
-    secure: parsed.protocol === 'smtps:',
-    user: parsed.username ? decodeURIComponent(parsed.username) : undefined,
-    pass: parsed.password ? decodeURIComponent(parsed.password) : undefined,
-    from,
-    ca: env.SMTP_CA,
-  };
+  const baseUrl = env.RESEND_BASE_URL ?? PRODUCTION_RESEND_ORIGIN;
+  return { apiKey, from, baseUrl };
 }
-
-const REPLY_TIMEOUT_MS = 15_000;
 
 /**
- * Smallest REAL email transport with zero new dependencies: a minimal RFC 5321/5322
- * SMTP client over node's own `net`/`tls` sockets — EHLO, verified opportunistic
- * STARTTLS, AUTH PLAIN (TLS only), MAIL FROM, RCPT TO, DATA with base64 UTF-8 body
- * (dot-stuffing-safe by construction), QUIT.
- *
- * Security invariants (Codex round-3 finding 1):
- * - `smtps://` connects with implicit TLS and FULL certificate + hostname verification
- *   (trusted roots plus `SMTP_CA`); nothing is ever sent before the verified handshake.
- * - `smtp://` upgrades with STARTTLS (same verification) whenever the relay offers it;
- *   credentials are transmitted ONLY over verified TLS.
- * - A relay that offers no STARTTLS is accepted ONLY for an explicitly loopback host
- *   WITHOUT credentials — the local ESMTP sink used by the integration suite. Any
- *   other plaintext endpoint is refused, and credentials never touch a plaintext wire.
+ * Independent review repair (2026-10-16), finding 3 — `RESEND_BASE_URL` carried a
+ * bearer credential (the API key) in its `Authorization` header on every request;
+ * accepting ANY `https://` origin meant a misconfigured or compromised env var could
+ * silently exfiltrate that credential to an attacker-controlled HTTPS endpoint. The
+ * fixed contract: outside the EXPLICIT test-fixture opt-in
+ * (`RESEND_ALLOW_LOOPBACK_FIXTURE=1`, never set in a real deployment), the base URL
+ * must be EXACTLY `https://api.resend.com` — no alternate host, no alternate port, no
+ * userinfo (`user:pass@host`, which some HTTP clients forward as Basic auth), no path,
+ * no query, no fragment. The test-fixture opt-in itself only ever allows an explicit
+ * loopback `http://` host, never an arbitrary one. This check runs synchronously,
+ * BEFORE any network attempt (`resolveOptions`, called at the top of every send path).
  */
-@Injectable()
-export class SmtpBillingDecisionNotificationTransport extends BillingDecisionNotificationTransport {
-  private readonly options: () => SmtpTransportOptions;
-
-  constructor(@Optional() options?: SmtpTransportOptions) {
-    super();
-    // Lazy resolution keeps module compilation working in environments without SMTP
-    // configured (e.g. unit graphs) — the requirement bites at send time, not boot.
-    this.options = options ? () => options : () => smtpTransportOptionsFromEnv(process.env);
+function assertSafeBaseUrl(baseUrl: string, env: NodeJS.ProcessEnv): void {
+  let parsed: URL;
+  try {
+    parsed = new URL(baseUrl);
+  } catch {
+    throw new Error('RESEND_BASE_URL refused: value is not a valid URL');
+  }
+  if (parsed.username || parsed.password) {
+    throw new Error('RESEND_BASE_URL refused: embedded userinfo (user:pass@host) is not allowed');
+  }
+  if ((parsed.pathname !== '/' && parsed.pathname !== '') || parsed.search || parsed.hash) {
+    throw new Error('RESEND_BASE_URL refused: must be a bare origin — no path, query, or fragment');
   }
 
-  async send(email: BillingDecisionNotificationEmail): Promise<void> {
-    const config = this.options();
-    const envelopeFrom = bareAddress(config.from);
-    await withSmtpSession(config, async (session) => {
-      let capabilities = await session.ehlo();
-      if (!config.secure && /(^|\n)250[ -]STARTTLS/i.test(capabilities)) {
-        await session.startTls();
-        capabilities = await session.ehlo();
-      } else if (!config.secure) {
-        if (!isLoopbackHost(config.host)) {
-          throw new Error(
-            `plaintext SMTP refused: relay ${config.host} offers no STARTTLS ` +
-              '(use smtps:// or a STARTTLS-capable relay)',
-          );
-        }
-        if (config.user || config.pass) {
-          throw new Error(
-            'credentials refused on plaintext: loopback sink sessions must not carry credentials',
-          );
-        }
-      }
-      if (config.user && config.pass) {
-        if (!session.isSecure()) {
-          throw new Error('AUTH refused: session is not TLS-verified');
-        }
-        const credentials = Buffer.from(`\0${config.user}\0${config.pass}`, 'utf8').toString(
-          'base64',
-        );
-        await session.expectCommand(`AUTH PLAIN ${credentials}`, 235);
-      }
-      await session.expectCommand(`MAIL FROM:<${envelopeFrom}>`, 250);
-      await session.expectCommand(`RCPT TO:<${bareAddress(email.to)}>`, [250, 251]);
-      await session.expectCommand('DATA', 354);
-      await session.send(renderMessage(config, email));
-      await session.expect('.', 250);
-      await session.expectCommand('QUIT', 221);
-    });
+  const allowLoopbackFixture = env.RESEND_ALLOW_LOOPBACK_FIXTURE === '1';
+  if (allowLoopbackFixture) {
+    if (parsed.protocol === 'http:' && isLoopbackHost(parsed.hostname)) return;
+    throw new Error(
+      'RESEND_BASE_URL refused: RESEND_ALLOW_LOOPBACK_FIXTURE=1 only permits an explicit ' +
+        'loopback http:// origin',
+    );
   }
+  if (parsed.protocol === 'https:' && parsed.hostname === 'api.resend.com' && parsed.port === '') {
+    return;
+  }
+  throw new Error(
+    `RESEND_BASE_URL refused: value is not the exact production Resend origin ` +
+      `(${PRODUCTION_RESEND_ORIGIN}) and RESEND_ALLOW_LOOPBACK_FIXTURE is not set — the API ` +
+      'key must never be sent to an arbitrary origin',
+  );
 }
 
 function isLoopbackHost(host: string): boolean {
@@ -132,235 +141,136 @@ function isLoopbackHost(host: string): boolean {
   );
 }
 
-async function withSmtpSession(
-  config: SmtpTransportOptions,
-  dialogue: (session: SmtpSession) => Promise<void>,
-): Promise<void> {
-  const dialHost = config.connectHost ?? config.host;
-  let socket: net.Socket;
-  if (config.secure) {
-    socket = tls.connect({
-      host: dialHost,
-      port: config.port,
-      servername: config.host,
-      rejectUnauthorized: true,
-      ca: config.ca,
-    });
-  } else {
-    socket = net.connect({ host: dialHost, port: config.port });
-  }
-  socket.setNoDelay(true);
-  const session = new SmtpSession(socket, config);
-  try {
-    await session.expectGreeting(220);
-    await dialogue(session);
-  } finally {
-    session.destroy();
-  }
+interface ResendEmailResponse {
+  id: string;
 }
 
-interface SmtpWaiter {
-  resolve: (reply: string) => void;
-  reject: (error: Error) => void;
-  timer: NodeJS.Timeout;
-}
+/** Marker for messages authored here from bounded, allowlisted metadata only. */
+class SafeResendTransportError extends Error {}
 
-class SmtpSession {
-  private socket: net.Socket;
-  private buffer = '';
-  private readonly pending: SmtpWaiter[] = [];
-  private closed = false;
-
-  constructor(
-    socket: net.Socket,
-    private readonly config: SmtpTransportOptions,
-  ) {
-    this.socket = socket;
-    this.attachSocket(socket);
-  }
-
-  isSecure(): boolean {
-    return this.socket instanceof tls.TLSSocket && this.socket.encrypted === true;
-  }
-
-  async expectGreeting(code: number): Promise<void> {
-    await this.readLine(code);
-  }
-
-  async ehlo(): Promise<string> {
-    this.socket.write('EHLO kemfai-bff.local\r\n');
-    return this.readLine(250);
-  }
-
-  /** RFC 3207 STARTTLS upgrade with full certificate/hostname verification. */
-  startTls(): Promise<void> {
-    return new Promise<void>((resolve, reject) => {
-      this.socket.write('STARTTLS\r\n');
-      this.readLine(220)
-        .then(() => {
-          this.detachSocket(this.socket);
-          const upgraded = tls.connect({
-            socket: this.socket,
-            servername: this.config.host,
-            rejectUnauthorized: true,
-            ca: this.config.ca,
-          });
-          upgraded.setNoDelay(true);
-          upgraded.once('secure', () => {
-            this.socket = upgraded;
-            this.attachSocket(upgraded);
-            resolve();
-          });
-          upgraded.once('error', (error: Error) => reject(error));
-        })
-        .catch(reject);
-    });
-  }
-
-  async expectCommand(command: string, code: number | number[]): Promise<void> {
-    this.socket.write(`${command}\r\n`);
-    await this.readLine(code);
-  }
-
-  async send(payload: string): Promise<void> {
-    this.socket.write(payload);
-  }
-
-  /** Signals end-of-data; the server's final reply is awaited by expect('.', …). */
-  async expect(payload: string, code: number | number[]): Promise<void> {
-    this.socket.write(`${payload}\r\n`);
-    await this.readLine(code);
-  }
-
-  destroy(): void {
-    this.closed = true;
-    for (const waiter of this.pending) clearTimeout(waiter.timer);
-    this.pending.length = 0;
-    this.detachSocket(this.socket);
-    this.socket.destroy();
-  }
-
-  private readLine(expectedCode: number | number[]): Promise<string> {
-    if (this.closed) {
-      return Promise.reject(new Error('SMTP session already closed'));
+/** Reads provider bytes under the caller's still-active AbortSignal and a hard size cap. */
+async function readBoundedResponseBody(response: Response): Promise<string> {
+  if (!response.body) return '';
+  const reader = response.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    total += value.byteLength;
+    if (total > MAX_RESPONSE_BYTES) {
+      await reader.cancel();
+      throw new SafeResendTransportError('Resend response exceeded the permitted size');
     }
-    return new Promise<string>((resolve, reject) => {
-      const timer = setTimeout(() => {
-        this.removeFromPending(waiter);
-        reject(new Error('SMTP reply timed out'));
-      }, REPLY_TIMEOUT_MS);
-      const waiter: SmtpWaiter = {
-        resolve: (reply: string) => {
-          clearTimeout(timer);
-          try {
-            assertReplyCode(reply, expectedCode);
-            resolve(reply);
-          } catch (error) {
-            reject(error as Error);
-          }
-        },
-        reject: (error: Error) => {
-          clearTimeout(timer);
-          reject(error);
-        },
-        timer,
-      };
-      this.pending.push(waiter);
-      this.drain();
+    chunks.push(value);
+  }
+  const bytes = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return new TextDecoder().decode(bytes);
+}
+
+/**
+ * Resend HTTP transport (https://resend.com/docs/api-reference/emails/send-email).
+ * Zero new dependencies: Node's own global `fetch`. Every send carries the occurrence's
+ * stable `Idempotency-Key` header — the provider-side boundary this design relies on to
+ * make a retried/duplicated/concurrent send collapse to exactly one accepted email.
+ */
+@Injectable()
+export class ResendBillingDecisionNotificationTransport extends BillingDecisionNotificationTransport {
+  private readonly resolveOptions: () => ResendTransportOptions;
+
+  constructor(@Optional() options?: ResendTransportOptions) {
+    super();
+    // Lazy resolution keeps module compilation working in environments without Resend
+    // configured (e.g. unit graphs) — the requirement bites at send time, not boot.
+    // The base-URL safety check runs here EVERY time, regardless of whether options
+    // came from the environment or were passed in directly — there is no construction
+    // path that skips it (finding 3: validating only the env-reading helper left a
+    // bypass for anyone constructing the transport with explicit options).
+    this.resolveOptions = () => {
+      const resolved = options ?? resendTransportOptionsFromEnv(process.env);
+      assertSafeBaseUrl(resolved.baseUrl, process.env);
+      return resolved;
+    };
+  }
+
+  /** Pure, synchronous: bakes the sender in NOW, so it can be persisted before any send. */
+  buildRequestBody(email: BillingDecisionNotificationEmail): string {
+    const config = this.resolveOptions();
+    return JSON.stringify({
+      from: config.from,
+      to: [email.to],
+      subject: email.subject,
+      text: email.body,
     });
   }
 
-  private attachSocket(socket: net.Socket): void {
-    socket.on('data', (chunk: Buffer) => {
-      this.buffer += chunk.toString('utf8');
-      this.drain();
-    });
-    socket.on('error', (error: Error) => this.failAll(error));
-    socket.on('close', () => this.failAll(new Error('SMTP connection closed unexpectedly')));
-  }
+  async sendRaw(
+    serializedBody: string,
+    idempotencyKey: string,
+  ): Promise<BillingDecisionNotificationSendResult> {
+    const config = this.resolveOptions();
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), config.timeoutMs ?? DEFAULT_TIMEOUT_MS);
+    try {
+      const response = await fetch(new URL('/emails', config.baseUrl), {
+        method: 'POST',
+        signal: controller.signal,
+        // Finding 3: never silently follow a redirect to a different origin carrying
+        // the Authorization header — a redirecting/misbehaving endpoint fails closed.
+        redirect: 'error',
+        headers: {
+          Authorization: `Bearer ${config.apiKey}`,
+          'Content-Type': 'application/json',
+          'Idempotency-Key': idempotencyKey,
+        },
+        body: serializedBody,
+      });
+      // Keep the same deadline alive through ALL response consumption. Fetch resolves
+      // as soon as headers arrive; clearing the timer there leaves a stalled success,
+      // 409, or error body able to hold a BullMQ worker forever.
+      const body = await readBoundedResponseBody(response);
 
-  private detachSocket(socket: net.Socket): void {
-    socket.removeAllListeners('data');
-    socket.removeAllListeners('error');
-    socket.removeAllListeners('close');
-  }
-
-  /**
-   * Resolves the oldest waiter with the COMPLETE reply once its final `NNN ` line has
-   * arrived: `NNN-` continuation lines accumulate into `stash` and only the final line
-   * settles the waiter (with all lines joined by `\n`).
-   */
-  private drain(): void {
-    for (;;) {
-      const newline = this.buffer.indexOf('\n');
-      if (newline < 0) return;
-      const line = this.buffer.slice(0, newline).replace(/\r$/, '');
-      this.buffer = this.buffer.slice(newline + 1);
-      if (/^[0-9]{3}-/.test(line)) {
-        (this.stash ??= []).push(line);
-        continue;
+      if (response.status === 409) throw new IdempotencyKeyConflictError();
+      if (!response.ok) {
+        // Provider-controlled text is intentionally discarded. Status is bounded,
+        // allowlisted protocol metadata and is the only response detail exposed to
+        // logs/BullMQ failedReason.
+        throw new SafeResendTransportError(`Resend request failed (HTTP ${response.status})`);
       }
-      const stashed = this.stash ?? [];
-      this.stash = undefined;
-      const waiter = this.pending.shift();
-      if (waiter) waiter.resolve([...stashed, line].join('\n'));
-      return;
+
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(body);
+      } catch {
+        throw new SafeResendTransportError('Resend returned an invalid success response');
+      }
+      const providerMessageId = (parsed as Partial<ResendEmailResponse> | null)?.id;
+      if (
+        typeof providerMessageId !== 'string' ||
+        !/^[A-Za-z0-9_-]{1,200}$/.test(providerMessageId)
+      ) {
+        throw new SafeResendTransportError('Resend returned an invalid success response');
+      }
+      return { providerMessageId };
+    } catch (error) {
+      // Network failure / abort / refused redirect: ambiguous — we do not know whether
+      // the provider ever saw this request. The caller retries with the SAME
+      // idempotency key AND the SAME persisted body, never anything fresh, so even an
+      // actually-accepted-but-unacknowledged send is recovered by replay rather than
+      // duplicated.
+      if (error instanceof IdempotencyKeyConflictError) throw error;
+      if (controller.signal.aborted) throw new Error('Resend request timed out');
+      // Never retain raw fetch/parser/provider error text: runtimes and malicious
+      // endpoints can reflect URLs, credentials, addresses, or message content into it.
+      if (error instanceof SafeResendTransportError) throw new Error(error.message);
+      throw new Error('Resend request failed (network or protocol error)');
+    } finally {
+      clearTimeout(timeout);
     }
   }
-
-  private stash: string[] | undefined;
-
-  private removeFromPending(waiter: SmtpWaiter): void {
-    const index = this.pending.indexOf(waiter);
-    if (index >= 0) this.pending.splice(index, 1);
-  }
-
-  private failAll(error: Error): void {
-    this.closed = true;
-    for (const waiter of this.pending) {
-      clearTimeout(waiter.timer);
-      waiter.reject(error);
-    }
-    this.pending.length = 0;
-  }
-}
-
-function assertReplyCode(reply: string, expected: number | number[]): void {
-  const codes = Array.isArray(expected) ? expected : [expected];
-  const finalLine = reply.split('\n').pop() ?? reply;
-  const actual = Number(finalLine.slice(0, 3));
-  if (!codes.includes(actual)) {
-    throw new Error(
-      `SMTP reply ${JSON.stringify(finalLine)} does not match expected ${codes.join('/')}`,
-    );
-  }
-}
-
-/** RFC 5321 envelope addresses are bare addr-specs; display names are header-only. */
-function bareAddress(address: string): string {
-  const bracketed = address.match(/<([^>]+)>/);
-  return (bracketed ? bracketed[1] : address).trim();
-}
-
-/** Renders an RFC 5322 message with a base64 UTF-8 body (dot-stuffing-safe by encoding). */
-function renderMessage(
-  config: SmtpTransportOptions,
-  email: BillingDecisionNotificationEmail,
-): string {
-  const encodedSubject = `=?UTF-8?B?${Buffer.from(email.subject, 'utf8').toString('base64')}?=`;
-  const encodedBody = Buffer.from(email.body, 'utf8')
-    .toString('base64')
-    .replace(/(.{76})/g, '$1\r\n');
-  return [
-    `From: ${config.from}`,
-    `To: <${email.to}>`,
-    `Subject: ${encodedSubject}`,
-    'MIME-Version: 1.0',
-    'Content-Type: text/plain; charset=UTF-8',
-    'Content-Transfer-Encoding: base64',
-    `Date: ${new Date().toUTCString()}`,
-    '',
-    encodedBody,
-    '',
-  ].join('\r\n');
 }
