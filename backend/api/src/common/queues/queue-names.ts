@@ -63,9 +63,34 @@ export function emailVerificationJobId(accountId: string, tokenVersion: string):
 }
 
 /**
- * notification.billing_decision — idempotency key is `submission_id` + decision
- * (events.md): one notification job per decision outcome per submission.
+ * notification.billing_decision — idempotency key is `submission_id` + decision +
+ * decision occurrence, where the occurrence is the 0-based index of this decision's own
+ * entry in the submission's append-only `status_history` (events.md): one notification
+ * job per decision occurrence per submission. The occurrence disambiguates repeated
+ * more-info cycles on the SAME submission row — a prior waiting/completed job under the
+ * first cycle's key must never suppress the latest cycle's notification (FR-035,
+ * T070 review finding 2) — while a retried/duplicate attempt for the SAME decision
+ * occurrence collapses onto the same id (Constitution Principle VII).
  */
-export function billingDecisionNotificationJobId(submissionId: string, decision: string): string {
-  return `${submissionId}${JOB_ID_PART_SEPARATOR}${decision}`;
+export function billingDecisionNotificationJobId(
+  submissionId: string,
+  decision: string,
+  decisionOccurrence: number,
+): string {
+  return `${submissionId}${JOB_ID_PART_SEPARATOR}${decision}${JOB_ID_PART_SEPARATOR}${decisionOccurrence}`;
 }
+
+/**
+ * notification.billing_decision jobs are "retried with backoff" (events.md): the
+ * attempts/backoff options below are set on every enqueue (request path, recovery
+ * worker, and operator recovery command alike) so the job carries its retry contract
+ * the moment a consumer/processor for this queue is introduced. Enqueue-time failures
+ * themselves are covered by the `billing_decision_notification_outbox` durability
+ * layer (see BillingDecisionNotificationOutboxService), not by these options.
+ */
+export const BILLING_DECISION_NOTIFICATION_ATTEMPTS = 5;
+
+export const BILLING_DECISION_NOTIFICATION_BACKOFF = {
+  type: 'exponential',
+  delay: 5_000,
+} as const;

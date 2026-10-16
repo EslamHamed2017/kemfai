@@ -1,5 +1,7 @@
 import {
   ALL_QUEUE_NAMES,
+  BILLING_DECISION_NOTIFICATION_ATTEMPTS,
+  BILLING_DECISION_NOTIFICATION_BACKOFF,
   QUEUE_EMAIL_SEND_VERIFICATION,
   QUEUE_NOTIFICATION_BILLING_DECISION,
   QUEUE_SUPPORT_ACCESS_EXPIRY_SWEEP,
@@ -46,14 +48,28 @@ describe('Queue names & job-id strategies (T021, contracts/events.md)', () => {
     );
   });
 
-  it('notification.billing_decision keys on submission_id + decision, so each decision outcome is a distinct job', () => {
+  it('notification.billing_decision keys on submission_id + decision + decision occurrence, so every decision cycle is a distinct job', () => {
     const submissionId = 'dddddddd-dddd-4ddd-8ddd-dddddddddddd';
-    expect(billingDecisionNotificationJobId(submissionId, 'approve')).toBe(
-      `${submissionId}.approve`,
+    expect(billingDecisionNotificationJobId(submissionId, 'approve', 1)).toBe(
+      `${submissionId}.approve.1`,
     );
-    expect(billingDecisionNotificationJobId(submissionId, 'more_info')).not.toBe(
-      billingDecisionNotificationJobId(submissionId, 'approve'),
+    expect(billingDecisionNotificationJobId(submissionId, 'more_info', 1)).not.toBe(
+      billingDecisionNotificationJobId(submissionId, 'reject', 1),
     );
+    // FR-035: a repeated more_info cycle on the SAME submission row must get its own
+    // job — the occurrence index disambiguates it from the prior cycle's job, which
+    // may still be sitting in the queue (or already completed) under its own key.
+    expect(billingDecisionNotificationJobId(submissionId, 'more_info', 3)).not.toBe(
+      billingDecisionNotificationJobId(submissionId, 'more_info', 1),
+    );
+  });
+
+  it('notification.billing_decision jobs carry explicit retry attempts and exponential backoff (events.md "retried with backoff")', () => {
+    expect(BILLING_DECISION_NOTIFICATION_ATTEMPTS).toBeGreaterThanOrEqual(2);
+    expect(BILLING_DECISION_NOTIFICATION_BACKOFF).toEqual({
+      type: 'exponential',
+      delay: expect.any(Number),
+    });
   });
 
   it('sweeps carry no per-entity key: one fixed job name, every 30s (events.md "N/A, scheduled")', () => {

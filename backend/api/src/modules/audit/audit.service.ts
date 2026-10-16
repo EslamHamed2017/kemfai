@@ -140,8 +140,13 @@ export interface BillingActivationAuditFields {
   reviewedBy: string;
   reviewedAt: Date;
   decision: BillingDecision;
-  activatedBy: string;
-  activatedAt: Date;
+  /**
+   * T070 — null when the decision did not activate (reject / more_info): no activation
+   * happened, and the FR-009 payload records that truthfully instead of fabricating an
+   * activation identity/timestamp. Approvals (T069) always pass real values.
+   */
+  activatedBy: string | null;
+  activatedAt: Date | null;
   notes: string | null;
   statusHistory: unknown[];
 }
@@ -641,7 +646,7 @@ function billingActivationPayload(input: BillingActivationAuditFields): Record<s
     reviewed_at: input.reviewedAt.toISOString(),
     activation_decision: input.decision,
     activated_by: input.activatedBy,
-    activated_at: input.activatedAt.toISOString(),
+    activated_at: input.activatedAt ? input.activatedAt.toISOString() : null,
     notes: input.notes,
     status_history: input.statusHistory,
   };

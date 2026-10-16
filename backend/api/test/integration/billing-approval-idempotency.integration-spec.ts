@@ -2,9 +2,12 @@ import { randomUUID } from 'node:crypto';
 import type { AddressInfo } from 'node:net';
 import { INestApplication } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
+import { Queue } from 'bullmq';
 import request = require('supertest');
 import { AppModule } from '../../src/app.module';
 import controlDataSource from '../../src/database/data-source';
+import { QUEUE_NOTIFICATION_BILLING_DECISION } from '../../src/common/queues/queue-names';
+import { redisConnectionFromUrl } from '../../src/common/queues/redis-connection';
 import { Account, BillingCycle } from '../../src/modules/accounts/entities/account.entity';
 import {
   PaymentSubmission,
@@ -55,13 +58,22 @@ describe('Billing approval concurrency (T065)', () => {
     issuer: process.env.KEYCLOAK_ISSUER,
     audience: process.env.KEYCLOAK_API_AUDIENCE,
     jwksUri: process.env.KEYCLOAK_JWKS_URI,
+    internalIssuer: process.env.KEYCLOAK_INTERNAL_ISSUER,
+    internalAudience: process.env.KEYCLOAK_INTERNAL_API_AUDIENCE,
+    internalJwksUri: process.env.KEYCLOAK_INTERNAL_JWKS_URI,
   };
 
   beforeAll(async () => {
     keycloak = await startFakeKeycloak({ issuer: ISSUER, audience: AUDIENCE });
+    // The /internal/billing/* routes structurally select the internal trust domain
+    // (T064): this suite's issuer must be configured as BOTH the customer-realm
+    // placeholder and the internal realm, or the token fails at the realm boundary.
     process.env.KEYCLOAK_ISSUER = ISSUER;
     process.env.KEYCLOAK_API_AUDIENCE = AUDIENCE;
     process.env.KEYCLOAK_JWKS_URI = keycloak.jwksUri;
+    process.env.KEYCLOAK_INTERNAL_ISSUER = ISSUER;
+    process.env.KEYCLOAK_INTERNAL_API_AUDIENCE = AUDIENCE;
+    process.env.KEYCLOAK_INTERNAL_JWKS_URI = keycloak.jwksUri;
 
     if (!controlDataSource.isInitialized) {
       await controlDataSource.initialize();
@@ -171,6 +183,28 @@ describe('Billing approval concurrency (T065)', () => {
     };
 
     try {
+      // T070 companion hygiene: the winning approval enqueues a real
+      // notification.billing_decision job (FR-035 covers approvals too). Remove the
+      // outbox-recorded jobs for this submission so the shared test Redis DB stays
+      // clean for T021's queue-emptiness contract.
+      if (submissionId) {
+        await attempt(async () => {
+          const notificationQueue = new Queue(QUEUE_NOTIFICATION_BILLING_DECISION, {
+            connection: redisConnectionFromUrl(),
+          });
+          try {
+            const rows = (await controlDataSource.query(
+              'SELECT job_id FROM billing_decision_notification_outbox WHERE submission_id = $1',
+              [submissionId],
+            )) as Array<{ job_id: string }>;
+            for (const row of rows) {
+              await notificationQueue.remove(row.job_id).catch(() => undefined);
+            }
+          } finally {
+            await notificationQueue.close().catch(() => undefined);
+          }
+        });
+      }
       if (controlDataSource.isInitialized) {
         await attempt(() =>
           controlDataSource.query('DELETE FROM audit_event WHERE tenant_id = $1', [tenantId]),
@@ -199,6 +233,12 @@ describe('Billing approval concurrency (T065)', () => {
       restoreEnvironment('KEYCLOAK_ISSUER', originalAuthEnvironment.issuer);
       restoreEnvironment('KEYCLOAK_API_AUDIENCE', originalAuthEnvironment.audience);
       restoreEnvironment('KEYCLOAK_JWKS_URI', originalAuthEnvironment.jwksUri);
+      restoreEnvironment('KEYCLOAK_INTERNAL_ISSUER', originalAuthEnvironment.internalIssuer);
+      restoreEnvironment(
+        'KEYCLOAK_INTERNAL_API_AUDIENCE',
+        originalAuthEnvironment.internalAudience,
+      );
+      restoreEnvironment('KEYCLOAK_INTERNAL_JWKS_URI', originalAuthEnvironment.internalJwksUri);
     }
 
     if (cleanupError) throw cleanupError;
@@ -236,7 +276,10 @@ describe('Billing approval concurrency (T065)', () => {
     expect(activeSubscriptions).toHaveLength(1);
     expect(activeSubscriptions[0]).toMatchObject({
       id: subscriptionId,
-      activated_by: billingAdminAccountId,
+      // Accepted T069 internal-identity doctrine: the internal-realm approver never
+      // aliases into the customer-only `activated_by` Account FK — the actor is
+      // preserved in the audit rows asserted below.
+      activated_by: null,
     });
     expect(activeSubscriptions[0].activated_at).toBeInstanceOf(Date);
 
@@ -260,7 +303,7 @@ describe('Billing approval concurrency (T065)', () => {
     expect(activationEvents).toEqual([
       {
         action: ACTIVATION_ACTION,
-        subject_type: 'Subscription',
+        subject_type: 'subscription',
         subject_id: subscriptionId,
         actor_id: billingAdminAccountId,
         tenant_id: tenantId,

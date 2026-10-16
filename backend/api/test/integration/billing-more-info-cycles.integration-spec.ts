@@ -2,9 +2,15 @@ import { randomUUID } from 'node:crypto';
 import type { AddressInfo } from 'node:net';
 import { INestApplication } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
+import { Queue } from 'bullmq';
 import request = require('supertest');
 import { AppModule } from '../../src/app.module';
 import controlDataSource from '../../src/database/data-source';
+import {
+  QUEUE_NOTIFICATION_BILLING_DECISION,
+  billingDecisionNotificationJobId,
+} from '../../src/common/queues/queue-names';
+import { redisConnectionFromUrl } from '../../src/common/queues/redis-connection';
 import { Account, BillingCycle } from '../../src/modules/accounts/entities/account.entity';
 import {
   PaymentSubmission,
@@ -208,6 +214,31 @@ describe('Repeated billing request-more-info cycles (T067)', () => {
     };
 
     try {
+      // T070 companion hygiene: this suite's successful request-more-info call enqueues a
+      // real notification.billing_decision job keyed on this submission id. Remove every
+      // occurrence-keyed job the outbox recorded for it so the shared test Redis DB
+      // stays clean for T021's queue-emptiness contract — no assertion above is weakened.
+      if (submissionId) {
+        await attempt(async () => {
+          const notificationQueue = new Queue(QUEUE_NOTIFICATION_BILLING_DECISION, {
+            connection: redisConnectionFromUrl(),
+          });
+          try {
+            const rows = (await controlDataSource.query(
+              'SELECT job_id FROM billing_decision_notification_outbox WHERE submission_id = $1',
+              [submissionId],
+            )) as Array<{ job_id: string }>;
+            for (const row of rows) {
+              await notificationQueue.remove(row.job_id).catch(() => undefined);
+            }
+            await notificationQueue
+              .remove(billingDecisionNotificationJobId(submissionId, 'more_info', 3))
+              .catch(() => undefined);
+          } finally {
+            await notificationQueue.close().catch(() => undefined);
+          }
+        });
+      }
       if (controlDataSource.isInitialized) {
         await attempt(() =>
           controlDataSource.query('DELETE FROM audit_event WHERE tenant_id = $1', [tenantId]),
@@ -318,7 +349,11 @@ describe('Repeated billing request-more-info cycles (T067)', () => {
       .findOneByOrFail({ id: submissionId });
     expect(persisted).toMatchObject({
       status: PaymentSubmissionStatus.MORE_INFO_REQUESTED,
-      reviewedBy: billingAdminAccountId,
+      // Accepted T069 internal-identity doctrine: the internal-realm reviewer is a
+      // distinct identity namespace from customer Accounts — the customer-only
+      // `reviewed_by` Account FK stays null while the actor is preserved verbatim in
+      // the history entries asserted above (changedBy) and in the FR-009 audit.
+      reviewedBy: null,
       decisionNotes: LATEST_REQUEST,
       statusHistory: visibleHistory,
     });
