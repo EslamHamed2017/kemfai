@@ -843,13 +843,13 @@ module outside plan entitlements, confirm the system blocks/upsells rather than 
 
 ### Tests for User Story 4
 
-- [ ] T072 [P] [US4] Contract test: `GET /modules` and `PUT /modules/selection` against
+- [x] T072 [P] [US4] Contract test: `GET /modules` and `PUT /modules/selection` against
   `contracts/openapi.yaml` in `backend/api/test/contract/modules.contract-spec.ts`
   - **Dependencies**: T022
   - **Acceptance Criteria**: 200/403 response codes each exercised and schema-conformant.
   - **Roles**: Primary: Codex · Backup: GLM · Reviewer: Gemini
 
-- [ ] T073 [P] [US4] Integration test: enabling a non-entitled feature key is rejected server-side both via
+- [x] T073 [P] [US4] Integration test: enabling a non-entitled feature key is rejected server-side both via
   the documented UI-call shape and a raw HTTP replay in
   `backend/api/test/integration/module-selection-entitlement.integration-spec.ts`
   - **Dependencies**: T010
@@ -865,13 +865,13 @@ module outside plan entitlements, confirm the system blocks/upsells rather than 
 
 ### Implementation for User Story 4
 
-- [ ] T075 [US4] Implement the `kemfai_module_selection` Odoo addon (per-tenant `ModuleSelection` cache:
+- [x] T075 [US4] Implement the `kemfai_module_selection` Odoo addon (per-tenant `ModuleSelection` cache:
   feature_key, enabled, updated_at/by) in `backend/addons/kemfai_module_selection/models/`
   - **Dependencies**: T047
   - **Acceptance Criteria**: Matches data-model.md's ModuleSelection table verbatim.
   - **Roles**: Primary: GLM · Backup: Claude · Reviewer: Codex
 
-- [ ] T076 [US4] Implement `GET /modules` (plan-inclusion/upgrade indicators sourced from
+- [x] T076 [US4] Implement `GET /modules` (plan-inclusion/upgrade indicators sourced from
   `EntitlementsService`) and `PUT /modules/selection` (server-side entitlement enforcement, immediate
   reflection, emits `modules.selection.changed`) in
   `backend/api/src/modules/module-selection/module-selection.controller.ts` and `.service.ts`
