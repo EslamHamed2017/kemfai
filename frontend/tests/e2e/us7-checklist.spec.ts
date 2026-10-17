@@ -55,24 +55,24 @@ for (const locale of ['en', 'ar'] as const) {
     await expect(page.locator('.kemfai-checklist-item')).toHaveCount(4);
     const actionLinks = page.locator('.kemfai-checklist-item a');
     await expect(actionLinks).toHaveCount(4);
-    await expect(actionLinks.nth(0)).toHaveAttribute('href', '/modules#module.sales');
-    await expect(actionLinks.nth(1)).toHaveAttribute('href', '/modules#module.accounting');
-    await expect(actionLinks.nth(2)).toHaveAttribute('href', '/modules#module.inventory');
+    await expect(actionLinks.nth(0)).toHaveAttribute('href', '/workspace/modules/module.sales');
+    await expect(actionLinks.nth(1)).toHaveAttribute('href', '/workspace/modules/module.accounting');
+    await expect(actionLinks.nth(2)).toHaveAttribute('href', '/workspace/modules/module.inventory');
     await expect(actionLinks.nth(3)).toHaveAttribute('href', '/billing');
     const expectedDestinations = [
-      /\/modules#module\.sales$/,
-      /\/modules#module\.accounting$/,
-      /\/modules#module\.inventory$/,
+      /\/workspace\/modules\/module\.sales$/,
+      /\/workspace\/modules\/module\.accounting$/,
+      /\/workspace\/modules\/module\.inventory$/,
       /\/billing$/,
     ];
     for (let index = 0; index < expectedDestinations.length; index += 1) {
       await actionLinks.nth(index).click();
       await expect(page).toHaveURL(expectedDestinations[index]);
-      await expect(
-        page.getByRole('heading', {
-          name: index === 3 ? messages.billing.title : messages.moduleSelection.title,
-        }),
-      ).toBeVisible();
+      if (index === 3) {
+        await expect(page.getByRole('heading', { name: messages.billing.title })).toBeVisible();
+      } else {
+        await expect(page.getByText(messages.moduleSelection.workspaceModuleReady, { exact: true })).toBeVisible();
+      }
       await page.goto('/checklist');
     }
     await runAxe(page);

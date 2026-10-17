@@ -59,9 +59,10 @@ const server = http.createServer(async (req, res) => {
       return res.end(JSON.stringify({ statusCode: 404, message: 'This feature is not available' }));
     }
     const token = (req.headers.authorization || '').replace(/^Bearer /, '');
-    const selected = moduleSelections.get(token) || ['module.accounting'];
+    const selected = moduleSelections.get(token) || ['module.sales', 'module.accounting', 'module.inventory'];
     res.writeHead(200, { 'content-type': 'application/json' });
     return res.end(JSON.stringify([
+      { key: 'module.sales', name: 'Sales', nameAr: 'المبيعات', includedInCurrentPlan: true, selected: selected.includes('module.sales'), requiredPlanTier: null, requiredPlanTierAr: null },
       { key: 'module.accounting', name: 'Accounting', nameAr: 'المحاسبة', includedInCurrentPlan: true, selected: selected.includes('module.accounting'), requiredPlanTier: null, requiredPlanTierAr: null },
       { key: 'module.inventory', name: 'Inventory', nameAr: 'المخزون', includedInCurrentPlan: !revokedModuleTokens.has(token), selected: selected.includes('module.inventory'), requiredPlanTier: revokedModuleTokens.has(token) ? 'Growth' : null, requiredPlanTierAr: revokedModuleTokens.has(token) ? 'النمو' : null },
       { key: 'module.projects', name: 'Projects', nameAr: 'المشاريع', includedInCurrentPlan: false, selected: false, requiredPlanTier: 'Growth', requiredPlanTierAr: 'النمو' },

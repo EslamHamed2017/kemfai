@@ -13,9 +13,9 @@ describe('T083 checklist surface', () => {
       readFileSync(path.join(root, 'src/locales/en/common.json'), 'utf8'),
     );
     expect(page).toContain('ChecklistScreen');
-    expect(screen).toContain('/modules#module.sales');
-    expect(screen).toContain('/modules#module.accounting');
-    expect(screen).toContain('/modules#module.inventory');
+    expect(screen).toContain('/workspace/modules/module.sales');
+    expect(screen).toContain('/workspace/modules/module.accounting');
+    expect(screen).toContain('/workspace/modules/module.inventory');
     expect(screen).toContain('/billing');
     expect(screen).toContain("fetch('/api/onboarding/checklist'");
     expect(Object.keys(messages.onboardingChecklist.items)).toEqual([

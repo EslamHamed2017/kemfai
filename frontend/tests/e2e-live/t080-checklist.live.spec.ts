@@ -93,9 +93,9 @@ test.describe.serial('T080 owned real checklist journey', () => {
     await expect(page.getByTestId('activation-gate')).toBeVisible();
     await expect(page.getByTestId('checklist-firstInvoice')).toContainText('Not complete');
     const setupTargets = [
-      ['customer', '/modules#module.sales', /\/modules#module\.sales$/],
-      ['bank', '/modules#module.accounting', /\/modules#module\.accounting$/],
-      ['product', '/modules#module.inventory', /\/modules#module\.inventory$/],
+      ['customer', '/workspace/modules/module.sales', /\/workspace\/modules\/module\.sales$/],
+      ['bank', '/workspace/modules/module.accounting', /\/workspace\/modules\/module\.accounting$/],
+      ['product', '/workspace/modules/module.inventory', /\/workspace\/modules\/module\.inventory$/],
       ['firstInvoice', '/billing', /\/billing$/],
     ] as const;
     for (const [item, href, url] of setupTargets) {
@@ -103,7 +103,13 @@ test.describe.serial('T080 owned real checklist journey', () => {
       await expect(action).toHaveAttribute('href', href);
       await action.click();
       await expect(page).toHaveURL(url);
-      await expect(page.getByRole('heading').first()).toBeVisible();
+      if (item === 'firstInvoice') {
+        await expect(page.getByRole('heading').first()).toBeVisible();
+      } else {
+        await expect(
+          page.getByText('This module is enabled and available in your workspace.', { exact: true }),
+        ).toBeVisible();
+      }
       await page.goto('/checklist');
     }
     expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
