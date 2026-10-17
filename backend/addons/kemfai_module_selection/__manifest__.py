@@ -15,7 +15,7 @@ remains the single source of truth.
     "author": "KEMFAI",
     "license": "LGPL-3",
     "depends": ["base"],
-    "data": [],
+    "data": ["security/ir.model.access.csv"],
     "installable": True,
     "application": False,
     "auto_install": False,

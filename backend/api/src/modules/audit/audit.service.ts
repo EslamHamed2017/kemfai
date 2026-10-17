@@ -111,6 +111,7 @@ export interface ModulesSelectionChangedInput {
   added: string[];
   removed: string[];
   occurredAt?: Date;
+  operationUuid?: string;
 }
 
 export interface BillingPaymentSubmissionCreatedInput {
@@ -468,6 +469,9 @@ export class AuditService {
       subjectId: input.moduleSelectionId,
       occurredAt: input.occurredAt ?? new Date(),
       payload: { added: input.added, removed: input.removed },
+      dedupeKey: input.operationUuid
+        ? `modules.selection.changed:${input.operationUuid}`
+        : undefined,
     });
   }
 
