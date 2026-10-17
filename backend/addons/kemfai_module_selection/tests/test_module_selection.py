@@ -1,6 +1,12 @@
+import threading
+import time
+
+from odoo import api
 from odoo.exceptions import ValidationError
+from odoo.service.model import retrying
+from odoo.sql_db import db_connect
 from odoo.tests import tagged
-from odoo.tests.common import TransactionCase
+from odoo.tests.common import HttpCase, TransactionCase
 
 
 @tagged('post_install', '-at_install', 'kemfai_module_selection')
@@ -108,3 +114,139 @@ class TestModuleSelection(TransactionCase):
             with self.assertRaises(ValidationError):
                 self.replace(['module.accounting'], occurred_at=value)
         self.assertEqual(selection.kemfai_get_selection(), [])
+
+
+@tagged('post_install', '-at_install', 'kemfai_module_selection')
+class TestModuleSelectionConcurrency(HttpCase):
+    """Two real cursors force a stale repeatable-read waiter through Odoo retrying."""
+
+    TENANT = '07500000-0000-4000-8000-000000000011'
+    ACCOUNT = '07500000-0000-4000-8000-000000000012'
+    ACTOR = '07500000-0000-4000-8000-000000000013'
+    OPERATION = '07500000-0000-4000-8000-000000000014'
+
+    def setUp(self):
+        super().setUp()
+        self._test_dbname = self.env.cr.dbname
+        self._test_uid = self.env.uid
+        self.addCleanup(self._clear_selection_state)
+        self._clear_selection_state()
+
+    def _clear_selection_state(self):
+        """Commit fixture changes without touching HttpCase's managed cursor."""
+        cr = db_connect(self._test_dbname).cursor()
+        try:
+            env = api.Environment(cr, self._test_uid, {})
+            env['kemfai.module.selection.event'].search([]).unlink()
+            env['kemfai.module.selection'].search([]).unlink()
+            cr.commit()
+        finally:
+            cr.close()
+
+    def test_stale_waiter_retries_and_returns_the_single_pending_receipt(self):
+        locked = threading.Event()
+        release = threading.Event()
+        waiter_started = threading.Event()
+        results = {}
+        errors = {}
+        uid = self.env.uid
+        dbname = self.env.cr.dbname
+
+        def replace(env, operation, keys):
+            return env['kemfai.module.selection'].kemfai_replace_selection(
+                keys, operation, self.TENANT, self.ACCOUNT, self.ACTOR,
+                '2026-10-17T08:00:00.123Z'
+            )
+
+        def first_writer():
+            cr = db_connect(dbname).cursor()
+            try:
+                env = api.Environment(cr, uid, {})
+                # Hold the exact singleton row before entering the method. Its own UPDATE
+                # is re-entrant on this cursor; the waiter below must block on that UPDATE.
+                cr.execute(
+                    'UPDATE kemfai_module_selection_lock '
+                    'SET generation = generation + 1 WHERE singleton_key = true'
+                )
+                locked.set()
+                if not release.wait(timeout=5):
+                    raise AssertionError('test did not release the first writer')
+                results['first'] = retrying(
+                    lambda: replace(env, self.OPERATION, ['module.accounting']), env
+                )
+            except Exception as exc:  # pragma: no cover - surfaced in the main thread
+                errors['first'] = exc
+            finally:
+                cr.close()
+
+        def stale_waiter():
+            if not locked.wait(timeout=5):
+                errors['waiter'] = AssertionError('first writer never acquired the mutex')
+                return
+            cr = db_connect(dbname).cursor()
+            try:
+                cr.execute("SET application_name = 'kemfai_module_selection_stale_waiter'")
+                env = api.Environment(cr, uid, {})
+                waiter_started.set()
+                results['waiter'] = retrying(
+                    lambda: replace(
+                        env,
+                        '07500000-0000-4000-8000-000000000015',
+                        ['module.inventory'],
+                    ),
+                    env,
+                )
+            except Exception as exc:  # pragma: no cover - surfaced in the main thread
+                errors['waiter'] = exc
+            finally:
+                cr.close()
+
+        first = threading.Thread(target=first_writer)
+        waiter = threading.Thread(target=stale_waiter)
+        first.start()
+        waiter.start()
+        observer_cr = None
+        waiter_is_blocked = False
+        try:
+            self.assertTrue(waiter_started.wait(timeout=5), 'waiter did not start')
+            observer_cr = db_connect(dbname).cursor()
+            deadline = time.monotonic() + 5
+            while time.monotonic() < deadline:
+                observer_cr.execute('SELECT pg_stat_clear_snapshot()')
+                observer_cr.execute(
+                    "SELECT wait_event_type FROM pg_stat_activity "
+                    "WHERE application_name = 'kemfai_module_selection_stale_waiter'"
+                )
+                row = observer_cr.fetchone()
+                if row and row[0] == 'Lock':
+                    waiter_is_blocked = True
+                    break
+                time.sleep(0.05)
+        finally:
+            if observer_cr is not None:
+                observer_cr.close()
+            release.set()
+            first.join(timeout=15)
+            waiter.join(timeout=15)
+
+        self.assertTrue(waiter_is_blocked, 'waiter never contended on the replacement mutex')
+        self.assertFalse(first.is_alive(), 'first writer hung')
+        self.assertFalse(waiter.is_alive(), 'stale waiter hung')
+        self.assertEqual(errors, {}, f'concurrent replacements raised: {errors}')
+        self.assertEqual(results['first']['operationUuid'], self.OPERATION)
+        self.assertEqual(results['waiter'], results['first'])
+
+        read_cr = db_connect(dbname).cursor()
+        try:
+            read_env = api.Environment(read_cr, uid, {})
+            events = read_env['kemfai.module.selection.event'].search(
+                [('audited', '=', False)]
+            )
+            self.assertEqual(len(events), 1)
+            self.assertEqual(events.operation_uuid, self.OPERATION)
+            self.assertEqual(
+                read_env['kemfai.module.selection'].kemfai_get_selection(),
+                ['module.accounting'],
+            )
+        finally:
+            read_cr.close()

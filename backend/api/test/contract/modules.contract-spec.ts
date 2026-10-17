@@ -73,11 +73,38 @@ describe('Modules contract (T072, against contracts/openapi.yaml)', () => {
   });
 
   it('PUT /modules/selection 200: entitled selection saved', () => {
-    coverage.record(selectionPath, 'put', 200, undefined);
+    coverage.record(selectionPath, 'put', 200, { featureKeys: ['module.accounting'] });
   });
 
   it('PUT /modules/selection 403: non-entitled selection denied', () => {
-    coverage.record(selectionPath, 'put', 403, undefined);
+    coverage.record(selectionPath, 'put', 403, {
+      message: 'One or more selected modules require a different plan',
+      featureKeys: ['module.inventory'],
+    });
+  });
+
+  it('PUT /modules/selection 403: shared guard denial is schema-conformant', () => {
+    validator.assertResponse(selectionPath, 'put', 403, {
+      statusCode: 403,
+      message: 'Forbidden resource',
+      error: 'Forbidden',
+    });
+  });
+
+  it.each([
+    ['missing featureKeys', {}],
+    ['non-array featureKeys', { featureKeys: 'module.accounting' }],
+    ['non-string feature key', { featureKeys: [7] }],
+  ])('PUT /modules/selection 200 rejects %s', (_label, body) => {
+    expect(() => validator.assertResponse(selectionPath, 'put', 200, body)).toThrow();
+  });
+
+  it.each([
+    ['entitlement denial missing featureKeys', { message: 'not entitled' }],
+    ['entitlement denial missing message', { featureKeys: ['module.inventory'] }],
+    ['guard denial missing statusCode', { message: 'Forbidden', error: 'Forbidden' }],
+  ])('PUT /modules/selection 403 rejects %s', (_label, body) => {
+    expect(() => validator.assertResponse(selectionPath, 'put', 403, body)).toThrow();
   });
 
   it('exercises every documented response code for both operations', () => {

@@ -98,6 +98,19 @@ describe('ModuleSelectionService (T076)', () => {
     expect(audit.recordModulesSelectionChanged).not.toHaveBeenCalled();
   });
 
+  it('rejects an entitled LIMIT feature before Odoo authentication or mutation', async () => {
+    jest
+      .mocked(entitlements.getEntitlementSetForAccount)
+      .mockResolvedValue(entitlementSet(PLAN_ID, ['report.export']));
+
+    await expect(service.replace(req, ['report.export'])).rejects.toBeInstanceOf(
+      ForbiddenException,
+    );
+    expect(odoo.authenticate).not.toHaveBeenCalled();
+    expect(odoo.executeKw).not.toHaveBeenCalled();
+    expect(audit.recordModulesSelectionChanged).not.toHaveBeenCalled();
+  });
+
   it('atomically replaces the entitled set and awaits the change audit', async () => {
     jest
       .mocked(entitlements.getEntitlementSetForAccount)

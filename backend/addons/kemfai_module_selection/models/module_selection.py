@@ -6,6 +6,29 @@ from odoo import api, fields, models
 from odoo.exceptions import ValidationError
 
 
+class KemfaiModuleSelectionLock(models.Model):
+    """Single-row write mutex for repeatable-read-safe full-set replacements.
+
+    Updating the row, rather than merely waiting on an advisory lock, makes PostgreSQL
+    raise SQLSTATE 40001 for a concurrent transaction whose repeatable-read snapshot was
+    established before the preceding writer committed. Odoo's request dispatcher retries
+    that transaction with a fresh environment/snapshot, which can then observe the pending
+    receipt. This prevents a stale waiter from reaching the one-pending unique constraint.
+    """
+
+    _name = 'kemfai.module.selection.lock'
+    _description = 'KEMFAI Module Selection Replacement Mutex'
+    _log_access = False
+
+    singleton_key = fields.Boolean(required=True, default=True)
+    generation = fields.Integer(required=True, default=0)
+
+    _sql_constraints = [
+        ('singleton_key_unique', 'unique(singleton_key)', 'Only one selection mutex may exist.'),
+        ('singleton_key_true', 'check(singleton_key)', 'The selection mutex key must be true.'),
+    ]
+
+
 class KemfaiModuleSelection(models.Model):
     """Tenant-database cache of the control plane's entitled module selection.
 
@@ -48,12 +71,19 @@ class KemfaiModuleSelection(models.Model):
                 'KEMFAI_INVALID_MODULE_SELECTION: feature_keys must be an array of non-empty strings.'
             )
 
-        # Serialize full-set replacements even when the table is initially empty. A row
-        # lock cannot protect that case; this transaction-scoped advisory lock can.
+        # This must be the first database operation in the method. A concurrent UPDATE
+        # against the singleton makes a stale repeatable-read waiter fail with SQLSTATE
+        # 40001; Odoo retries the whole RPC with a fresh snapshot. A read-only advisory
+        # lock is insufficient because waiting on it establishes a snapshot that cannot
+        # see the preceding writer's newly committed pending receipt.
         self.env.cr.execute(
-            'SELECT pg_advisory_xact_lock(hashtext(%s))',
-            ['kemfai.module.selection'],
+            'UPDATE kemfai_module_selection_lock '
+            'SET generation = generation + 1 '
+            'WHERE singleton_key = true '
+            'RETURNING generation'
         )
+        if self.env.cr.fetchone() is None:
+            raise ValidationError('KEMFAI_SELECTION_LOCK_MISSING: replacement mutex is not seeded.')
 
         normalized = sorted(set(key.strip() for key in feature_keys))
         identity = {

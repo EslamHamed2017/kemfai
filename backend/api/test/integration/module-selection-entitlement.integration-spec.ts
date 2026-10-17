@@ -192,14 +192,40 @@ describe('PUT /modules/selection entitlement enforcement (T073)', () => {
     expect(audit.recordModulesSelectionChanged).not.toHaveBeenCalled();
   });
 
+  it('denies an entitled non-module LIMIT key replay before Odoo persistence', async () => {
+    entitlements.getEntitlementSetForAccount.mockResolvedValue({
+      planId: PLAN_ID,
+      features: [{ key: 'report.export', enabled: true, limitValue: 100 }],
+      trialWindowDays: 14,
+      autoRestrictUnpaid: true,
+      featureFlags: [],
+    });
+
+    const response = await request(app.getHttpServer())
+      .put('/modules/selection')
+      .set('Content-Type', 'application/json')
+      .send(JSON.stringify({ featureKeys: ['report.export'] }))
+      .expect(403);
+
+    contract.assertResponse('/modules/selection', 'put', response.status, response.body);
+    expect(response.body).toEqual({
+      message: 'One or more selected modules require a different plan',
+      featureKeys: ['report.export'],
+    });
+    expect(odoo.authenticate).not.toHaveBeenCalled();
+    expect(odoo.executeKw).not.toHaveBeenCalled();
+    expect(audit.recordModulesSelectionChanged).not.toHaveBeenCalled();
+  });
+
   it('RoleGuard denies a caller without WorkspaceOwner before persistence', async () => {
     callerRoles = [];
 
-    await request(app.getHttpServer())
+    const response = await request(app.getHttpServer())
       .put('/modules/selection')
       .send({ featureKeys: ['module.accounting'] })
       .expect(403);
 
+    contract.assertResponse('/modules/selection', 'put', response.status, response.body);
     expect(odoo.authenticate).not.toHaveBeenCalled();
   });
 

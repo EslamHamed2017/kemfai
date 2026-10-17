@@ -27,6 +27,16 @@ interface LiveSelectionReceipt {
   removed: string[];
 }
 
+interface LiveSelectionEvent {
+  id: number;
+  operation_uuid: string;
+  requested_json: string;
+  result_json: string;
+  added_json: string;
+  removed_json: string;
+  audited: boolean;
+}
+
 function assertSelectionReceipt(value: unknown): asserts value is LiveSelectionReceipt {
   const receipt = value as Partial<LiveSelectionReceipt> | null;
   const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -50,6 +60,40 @@ function assertSelectionReceipt(value: unknown): asserts value is LiveSelectionR
     !strings(receipt.removed)
   ) {
     throw new Error('Odoo returned an invalid module-selection recovery receipt');
+  }
+}
+
+function assertSelectionEvents(value: unknown): asserts value is LiveSelectionEvent[] {
+  if (
+    !Array.isArray(value) ||
+    value.some(
+      (row: unknown) =>
+        typeof row !== 'object' ||
+        row === null ||
+        typeof (row as Partial<LiveSelectionEvent>).id !== 'number' ||
+        typeof (row as Partial<LiveSelectionEvent>).operation_uuid !== 'string' ||
+        typeof (row as Partial<LiveSelectionEvent>).requested_json !== 'string' ||
+        typeof (row as Partial<LiveSelectionEvent>).result_json !== 'string' ||
+        typeof (row as Partial<LiveSelectionEvent>).added_json !== 'string' ||
+        typeof (row as Partial<LiveSelectionEvent>).removed_json !== 'string' ||
+        typeof (row as Partial<LiveSelectionEvent>).audited !== 'boolean',
+    )
+  ) {
+    throw new Error('Odoo returned invalid module-selection event rows');
+  }
+}
+
+function parseFeatureKeys(value: string, field: string): string[] {
+  const parsed: unknown = JSON.parse(value);
+  if (!Array.isArray(parsed) || parsed.some((item) => typeof item !== 'string')) {
+    throw new Error(`Odoo returned invalid ${field}`);
+  }
+  return [...parsed].sort();
+}
+
+function assertNumericIds(value: unknown): asserts value is number[] {
+  if (!Array.isArray(value) || value.some((id) => typeof id !== 'number')) {
+    throw new Error('Odoo returned invalid module-selection event IDs');
   }
 }
 
@@ -123,13 +167,14 @@ live('T072 module selection owned live stack', () => {
     await controlDataSource.query(
       `INSERT INTO feature (id,key,display_name,display_name_en,kind) VALUES
        (gen_random_uuid(),'module.accounting','Accounting','Accounting','module'),
-       (gen_random_uuid(),'module.inventory','Inventory','Inventory','module')
+       (gen_random_uuid(),'module.inventory','Inventory','Inventory','module'),
+       (gen_random_uuid(),'report.export','Report export','Report export','limit')
        ON CONFLICT (key) DO UPDATE SET display_name_en=excluded.display_name_en`,
     );
     await controlDataSource.query(
       `INSERT INTO plan_feature_entitlement(plan_id,feature_key,enabled,limit_value)
        VALUES ($1,'module.accounting',true,null),($2,'module.accounting',true,null),
-              ($2,'module.inventory',true,null)`,
+              ($2,'module.inventory',true,null),($1,'report.export',true,100)`,
       [planId, premiumPlanId],
     );
     await controlDataSource.query(
@@ -264,7 +309,8 @@ live('T072 module selection owned live stack', () => {
       const denied = await httpPut(ownerToken, ['module.inventory'], ui).expect(403);
       contract.assertResponse('/modules/selection', 'put', denied.status, denied.body);
     }
-    await httpPut(wrongRoleToken, ['module.accounting']).expect(403);
+    const roleDenied = await httpPut(wrongRoleToken, ['module.accounting']).expect(403);
+    contract.assertResponse('/modules/selection', 'put', roleDenied.status, roleDenied.body);
     await httpPut(otherToken, ['module.accounting']).set('x-tenant-id', tenantId).expect(403);
     await controlDataSource.query(
       `UPDATE feature_flag SET enabled=false WHERE feature_key='module.module_selection'`,
@@ -279,6 +325,25 @@ live('T072 module selection owned live stack', () => {
       tenantId,
     });
     await httpPut(hostile, ['module.accounting']).expect(401);
+    expect(
+      await odoo.executeKw(
+        db,
+        odooUid,
+        password,
+        'kemfai.module.selection',
+        'kemfai_get_selection',
+        [],
+      ),
+    ).toEqual(['module.accounting']);
+  });
+
+  it('denies an entitled non-module LIMIT key before real Odoo mutation', async () => {
+    const denied = await httpPut(ownerToken, ['report.export']).expect(403);
+    contract.assertResponse('/modules/selection', 'put', denied.status, denied.body);
+    expect(denied.body).toEqual({
+      message: 'One or more selected modules require a different plan',
+      featureKeys: ['report.export'],
+    });
     expect(
       await odoo.executeKw(
         db,
@@ -396,13 +461,9 @@ live('T072 module selection owned live stack', () => {
   });
 
   it('serializes concurrent A/B/A replacements without stale or duplicate audit deltas', async () => {
-    const calls = [
-      httpPut(ownerToken, ['module.accounting']),
-      httpPut(ownerToken, []),
-      httpPut(ownerToken, ['module.accounting']),
-    ];
-    const responses = await Promise.all(calls);
-    expect(responses.every((response) => response.status === 200)).toBe(true);
+    const baseline = await httpPut(ownerToken, []).expect(200);
+    contract.assertResponse('/modules/selection', 'put', baseline.status, baseline.body);
+    expect(baseline.body).toEqual({ featureKeys: [] });
     expect(
       await odoo.executeKw(
         db,
@@ -412,12 +473,108 @@ live('T072 module selection owned live stack', () => {
         'kemfai_get_selection',
         [],
       ),
-    ).toEqual(['module.accounting']);
-    const duplicate = await controlDataSource.query(
-      `SELECT dedupe_key,count(*)::int count FROM audit_event WHERE tenant_id=$1 AND action='modules.selection.changed'
-       GROUP BY dedupe_key HAVING count(*)>1`,
-      [tenantId],
+    ).toEqual([]);
+    const existingIds = await odoo.executeKw(
+      db,
+      odooUid,
+      password,
+      'kemfai.module.selection.event',
+      'search',
+      [[]],
+      { order: 'id desc', limit: 1 },
     );
-    expect(duplicate).toEqual([]);
+    assertNumericIds(existingIds);
+    const eventIdBefore = existingIds[0] ?? 0;
+
+    const calls = [
+      httpPut(ownerToken, ['module.accounting']),
+      httpPut(ownerToken, []),
+      httpPut(ownerToken, ['module.accounting']),
+    ];
+    const responses = await Promise.all(calls);
+    expect(responses.every((response) => response.status === 200)).toBe(true);
+    responses.forEach((response) =>
+      contract.assertResponse('/modules/selection', 'put', response.status, response.body),
+    );
+    expect(responses[0].body).toEqual({ featureKeys: ['module.accounting'] });
+    expect(responses[1].body).toEqual({ featureKeys: [] });
+    expect(responses[2].body).toEqual({ featureKeys: ['module.accounting'] });
+
+    const events = await odoo.executeKw(
+      db,
+      odooUid,
+      password,
+      'kemfai.module.selection.event',
+      'search_read',
+      [[['id', '>', eventIdBefore]]],
+      {
+        fields: [
+          'id',
+          'operation_uuid',
+          'requested_json',
+          'result_json',
+          'added_json',
+          'removed_json',
+          'audited',
+        ],
+        order: 'id asc',
+      },
+    );
+    assertSelectionEvents(events);
+    expect(events).toHaveLength(3);
+    expect(new Set(events.map((event) => event.operation_uuid)).size).toBe(3);
+
+    let previous: string[] = [];
+    const expectedAudits = new Map<string, { added: string[]; removed: string[] }>();
+    for (const event of events) {
+      const requested = parseFeatureKeys(event.requested_json, 'requested_json');
+      const result = parseFeatureKeys(event.result_json, 'result_json');
+      const added = parseFeatureKeys(event.added_json, 'added_json');
+      const removed = parseFeatureKeys(event.removed_json, 'removed_json');
+      const expectedAdded = result.filter((key) => !previous.includes(key));
+      const expectedRemoved = previous.filter((key) => !result.includes(key));
+      expect(requested).toEqual(result);
+      expect(added).toEqual(expectedAdded);
+      expect(removed).toEqual(expectedRemoved);
+      expect(event.audited).toBe(true);
+      expectedAudits.set(`modules.selection.changed:${event.operation_uuid}`, {
+        added,
+        removed,
+      });
+      previous = result;
+    }
+
+    expect(
+      await odoo.executeKw(
+        db,
+        odooUid,
+        password,
+        'kemfai.module.selection',
+        'kemfai_get_selection',
+        [],
+      ),
+    ).toEqual(previous);
+    const auditKeys = [...expectedAudits.keys()];
+    const audits: Array<{ dedupe_key: string; payload: unknown }> = await controlDataSource.query(
+      `SELECT dedupe_key,payload FROM audit_event
+       WHERE tenant_id=$1 AND action='modules.selection.changed' AND dedupe_key = ANY($2::text[])
+       ORDER BY dedupe_key`,
+      [tenantId, auditKeys],
+    );
+    expect(audits).toHaveLength(3);
+    expect(new Set(audits.map((audit) => audit.dedupe_key)).size).toBe(3);
+    for (const audit of audits) {
+      expect(audit.payload).toEqual(expectedAudits.get(audit.dedupe_key));
+    }
+    expect(
+      await odoo.executeKw(
+        db,
+        odooUid,
+        password,
+        'kemfai.module.selection',
+        'kemfai_get_pending_selection_event',
+        [],
+      ),
+    ).toBe(false);
   });
 });

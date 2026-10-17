@@ -8,7 +8,7 @@ import { OdooRpcService } from '../../integrations/odoo-rpc/odoo-rpc.service';
 import { provisioningCredentials } from '../../integrations/provisioning/credentials';
 import { AuditService } from '../audit/audit.service';
 import { Account } from '../accounts/entities/account.entity';
-import { Feature } from '../entitlements/entities/feature.entity';
+import { Feature, FeatureKind } from '../entitlements/entities/feature.entity';
 import { Plan } from '../entitlements/entities/plan.entity';
 import { EntitlementSet, EntitlementsService } from '../entitlements/entitlements.service';
 import { Tenant } from '../tenants/entities/tenant.entity';
@@ -68,23 +68,25 @@ export class ModuleSelectionService {
       })),
     );
 
-    const keys = new Set<string>();
+    const candidateKeys = new Set<string>();
     for (const { set } of planEntitlements) {
       for (const feature of set.features) {
-        if (feature.enabled && feature.key.startsWith('module.')) keys.add(feature.key);
+        if (feature.enabled) candidateKeys.add(feature.key);
       }
     }
     for (const feature of current.features) {
-      if (feature.enabled && feature.key.startsWith('module.')) keys.add(feature.key);
+      if (feature.enabled) candidateKeys.add(feature.key);
     }
 
-    const features = keys.size
-      ? await controlDataSource.getRepository(Feature).find({ where: { key: In([...keys]) } })
+    const features = candidateKeys.size
+      ? await controlDataSource.getRepository(Feature).find({
+          where: { key: In([...candidateKeys]), kind: FeatureKind.MODULE },
+        })
       : [];
     const featureByKey = new Map(features.map((feature) => [feature.key, feature]));
     const enabledCurrent = this.enabledKeys(current);
 
-    return [...keys].sort().map((key) => {
+    return [...featureByKey.keys()].sort().map((key) => {
       const feature = featureByKey.get(key);
       const requiredPlan = planEntitlements.find(({ set }) => this.enabledKeys(set).has(key))?.plan;
       return {
@@ -105,7 +107,13 @@ export class ModuleSelectionService {
     );
     const entitled = this.enabledKeys(entitlementSet);
     const requested = [...new Set(featureKeys)].sort();
-    const denied = requested.filter((key) => !entitled.has(key));
+    const moduleRows = requested.length
+      ? await controlDataSource.getRepository(Feature).find({
+          where: { key: In(requested), kind: FeatureKind.MODULE },
+        })
+      : [];
+    const moduleKeys = new Set(moduleRows.map((feature) => feature.key));
+    const denied = requested.filter((key) => !entitled.has(key) || !moduleKeys.has(key));
     if (denied.length > 0) {
       throw new ForbiddenException({
         message: 'One or more selected modules require a different plan',
