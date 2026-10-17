@@ -92,6 +92,20 @@ test.describe.serial('T080 owned real checklist journey', () => {
     await expect(page.getByTestId('checklist-empty')).toBeVisible();
     await expect(page.getByTestId('activation-gate')).toBeVisible();
     await expect(page.getByTestId('checklist-firstInvoice')).toContainText('Not complete');
+    const setupTargets = [
+      ['customer', '/modules#module.sales', /\/modules#module\.sales$/],
+      ['bank', '/modules#module.accounting', /\/modules#module\.accounting$/],
+      ['product', '/modules#module.inventory', /\/modules#module\.inventory$/],
+      ['firstInvoice', '/billing', /\/billing$/],
+    ] as const;
+    for (const [item, href, url] of setupTargets) {
+      const action = page.getByTestId(`checklist-${item}`).getByRole('link');
+      await expect(action).toHaveAttribute('href', href);
+      await action.click();
+      await expect(page).toHaveURL(url);
+      await expect(page.getByRole('heading').first()).toBeVisible();
+      await page.goto('/checklist');
+    }
     expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
     await captureDesktopMobile(page, (name) => testInfo.outputPath(name), 'empty-gated-en');
 
@@ -178,6 +192,25 @@ test.describe.serial('T080 owned real checklist journey', () => {
     expect(raw.status).toBe(200);
     const text = await raw.text();
     expect(text).not.toMatch(/odoo|database|8069|hostname/i);
+    expect(
+      (
+        await fetch(`${required('T080_API_URL')}/onboarding/checklist`, {
+          headers: { authorization: `Bearer ${required('T080_TOKEN_NON_OWNER')}` },
+        })
+      ).status,
+    ).toBe(403);
+    // GET is safe/read-only and has no CSRF token contract: a hostile Origin must neither
+    // mutate state nor bypass authentication. The same authenticated response is returned,
+    // while the BFF's existing same-origin CSRF check remains mandatory for mutations.
+    const crossSiteGet = await fetch(`${required('T080_API_URL')}/onboarding/checklist`, {
+      headers: {
+        authorization: `Bearer ${required('T080_TOKEN_A')}`,
+        origin: 'https://foreign.example.invalid',
+        'sec-fetch-site': 'cross-site',
+      },
+    });
+    expect(crossSiteGet.status).toBe(200);
+    expect(await crossSiteGet.text()).toBe(text);
     expect((await fetch(`${required('T080_API_URL')}/onboarding/checklist`)).status).toBe(401);
     sql("UPDATE feature_flag SET enabled=false WHERE feature_key='module.onboarding_checklist'");
     expect((await beta.goto('/checklist'))?.status()).toBe(404);

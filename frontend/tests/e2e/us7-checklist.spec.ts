@@ -14,18 +14,16 @@ async function authenticate(page: Page, baseURL: string, locale: 'en' | 'ar') {
   });
   const url = new URL(baseURL);
   url.protocol = 'https:';
-  await page
-    .context()
-    .addCookies([
-      {
-        name: '__Host-kemfai_session',
-        value: sessionId,
-        url: url.toString(),
-        httpOnly: true,
-        secure: true,
-        sameSite: 'Lax',
-      },
-    ]);
+  await page.context().addCookies([
+    {
+      name: '__Host-kemfai_session',
+      value: sessionId,
+      url: url.toString(),
+      httpOnly: true,
+      secure: true,
+      sameSite: 'Lax',
+    },
+  ]);
 }
 
 for (const locale of ['en', 'ar'] as const) {
@@ -33,6 +31,7 @@ for (const locale of ['en', 'ar'] as const) {
     browser,
     baseURL,
   }, testInfo) => {
+    test.setTimeout(60_000);
     const messages = locale === 'ar' ? ar : en;
     const { context, page } = await openLocalePage(browser, baseURL!, locale);
     await authenticate(page, baseURL!, locale);
@@ -54,7 +53,28 @@ for (const locale of ['en', 'ar'] as const) {
     await expect(page.getByTestId('checklist-empty')).toBeVisible();
     await expect(page.getByTestId('activation-gate')).toBeVisible();
     await expect(page.locator('.kemfai-checklist-item')).toHaveCount(4);
-    await expect(page.locator('.kemfai-checklist-item a')).toHaveCount(4);
+    const actionLinks = page.locator('.kemfai-checklist-item a');
+    await expect(actionLinks).toHaveCount(4);
+    await expect(actionLinks.nth(0)).toHaveAttribute('href', '/modules#module.sales');
+    await expect(actionLinks.nth(1)).toHaveAttribute('href', '/modules#module.accounting');
+    await expect(actionLinks.nth(2)).toHaveAttribute('href', '/modules#module.inventory');
+    await expect(actionLinks.nth(3)).toHaveAttribute('href', '/billing');
+    const expectedDestinations = [
+      /\/modules#module\.sales$/,
+      /\/modules#module\.accounting$/,
+      /\/modules#module\.inventory$/,
+      /\/billing$/,
+    ];
+    for (let index = 0; index < expectedDestinations.length; index += 1) {
+      await actionLinks.nth(index).click();
+      await expect(page).toHaveURL(expectedDestinations[index]);
+      await expect(
+        page.getByRole('heading', {
+          name: index === 3 ? messages.billing.title : messages.moduleSelection.title,
+        }),
+      ).toBeVisible();
+      await page.goto('/checklist');
+    }
     await runAxe(page);
     await assertNoHorizontalOverflow(page);
     await page.screenshot({

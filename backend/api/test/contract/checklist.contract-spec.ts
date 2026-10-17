@@ -63,5 +63,32 @@ describe('Onboarding checklist contract (T078)', () => {
     ).toThrow();
   });
 
+  it.each([
+    [401, { statusCode: 401, message: 'Missing bearer token', error: 'Unauthorized' }],
+    [
+      403,
+      {
+        statusCode: 403,
+        message: 'Caller does not hold a role required for this endpoint',
+        error: 'Forbidden',
+      },
+    ],
+    [404, { statusCode: 404, message: 'This feature is not available', error: 'Not Found' }],
+    [
+      500,
+      {
+        statusCode: 500,
+        message: 'Checklist readiness returned invalid data',
+        error: 'Internal Server Error',
+      },
+    ],
+    [
+      502,
+      { statusCode: 502, message: 'Checklist is temporarily unavailable', error: 'Bad Gateway' },
+    ],
+  ])('documents and validates the %i response body', (status, body) => {
+    coverage.record(path, 'get', status, body);
+  });
+
   it('covers every documented response', () => coverage.assertFullCoverage(path, 'get'));
 });

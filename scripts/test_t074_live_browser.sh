@@ -85,6 +85,9 @@ for _ in $(seq 1 120); do curl -sf "http://127.0.0.1:$odoo_port/web/health" >/de
 curl -sf "http://127.0.0.1:$odoo_port/web/health" >/dev/null || fail 'Odoo not ready'
 export CONTROL_DB_HOST=127.0.0.1 CONTROL_DB_PORT="$pg_port" CONTROL_DB_USER="$pg_user" CONTROL_DB_PASSWORD="$pg_password" CONTROL_DB_NAME="$control_db" REDIS_URL="redis://127.0.0.1:$redis_port/14"
 (cd "$api_dir" && npm run migration:run) >"$artifacts_dir/migrations.log" 2>&1 || fail 'migrations'
+if [ "$live_mode" = t080 ]; then
+  (cd "$api_dir"; export OPENAPI_CONTRACT_PATH="$repo_dir/specs/001-saas-onboarding-shell/contracts/openapi.yaml" KEMFAI_ODOO_URL="http://127.0.0.1:$odoo_port" KEMFAI_ODOO_MASTER_PASSWORD="$odoo_master" KEMFAI_TENANT_ADMIN_LOGIN=admin KEMFAI_TENANT_ADMIN_PASSWORD="$odoo_password"; timeout 600 npm run test:contract -- --runInBand) >"$artifacts_dir/api-contract-full.log" 2>&1 || { redact <"$artifacts_dir/api-contract-full.log"; fail 'full API contract gate'; }
+fi
 psql_env="$private_dir/psql.env"; printf 'PGPASSWORD=%s\n' "$pg_password" >"$psql_env"
 psql_q(){ docker exec --env-file "$psql_env" "$pg" psql -U "$pg_user" -d "$control_db" -X -q -t -A -c "$1"; }
 plan_a="$(psql_q "INSERT INTO plan(name,name_en,name_ar,published,monthly_price,annual_price,currency) VALUES('Current','Current','الحالية',true,10,100,'USD') RETURNING id")"; plan_b="$(psql_q "INSERT INTO plan(name,name_en,name_ar,published,monthly_price,annual_price,currency) VALUES('Growth','Growth','النمو',true,20,200,'USD') RETURNING id")"
@@ -98,8 +101,8 @@ psql_q "INSERT INTO subscription(tenant_id,plan_id,billing_cycle,status,current_
 identity_json="$private_dir/identity.json"
 (cd "$api_dir"; export T074_IDENTITY_OUTPUT="$identity_json" T074_TENANT_A_ID="$tenant_a" T074_TENANT_B_ID="$tenant_b"; exec setsid ./node_modules/.bin/ts-node test/support/t074-live-identity.ts) >"$artifacts_dir/identity.log" 2>&1 & identity_pid=$!; register_owned_process "$identity_pid" t074-live-identity.ts
 for _ in $(seq 1 100); do [ -s "$identity_json" ] && break; sleep .1; done; [ -s "$identity_json" ] || fail 'identity fixture'
-readarray -t ident < <(python3 -c 'import json,sys;d=json.load(open(sys.argv[1]));print(d["issuer"]);print(d["audience"]);print(d["jwksUri"]);print(d["tokenA"]);print(d["tokenB"])' "$identity_json")
-issuer="${ident[0]}"; audience="${ident[1]}"; jwks="${ident[2]}"; token_a="${ident[3]}"; token_b="${ident[4]}"; printf '%s\0%s\0' "$token_a" "$token_b" >>"$secrets"
+readarray -t ident < <(python3 -c 'import json,sys;d=json.load(open(sys.argv[1]));print(d["issuer"]);print(d["audience"]);print(d["jwksUri"]);print(d["tokenA"]);print(d["tokenB"]);print(d["tokenNonOwner"])' "$identity_json")
+issuer="${ident[0]}"; audience="${ident[1]}"; jwks="${ident[2]}"; token_a="${ident[3]}"; token_b="${ident[4]}"; token_non_owner="${ident[5]}"; printf '%s\0%s\0%s\0' "$token_a" "$token_b" "$token_non_owner" >>"$secrets"
 session_a="$(openssl rand -hex 24)"; session_b="$(openssl rand -hex 24)"; now_ms="$(date +%s000)"; exp_ms="$((now_ms+1800000))"
 docker exec "$redis" redis-cli -n 14 SET "kemfai:session:$session_a" "{\"accessToken\":\"$token_a\",\"refreshToken\":\"synthetic-a\",\"accessExpiresAt\":$exp_ms,\"refreshExpiresAt\":$exp_ms}" PX 1800000 >/dev/null
 docker exec "$redis" redis-cli -n 14 SET "kemfai:session:$session_b" "{\"accessToken\":\"$token_b\",\"refreshToken\":\"synthetic-b\",\"accessExpiresAt\":$exp_ms,\"refreshExpiresAt\":$exp_ms}" PX 1800000 >/dev/null
@@ -114,7 +117,7 @@ fi
 for _ in $(seq 1 60); do curl -sf "http://127.0.0.1:$frontend_port/" >/dev/null && break; sleep 1; done; curl -sf "http://127.0.0.1:$frontend_port/" >/dev/null || fail 'frontend not ready'
 export T074_BASE_URL="http://127.0.0.1:$frontend_port" T074_SESSION_A="$session_a" T074_SESSION_B="$session_b" T074_PG_CONTAINER="$pg" T074_PG_USER="$pg_user" T074_CONTROL_DB="$control_db" T074_TENANT_A_ID="$tenant_a" T074_PLAN_A_ID="$plan_a" T074_UPGRADE_PLAN=Growth T074_PLAYWRIGHT_OUTPUT_DIR="$artifacts_dir/playwright"
 if [ "$live_mode" = t080 ]; then
-  export T080_BASE_URL="$T074_BASE_URL" T080_SESSION_A="$session_a" T080_SESSION_B="$session_b" T080_PG_CONTAINER="$pg" T080_PG_USER="$pg_user" T080_CONTROL_DB="$control_db" T080_TENANT_A_ID="$tenant_a" T080_TENANT_B_ID="$tenant_b" T080_TOKEN_A="$token_a" T080_ODOO_URL="http://127.0.0.1:$odoo_port" T080_ODOO_DB_A="$tenant_a_db" T080_ODOO_DB_B="$tenant_b_db" T080_ODOO_LOGIN=admin T080_ODOO_PASSWORD="$odoo_password" T080_API_URL="http://127.0.0.1:$api_port" T080_PLAYWRIGHT_OUTPUT_DIR="$artifacts_dir/playwright"
+  export T080_BASE_URL="$T074_BASE_URL" T080_SESSION_A="$session_a" T080_SESSION_B="$session_b" T080_PG_CONTAINER="$pg" T080_PG_USER="$pg_user" T080_CONTROL_DB="$control_db" T080_TENANT_A_ID="$tenant_a" T080_TENANT_B_ID="$tenant_b" T080_TOKEN_A="$token_a" T080_TOKEN_NON_OWNER="$token_non_owner" T080_ODOO_URL="http://127.0.0.1:$odoo_port" T080_ODOO_DB_A="$tenant_a_db" T080_ODOO_DB_B="$tenant_b_db" T080_ODOO_LOGIN=admin T080_ODOO_PASSWORD="$odoo_password" T080_API_URL="http://127.0.0.1:$api_port" T080_PLAYWRIGHT_OUTPUT_DIR="$artifacts_dir/playwright"
   (cd "$frontend_dir" && npx playwright test --config tests/e2e-live/playwright.t080-live.config.ts) >"$artifacts_dir/browser.log" 2>&1 || { redact <"$artifacts_dir/browser.log"; fail 'browser journey'; }
 else
   (cd "$frontend_dir" && npx playwright test --config tests/e2e-live/playwright.t074-live.config.ts) >"$artifacts_dir/browser.log" 2>&1 || { redact <"$artifacts_dir/browser.log"; fail 'browser journey'; }
