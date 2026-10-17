@@ -22,6 +22,7 @@ import { TenantProvisionModule } from './integrations/provisioning/tenant-provis
 import { TrialExpirySweepModule } from './integrations/provisioning/trial-expiry-sweep.module';
 import { BillingCustomerModule } from './modules/billing-customer/billing-customer.module';
 import { BillingAdminModule } from './modules/billing-admin/billing-admin.module';
+import { ModuleSelectionModule } from './modules/module-selection/module-selection.module';
 
 @Module({
   imports: [
@@ -34,6 +35,7 @@ import { BillingAdminModule } from './modules/billing-admin/billing-admin.module
     CompanySetupModule,
     BillingCustomerModule,
     BillingAdminModule,
+    ModuleSelectionModule,
     AccountsModule,
     QueuesModule,
     TrialExpirySweepModule,

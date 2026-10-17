@@ -337,8 +337,16 @@ paths:
               properties:
                 featureKeys: { type: array, items: { type: string } }
       responses:
-        "200": { description: "Selection saved and reflected immediately (Acceptance Scenario 4.2)" }
-        "403": { description: "One or more feature keys not entitled by current plan (Acceptance Scenario 4.3)" }
+        "200":
+          description: Selection saved and reflected immediately (Acceptance Scenario 4.2)
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ModuleSelectionResult" }
+        "403":
+          description: One or more keys are not selectable modules, or a global guard denies access
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ModuleSelectionForbiddenResponse" }
   /billing/subscription:
     get:
       tags: [billing-customer]
@@ -700,6 +708,38 @@ components:
         name: { type: string }
         includedInCurrentPlan: { type: boolean }
         requiredPlanTier: { type: string, nullable: true }
+
+    ModuleSelectionResult:
+      type: object
+      additionalProperties: false
+      required: [featureKeys]
+      properties:
+        featureKeys:
+          type: array
+          items: { type: string }
+
+    ModuleSelectionEntitlementDenied:
+      type: object
+      additionalProperties: false
+      required: [message, featureKeys]
+      properties:
+        message: { type: string }
+        featureKeys:
+          type: array
+          items: { type: string }
+
+    ModuleSelectionGuardForbidden:
+      allOf:
+        - $ref: "#/components/schemas/NestErrorResponse"
+        - type: object
+          required: [statusCode, message]
+          properties:
+            statusCode: { type: integer, enum: [403] }
+
+    ModuleSelectionForbiddenResponse:
+      oneOf:
+        - $ref: "#/components/schemas/ModuleSelectionEntitlementDenied"
+        - $ref: "#/components/schemas/ModuleSelectionGuardForbidden"
 
     SubscriptionView:
       type: object

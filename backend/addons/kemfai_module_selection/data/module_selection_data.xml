@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo noupdate="1">
+  <record id="module_selection_replacement_lock" model="kemfai.module.selection.lock">
+    <field name="singleton_key" eval="True"/>
+    <field name="generation">0</field>
+  </record>
+</odoo>

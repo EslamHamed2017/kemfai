@@ -193,12 +193,14 @@ describe('AuditService — FR-007 event catalog (T019)', () => {
       moduleSelectionId: SUBJECT,
       added: ['inventory'],
       removed: ['hr'],
+      operationUuid: '11111111-1111-4111-8111-111111111111',
     });
     expect(appendSpy).toHaveBeenCalledWith(
       expect.objectContaining({
         action: 'modules.selection.changed',
         subjectType: 'module_selection',
         payload: { added: ['inventory'], removed: ['hr'] },
+        dedupeKey: 'modules.selection.changed:11111111-1111-4111-8111-111111111111',
       }),
     );
   });

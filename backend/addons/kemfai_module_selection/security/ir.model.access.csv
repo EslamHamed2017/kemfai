@@ -1,0 +1,3 @@
+id,name,model_id:id,group_id:id,perm_read,perm_write,perm_create,perm_unlink
+access_kemfai_module_selection_system,kemfai.module.selection system,model_kemfai_module_selection,base.group_system,1,1,1,1
+access_kemfai_module_selection_event_system,kemfai.module.selection.event system,model_kemfai_module_selection_event,base.group_system,1,1,1,1
