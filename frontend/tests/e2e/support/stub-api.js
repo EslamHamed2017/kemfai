@@ -67,6 +67,10 @@ const server = http.createServer(async (req, res) => {
       { key: 'module.projects', name: 'Projects', nameAr: 'المشاريع', includedInCurrentPlan: false, selected: false, requiredPlanTier: 'Growth', requiredPlanTierAr: 'النمو' },
     ]));
   }
+  if (url.pathname === '/onboarding/checklist') {
+    res.writeHead(200, { 'content-type': 'application/json' });
+    return res.end(JSON.stringify({ customerAdded: false, bankAdded: false, productAdded: false, firstInvoiceReady: false, gatedOnSubscriptionActivation: true }));
+  }
   if (url.pathname !== '/accounts/me/locale') {
     res.writeHead(404);
     return res.end('{}');

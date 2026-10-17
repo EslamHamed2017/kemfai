@@ -18,3 +18,22 @@ body { margin: 0; background: var(--kemfai-surface); color: #17152b; font-family
 .kemfai-workspace-links { display: flex; flex-wrap: wrap; gap: .75rem; padding: 0; list-style: none; }
 .kemfai-workspace-link { display: inline-block; padding: .65rem 1rem; border-radius: 999px; background: #eeeaff; color: #4b3fb3; text-decoration: none; font-weight: 600; }
 @media (max-width: 480px) { .kemfai-module-shell, .kemfai-workspace-state { padding: 1rem; } .kemfai-module-header { align-items: flex-start; } }
+.kemfai-checklist-shell {
+  max-width: 72rem;
+  margin: 0 auto;
+  padding: 2rem clamp(1rem, 4vw, 3rem) 4rem;
+}
+.kemfai-checklist-nav { padding: 1rem clamp(1rem, 4vw, 3rem) 0; text-align: end; }
+
+.kemfai-checklist-header {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.75rem;
+  margin-bottom: 2rem;
+}
+
+.kemfai-checklist-eyebrow { color: #6d63b8; font-weight: 600; }
+.kemfai-checklist-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem; margin-top: 1.5rem; }
+.kemfai-checklist-item { display: grid; gap: 1rem; align-content: space-between; min-height: 13rem; border-inline-start: 0.25rem solid #8b7cf6; }
+.kemfai-checklist-live { margin-top: 1rem; color: #525252; }
+@media (max-width: 42rem) { .kemfai-checklist-grid { grid-template-columns: 1fr; } }

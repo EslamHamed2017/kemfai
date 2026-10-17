@@ -811,6 +811,9 @@ components:
 
     ChecklistState:
       type: object
+      additionalProperties: false
+      required:
+        [customerAdded, bankAdded, productAdded, firstInvoiceReady, gatedOnSubscriptionActivation]
       properties:
         customerAdded: { type: boolean }
         bankAdded: { type: boolean }

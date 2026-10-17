@@ -13,7 +13,7 @@ financial data.
     "category": "KEMFAI",
     "author": "KEMFAI",
     "license": "LGPL-3",
-    "depends": ["base"],
+    "depends": ["base", "account", "product"],
     "data": [],
     "installable": True,
     "application": False,

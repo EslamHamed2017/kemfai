@@ -315,6 +315,31 @@
     "manageModules": "Manage modules",
     "checklistReflection": "Onboarding will track {count, plural, =0 {no enabled modules} one {# enabled module} other {# enabled modules}}."
   },
+  "onboardingChecklist": {
+    "eyebrow": "Workspace setup",
+    "title": "Onboarding checklist",
+    "navigation": "Onboarding checklist",
+    "navigationLabel": "Onboarding",
+    "intro": "These readiness checks are calculated from your live workspace records.",
+    "loading": "Checking workspace readiness…",
+    "empty": "Your setup checklist is ready. Start with any item below.",
+    "error": "We couldn't load your checklist. Your workspace data was not changed.",
+    "sessionExpired": "Your session has expired. Sign in again to view the checklist.",
+    "retry": "Try again",
+    "listLabel": "Setup readiness items",
+    "complete": "Complete",
+    "incomplete": "Not complete",
+    "activationGate": "Subscription activation is still required for full usage.",
+    "activationHelp": "You can continue setup now. Issuing invoices remains unavailable until Billing Admin activation.",
+    "active": "Subscription active — the separate full-usage gate is clear.",
+    "live": "This checklist updates automatically when source records change.",
+    "items": {
+      "customer": { "title": "Add a customer", "description": "At least one active customer record exists.", "action": "Review company setup" },
+      "bank": { "title": "Add a bank", "description": "At least one active bank record exists.", "action": "Review company setup" },
+      "product": { "title": "Add a product or service", "description": "At least one active saleable item exists.", "action": "Review enabled modules" },
+      "firstInvoice": { "title": "First-invoice readiness", "description": "Customer, bank, and product setup prerequisites are complete.", "action": "Review activation status" }
+    }
+  },
   "billingReview": {
     "title": "Billing review",
     "intro": "Inspect submitted payment evidence and record one decision.",
