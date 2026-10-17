@@ -1,0 +1,13 @@
+import { defineConfig } from '@playwright/test';
+
+export default defineConfig({
+  testDir: '.',
+  testMatch: /t071-billing-admin\.live\.spec\.ts/,
+  fullyParallel: false,
+  retries: 0,
+  timeout: 120_000,
+  reporter: [['list']],
+  outputDir: process.env.T071_PLAYWRIGHT_OUTPUT_DIR,
+  use: { baseURL: process.env.T071_BASE_URL, trace: 'retain-on-failure' },
+  projects: [{ name: 'chromium', use: { browserName: 'chromium' } }],
+});

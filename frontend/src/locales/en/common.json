@@ -288,5 +288,76 @@
       "sessionExpired": "Your session has expired. Sign in again to view billing.",
       "unavailable": "We couldn't load billing details. Please try again."
     }
+  },
+  "billingReview": {
+    "title": "Billing review",
+    "intro": "Inspect submitted payment evidence and record one decision.",
+    "queueLabel": "Payment review queue",
+    "detailTitle": "Submission details",
+    "history": "Status history",
+    "states": {
+      "loading": "Loading payment submissions…",
+      "error": "We couldn't load the review queue. Try again.",
+      "denied": "You do not have Billing Admin permission.",
+      "expired": "Your internal session has expired.",
+      "emptyTitle": "No submissions to review",
+      "empty": "There are no pending or customer-action submissions."
+    },
+    "fields": {
+      "customer": "Customer",
+      "tenant": "Tenant",
+      "plan": "Plan",
+      "period": "Billing period",
+      "amount": "Amount",
+      "reference": "Bank reference",
+      "submitted": "Submitted",
+      "currentStatus": "Status"
+    },
+    "status": {
+      "PendingReview": "Pending review",
+      "MoreInfoRequested": "More information requested",
+      "Approved": "Approved",
+      "Rejected": "Rejected",
+      "unknown": "Unknown status"
+    },
+    "actions": {
+      "retry": "Try again",
+      "refresh": "Refresh queue",
+      "signIn": "Sign in as Billing Admin",
+      "proof": "Open payment proof",
+      "approve": "Approve",
+      "reject": "Reject",
+      "moreInfo": "Request more information",
+      "confirm": "Confirm decision",
+      "cancel": "Cancel",
+      "deciding": "Recording decision…"
+    },
+    "messages": {
+      "approved": "Subscription activation was recorded. Customer notification delivery is handled separately.",
+      "rejected": "Rejection was recorded. Customer notification delivery is handled separately.",
+      "moreInfo": "The information request was recorded. Customer notification delivery is handled separately.",
+      "conflict": "Another reviewer already changed this submission. The queue was refreshed; review its current state before acting.",
+      "missing": "This submission is no longer available for review.",
+      "unknown": "The outcome could not be confirmed. The queue is being reconciled; no decision was replayed.",
+      "awaitingCustomer": "Awaiting customer resubmission. Decisions are disabled until it returns to Pending review.",
+      "unsafeProof": "The proof link is unavailable because it is not a safe HTTP or HTTPS address."
+    },
+    "dialog": {
+      "approve": {
+        "title": "Approve payment",
+        "confirm": "Approve payment for {customer} in tenant {tenant}? This activates or renews the subscription."
+      },
+      "reject": {
+        "title": "Reject payment",
+        "confirm": "Reject payment for {customer} in tenant {tenant}?",
+        "label": "Required rejection reason"
+      },
+      "request-more-info": {
+        "title": "Request more information",
+        "confirm": "Request more information from {customer} in tenant {tenant}?",
+        "label": "Required details"
+      },
+      "required": "Enter a non-blank value of no more than 4,000 characters."
+    }
   }
 }
