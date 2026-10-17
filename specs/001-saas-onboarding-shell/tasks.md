@@ -813,14 +813,14 @@ more information on it, independent of re-running Story 5's customer flow.
   - **Acceptance Criteria**: Matches Acceptance Scenarios 6.2/6.5/6.6.
   - **Roles**: Primary: GLM · Backup: Claude · Reviewer: Codex
 
-- [ ] T070 [US6] Implement `POST /internal/billing/payment-submissions/{id}/reject` and
+- [x] T070 [US6] Implement `POST /internal/billing/payment-submissions/{id}/reject` and
   `.../request-more-info` (customer notification via the `notification.billing_decision` queue, appends to
   `status_history`) in `backend/api/src/modules/billing-admin/billing-admin.service.ts`
   - **Dependencies**: T068, T021
   - **Acceptance Criteria**: Matches Acceptance Scenarios 6.3/6.4.
   - **Roles**: Primary: GLM · Backup: Claude · Reviewer: Codex
 
-- [ ] T071 [P] [US6] Build the Billing Admin review-queue UI (internal route group, submission detail with
+- [x] T071 [P] [US6] Build the Billing Admin review-queue UI (internal route group, submission detail with
   proof download via presigned URL, approve/reject/request-more-info actions) in
   `frontend/src/app/(internal)/billing-review/`
   - **Dependencies**: T024, T068, T069, T070
