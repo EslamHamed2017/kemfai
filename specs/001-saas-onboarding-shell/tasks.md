@@ -857,7 +857,7 @@ module outside plan entitlements, confirm the system blocks/upsells rather than 
     than the UI" (FR-006).
   - **Roles**: Primary: Codex · Backup: GLM · Reviewer: Gemini
 
-- [ ] T074 [P] [US4] Playwright EN/AR-RTL + axe test: module list with plan-included/upgrade indicators and
+- [x] T074 [P] [US4] Playwright EN/AR-RTL + axe test: module list with plan-included/upgrade indicators and
   selection-save flow in `frontend/tests/e2e/us4-module-selection.spec.ts`
   - **Dependencies**: T023
   - **Acceptance Criteria**: Matches Acceptance Scenarios 4.1/4.2/4.3.
@@ -886,7 +886,7 @@ module outside plan entitlements, confirm the system blocks/upsells rather than 
     remediation — see analysis.md).
   - **Roles**: Primary: GLM · Backup: Claude · Reviewer: Codex
 
-- [ ] T077 [P] [US4] Build the module/feature selection UI (included vs. upgrade-required indicators, blocked-
+- [x] T077 [P] [US4] Build the module/feature selection UI (included vs. upgrade-required indicators, blocked-
   selection upsell messaging) in `frontend/src/app/(onboarding)/modules/page.tsx`
   - **Dependencies**: T024, T076
   - **Acceptance Criteria**: Matches Acceptance Scenarios 4.1–4.4; reflects immediately in navigation/checklist
