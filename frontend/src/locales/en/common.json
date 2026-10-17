@@ -289,6 +289,32 @@
       "unavailable": "We couldn't load billing details. Please try again."
     }
   },
+  "moduleSelection": {
+    "title": "Choose workspace modules",
+    "intro": "Choose the modules your team will use. Your plan controls which modules can be enabled.",
+    "legend": "Available modules",
+    "included": "Included in your current plan",
+    "upgradeRequired": "Upgrade required",
+    "requiredPlan": "Available with the {plan} plan.",
+    "unknownPlan": "another published plan",
+    "loading": "Loading available modules…",
+    "empty": "No modules are available for your current plan.",
+    "loadError": "We couldn't load modules. Try again.",
+    "sessionExpired": "Your session has expired. Sign in again to choose modules.",
+    "retry": "Try again",
+    "save": "Save selection",
+    "saving": "Saving selection…",
+    "saved": "Module selection saved.",
+    "saveError": "We couldn't save your selection. Review it and try again.",
+    "blocked": "This selection cannot be enabled. It requires the {plan} plan.",
+    "navigationTitle": "Available workspace navigation",
+    "navigationEmpty": "No module navigation is enabled yet.",
+    "enabledStatus": "Enabled",
+    "workspaceModuleEyebrow": "Workspace module",
+    "workspaceModuleReady": "This module is enabled and available in your workspace.",
+    "manageModules": "Manage modules",
+    "checklistReflection": "Onboarding will track {count, plural, =0 {no enabled modules} one {# enabled module} other {# enabled modules}}."
+  },
   "billingReview": {
     "title": "Billing review",
     "intro": "Inspect submitted payment evidence and record one decision.",

@@ -52,14 +52,20 @@ describe('Modules contract (T072, against contracts/openapi.yaml)', () => {
       {
         key: 'module.accounting',
         name: 'Accounting',
+        nameAr: 'المحاسبة',
         includedInCurrentPlan: true,
+        selected: true,
         requiredPlanTier: null,
+        requiredPlanTierAr: null,
       },
       {
         key: 'module.inventory',
         name: 'Inventory',
+        nameAr: 'المخزون',
         includedInCurrentPlan: false,
+        selected: false,
         requiredPlanTier: 'Growth',
+        requiredPlanTierAr: 'النمو',
       },
     ]);
   });

@@ -703,11 +703,16 @@ components:
 
     ModuleOption:
       type: object
+      additionalProperties: false
+      required: [key, name, nameAr, includedInCurrentPlan, selected, requiredPlanTier, requiredPlanTierAr]
       properties:
         key: { type: string }
         name: { type: string }
+        nameAr: { type: string, nullable: true }
         includedInCurrentPlan: { type: boolean }
+        selected: { type: boolean }
         requiredPlanTier: { type: string, nullable: true }
+        requiredPlanTierAr: { type: string, nullable: true }
 
     ModuleSelectionResult:
       type: object

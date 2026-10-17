@@ -4,6 +4,8 @@ const http = require('http');
 const { createClient } = require('redis');
 
 let persisted = null; // ONE shared account: same user across both login sessions (T103's scenario)
+const moduleSelections = new Map();
+const revokedModuleTokens = new Set();
 
 const client = createClient({ url: process.env.REDIS_URL || 'redis://127.0.0.1:6379' });
 client.on('error', () => undefined);
@@ -39,10 +41,31 @@ const server = http.createServer(async (req, res) => {
     res.writeHead(200, { 'content-type': 'application/json' });
     return res.end(JSON.stringify({ locale: persisted }));
   }
+  if (url.pathname === '/__e2e/modules') {
+    const { token, featureKeys, revoked = false } = JSON.parse(await readBody(req));
+    moduleSelections.set(token, featureKeys);
+    if (revoked) revokedModuleTokens.add(token); else revokedModuleTokens.delete(token);
+    res.writeHead(204);
+    return res.end();
+  }
   if (url.pathname === '/__e2e/reset') {
     persisted = null;
     res.writeHead(204);
     return res.end();
+  }
+  if (url.pathname === '/modules') {
+    if (req.headers.authorization === 'Bearer t074-flagoff-token') {
+      res.writeHead(404, { 'content-type': 'application/json' });
+      return res.end(JSON.stringify({ statusCode: 404, message: 'This feature is not available' }));
+    }
+    const token = (req.headers.authorization || '').replace(/^Bearer /, '');
+    const selected = moduleSelections.get(token) || ['module.accounting'];
+    res.writeHead(200, { 'content-type': 'application/json' });
+    return res.end(JSON.stringify([
+      { key: 'module.accounting', name: 'Accounting', nameAr: 'المحاسبة', includedInCurrentPlan: true, selected: selected.includes('module.accounting'), requiredPlanTier: null, requiredPlanTierAr: null },
+      { key: 'module.inventory', name: 'Inventory', nameAr: 'المخزون', includedInCurrentPlan: !revokedModuleTokens.has(token), selected: selected.includes('module.inventory'), requiredPlanTier: revokedModuleTokens.has(token) ? 'Growth' : null, requiredPlanTierAr: revokedModuleTokens.has(token) ? 'النمو' : null },
+      { key: 'module.projects', name: 'Projects', nameAr: 'المشاريع', includedInCurrentPlan: false, selected: false, requiredPlanTier: 'Growth', requiredPlanTierAr: 'النمو' },
+    ]));
   }
   if (url.pathname !== '/accounts/me/locale') {
     res.writeHead(404);

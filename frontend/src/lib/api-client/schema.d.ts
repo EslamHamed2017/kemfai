@@ -778,14 +778,18 @@ export interface paths {
                     headers: {
                         [name: string]: unknown;
                     };
-                    content?: never;
+                    content: {
+                        "application/json": components["schemas"]["ModuleSelectionResult"];
+                    };
                 };
-                /** @description One or more feature keys not entitled by current plan (Acceptance Scenario 4.3) */
+                /** @description One or more keys are not selectable modules, or a global guard denies access */
                 403: {
                     headers: {
                         [name: string]: unknown;
                     };
-                    content?: never;
+                    content: {
+                        "application/json": components["schemas"]["ModuleSelectionForbiddenResponse"];
+                    };
                 };
             };
         };
@@ -1402,11 +1406,26 @@ export interface components {
             autoRestrictUnpaid?: boolean;
         };
         ModuleOption: {
-            key?: string;
-            name?: string;
-            includedInCurrentPlan?: boolean;
-            requiredPlanTier?: string | null;
+            key: string;
+            name: string;
+            nameAr: string | null;
+            includedInCurrentPlan: boolean;
+            selected: boolean;
+            requiredPlanTier: string | null;
+            requiredPlanTierAr: string | null;
         };
+        ModuleSelectionResult: {
+            featureKeys: string[];
+        };
+        ModuleSelectionEntitlementDenied: {
+            message: string;
+            featureKeys: string[];
+        };
+        ModuleSelectionGuardForbidden: components["schemas"]["NestErrorResponse"] & {
+            /** @enum {integer} */
+            statusCode: 403;
+        };
+        ModuleSelectionForbiddenResponse: components["schemas"]["ModuleSelectionEntitlementDenied"] | components["schemas"]["ModuleSelectionGuardForbidden"];
         SubscriptionView: {
             /** @enum {string} */
             status?: "PendingActivation" | "Active" | "Suspended" | "Cancelled";

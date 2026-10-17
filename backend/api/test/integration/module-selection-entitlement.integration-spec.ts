@@ -294,14 +294,19 @@ describe('PUT /modules/selection entitlement enforcement (T073)', () => {
   });
 
   it('GET /modules returns an actual schema-shaped HTTP 200 response', async () => {
+    odoo.authenticate.mockResolvedValue(7);
+    odoo.executeKw.mockResolvedValue(['module.accounting']);
     const response = await request(app.getHttpServer()).get('/modules').expect(200);
 
     expect(response.body).toEqual([
       {
         key: 'module.accounting',
         name: 'Accounting',
+        nameAr: 'المحاسبة',
         includedInCurrentPlan: true,
+        selected: true,
         requiredPlanTier: null,
+        requiredPlanTierAr: null,
       },
     ]);
     expect(() =>

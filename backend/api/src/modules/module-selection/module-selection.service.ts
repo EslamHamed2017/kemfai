@@ -16,8 +16,11 @@ import { Tenant } from '../tenants/entities/tenant.entity';
 export interface ModuleOption {
   key: string;
   name: string;
+  nameAr: string | null;
   includedInCurrentPlan: boolean;
+  selected: boolean;
   requiredPlanTier: string | null;
+  requiredPlanTierAr: string | null;
 }
 
 export interface ModuleSelectionResult {
@@ -85,6 +88,20 @@ export class ModuleSelectionService {
       : [];
     const featureByKey = new Map(features.map((feature) => [feature.key, feature]));
     const enabledCurrent = this.enabledKeys(current);
+    const { login, password } = provisioningCredentials();
+    const uid = await this.odoo.authenticate(context.database, login, password);
+    const persisted = await this.odoo.executeKw(
+      context.database,
+      uid,
+      password,
+      'kemfai.module.selection',
+      'kemfai_get_selection',
+      [],
+    );
+    if (!this.isStringArray(persisted)) {
+      throw new InternalServerErrorException('Module selection read returned invalid data');
+    }
+    const selected = new Set(persisted);
 
     return [...featureByKey.keys()].sort().map((key) => {
       const feature = featureByKey.get(key);
@@ -92,10 +109,13 @@ export class ModuleSelectionService {
       return {
         key,
         name: feature?.displayNameEn?.trim() || key,
+        nameAr: feature?.displayNameAr?.trim() || null,
         includedInCurrentPlan: enabledCurrent.has(key),
+        selected: selected.has(key) && enabledCurrent.has(key),
         requiredPlanTier: enabledCurrent.has(key)
           ? null
           : requiredPlan?.nameEn?.trim() || requiredPlan?.name || null,
+        requiredPlanTierAr: enabledCurrent.has(key) ? null : requiredPlan?.nameAr?.trim() || null,
       };
     });
   }

@@ -85,7 +85,9 @@ test('request-more-info requires details and becomes non-actionable', async ({ p
   await page.goto('/billing-review');
   await page.getByRole('button', { name: 'Request more information' }).click();
   await page.getByRole('button', { name: 'Confirm decision' }).click();
-  await expect(page.getByRole('alert')).toBeVisible();
+  await expect(page.locator('#decision-error')).toHaveText(
+    'Enter a non-blank value of no more than 4,000 characters.',
+  );
   await page.getByLabel('Required details').fill('Upload the complete receipt');
   await page.getByRole('button', { name: 'Confirm decision' }).click();
   await expect(page.getByText(/Awaiting customer resubmission/)).toBeVisible();

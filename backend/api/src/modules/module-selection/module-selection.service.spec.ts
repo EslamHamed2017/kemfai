@@ -62,11 +62,18 @@ describe('ModuleSelectionService (T076)', () => {
       if (target === Plan) {
         return {
           find: jest.fn().mockResolvedValue([
-            { id: PLAN_ID, name: 'Starter', nameEn: 'Starter', createdAt: new Date(0) },
+            {
+              id: PLAN_ID,
+              name: 'Starter',
+              nameEn: 'Starter',
+              nameAr: 'الأساسية',
+              createdAt: new Date(0),
+            },
             {
               id: '07600000-0000-4000-8000-000000000005',
               name: 'Growth',
               nameEn: 'Growth',
+              nameAr: 'النمو',
               createdAt: new Date(1),
             },
           ]),
@@ -75,8 +82,8 @@ describe('ModuleSelectionService (T076)', () => {
       if (target === Feature) {
         return {
           find: jest.fn().mockResolvedValue([
-            { key: 'module.accounting', displayNameEn: 'Accounting' },
-            { key: 'module.inventory', displayNameEn: 'Inventory' },
+            { key: 'module.accounting', displayNameEn: 'Accounting', displayNameAr: 'المحاسبة' },
+            { key: 'module.inventory', displayNameEn: 'Inventory', displayNameAr: 'المخزون' },
           ]),
         } as never;
       }
@@ -211,21 +218,63 @@ describe('ModuleSelectionService (T076)', () => {
           ? entitlementSet(PLAN_ID, ['module.accounting'])
           : entitlementSet(growthId, ['module.accounting', 'module.inventory']),
       );
+    jest.mocked(odoo.authenticate).mockResolvedValue(9);
+    jest.mocked(odoo.executeKw).mockResolvedValue(['module.accounting']);
 
     await expect(service.list(req)).resolves.toEqual([
       {
         key: 'module.accounting',
         name: 'Accounting',
+        nameAr: 'المحاسبة',
         includedInCurrentPlan: true,
+        selected: true,
         requiredPlanTier: null,
+        requiredPlanTierAr: null,
       },
       {
         key: 'module.inventory',
         name: 'Inventory',
+        nameAr: 'المخزون',
         includedInCurrentPlan: false,
+        selected: false,
         requiredPlanTier: 'Growth',
+        requiredPlanTierAr: 'النمو',
       },
     ]);
+    expect(odoo.executeKw).toHaveBeenCalledWith(
+      't076_tenant',
+      9,
+      expect.any(String),
+      'kemfai.module.selection',
+      'kemfai_get_selection',
+      [],
+    );
+  });
+
+  it('does not expose a persisted selection after its current entitlement is revoked', async () => {
+    const growthId = '07600000-0000-4000-8000-000000000005';
+    jest
+      .mocked(entitlements.getEntitlementSetForAccount)
+      .mockResolvedValue(entitlementSet(PLAN_ID, ['module.accounting']));
+    jest
+      .mocked(entitlements.getEntitlementSet)
+      .mockImplementation(async (planId) =>
+        planId === PLAN_ID
+          ? entitlementSet(PLAN_ID, ['module.accounting'])
+          : entitlementSet(growthId, ['module.accounting', 'module.inventory']),
+      );
+    jest.mocked(odoo.authenticate).mockResolvedValue(9);
+    jest.mocked(odoo.executeKw).mockResolvedValue(['module.inventory']);
+
+    await expect(service.list(req)).resolves.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          key: 'module.inventory',
+          includedInCurrentPlan: false,
+          selected: false,
+        }),
+      ]),
+    );
   });
 });
 
