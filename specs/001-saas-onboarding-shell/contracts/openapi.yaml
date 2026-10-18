@@ -475,6 +475,31 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/ChecklistState" }
+        "401":
+          description: Missing or invalid customer bearer token
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/NestErrorResponse" }
+        "403":
+          description: Caller lacks Workspace Owner permission or the configured trial window is restricted
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/NestErrorResponse" }
+        "404":
+          description: Checklist feature is disabled by configuration
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/NestErrorResponse" }
+        "500":
+          description: Tenant routing or Odoo readiness response failed closed
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/NestErrorResponse" }
+        "502":
+          description: Customer-facing BFF could not reach the checklist service
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/NestErrorResponse" }
 
   /support-access/grants:
     get:
@@ -811,6 +836,9 @@ components:
 
     ChecklistState:
       type: object
+      additionalProperties: false
+      required:
+        [customerAdded, bankAdded, productAdded, firstInvoiceReady, gatedOnSubscriptionActivation]
       properties:
         customerAdded: { type: boolean }
         bankAdded: { type: boolean }

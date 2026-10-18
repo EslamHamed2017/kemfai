@@ -9,13 +9,20 @@ import importlib.util
 import pathlib
 import unittest
 
+try:
+    from odoo.tests.common import BaseCase as OdooTestCase
+except ModuleNotFoundError as exc:
+    if exc.name != 'odoo':
+        raise
+    from unittest import TestCase as OdooTestCase
+
 module_path = pathlib.Path(__file__).resolve().parents[1] / 'validation.py'
 spec = importlib.util.spec_from_file_location('kemfai_company_setup_validation', module_path)
 validation = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(validation)
 
 
-class VatTaxRegistrationValidationTest(unittest.TestCase):
+class VatTaxRegistrationValidationTest(OdooTestCase):
     def test_empty_value_is_a_noop_even_with_no_rule(self):
         validation.validate_vat_tax_registration('XX', '', rules_by_country={})
         validation.validate_vat_tax_registration('XX', None, rules_by_country={})
