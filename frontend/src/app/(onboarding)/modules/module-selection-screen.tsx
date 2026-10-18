@@ -39,6 +39,7 @@ export function ModuleSelectionScreen({ initialOptions }: { initialOptions?: Mod
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
+  const [targetedKey, setTargetedKey] = useState('');
 
   const load = useCallback(async () => {
     setPhase('loading');
@@ -59,6 +60,17 @@ export function ModuleSelectionScreen({ initialOptions }: { initialOptions?: Mod
   }, []);
 
   useEffect(() => { void load(); }, [load]);
+
+  useEffect(() => {
+    const targetFromHash = () => {
+      const key = decodeURIComponent(window.location.hash.slice(1));
+      setTargetedKey(key);
+      window.requestAnimationFrame(() => document.getElementById(key)?.focus());
+    };
+    targetFromHash();
+    window.addEventListener('hashchange', targetFromHash);
+    return () => window.removeEventListener('hashchange', targetFromHash);
+  }, [options]);
 
   if (phase === 'denied') return null;
 
@@ -94,7 +106,7 @@ export function ModuleSelectionScreen({ initialOptions }: { initialOptions?: Mod
   return <main dir={locale === 'ar' ? 'rtl' : 'ltr'} className="kemfai-module-shell">
     {header}<h1 className="kemfai-module-title">{t('title')}</h1><p className="kemfai-module-intro">{t('intro')}</p>
     <fieldset disabled={saving} style={{ border: 0, padding: 0 }}><legend>{t('legend')}</legend>
-      <div className="kemfai-module-grid">{options.map((option) => <Tile id={option.key} key={option.key} className="kemfai-module-card" data-included={option.includedInCurrentPlan}>
+      <div className="kemfai-module-grid">{options.map((option) => <Tile id={option.key} key={option.key} tabIndex={-1} className="kemfai-module-card" data-included={option.includedInCurrentPlan} data-targeted={targetedKey === option.key ? 'true' : 'false'}>
         <Checkbox id={`select-${option.key}`} labelText={label(option)} checked={selected.has(option.key)} disabled={!option.includedInCurrentPlan} onChange={(_event, data) => { const next = new Set(selected); if (data.checked) next.add(option.key); else next.delete(option.key); setSelected(next); setSaved(false); setSaveError(null); }} />
         <Tag type={option.includedInCurrentPlan ? 'purple' : 'gray'}>{option.includedInCurrentPlan ? t('included') : t('upgradeRequired')}</Tag>
         {!option.includedInCurrentPlan && <p id={`${option.key}-upgrade`} data-testid={`module-${option.key}-upgrade`}>{t('requiredPlan', { plan: locale === 'ar' ? option.requiredPlanTierAr ?? option.requiredPlanTier ?? t('unknownPlan') : option.requiredPlanTier ?? t('unknownPlan') })}</p>}

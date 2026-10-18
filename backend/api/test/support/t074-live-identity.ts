@@ -22,9 +22,15 @@ async function main(): Promise<void> {
     tenantId: tenantB,
     expiresIn: '30m',
   });
+  const tokenNonOwner = await fixture.signAccessToken({
+    sub: '07400000-0000-4000-8000-000000000001',
+    roles: ['Accountant'],
+    tenantId: tenantA,
+    expiresIn: '30m',
+  });
   await writeFile(
     output,
-    JSON.stringify({ issuer, audience, jwksUri: fixture.jwksUri, tokenA, tokenB }),
+    JSON.stringify({ issuer, audience, jwksUri: fixture.jwksUri, tokenA, tokenB, tokenNonOwner }),
     { mode: 0o600 },
   );
   const stop = async () => {

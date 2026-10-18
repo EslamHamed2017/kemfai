@@ -23,6 +23,7 @@ import { TrialExpirySweepModule } from './integrations/provisioning/trial-expiry
 import { BillingCustomerModule } from './modules/billing-customer/billing-customer.module';
 import { BillingAdminModule } from './modules/billing-admin/billing-admin.module';
 import { ModuleSelectionModule } from './modules/module-selection/module-selection.module';
+import { ChecklistModule } from './modules/checklist/checklist.module';
 
 @Module({
   imports: [
@@ -36,6 +37,7 @@ import { ModuleSelectionModule } from './modules/module-selection/module-selecti
     BillingCustomerModule,
     BillingAdminModule,
     ModuleSelectionModule,
+    ChecklistModule,
     AccountsModule,
     QueuesModule,
     TrialExpirySweepModule,

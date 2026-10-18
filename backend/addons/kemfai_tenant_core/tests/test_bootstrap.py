@@ -3,6 +3,13 @@ import importlib.util
 import pathlib
 import unittest
 
+try:
+    from odoo.tests.common import BaseCase as OdooTestCase
+except ModuleNotFoundError as exc:
+    if exc.name != 'odoo':
+        raise
+    from unittest import TestCase as OdooTestCase
+
 hook_path = pathlib.Path(__file__).resolve().parents[1] / 'hooks.py'
 spec = importlib.util.spec_from_file_location('tenant_core_hooks', hook_path)
 hooks = importlib.util.module_from_spec(spec)
@@ -25,7 +32,7 @@ class Companies:
         self.created.append(values)
 
 
-class BootstrapTest(unittest.TestCase):
+class BootstrapTest(OdooTestCase):
     def test_retains_existing_base_company(self):
         companies = Companies(1)
         hooks.ensure_initial_company({'res.company': companies})

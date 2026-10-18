@@ -30,7 +30,9 @@ async function freshLogin(page: Page, startLocale?: 'ar' | 'en'): Promise<void> 
   sessionCounter += 1;
   const id = `e2e-session-${Date.now()}-${sessionCounter}`;
   const token = `e2e-token-${id}`;
-  await page.request.post('http://127.0.0.1:4100/__e2e/seed', { data: { sessionId: id, token, locale: startLocale ?? null } });
+  await page.request.post('http://127.0.0.1:4100/__e2e/seed', {
+    data: { sessionId: id, token, locale: startLocale ?? null, accountKey: 't103-account' },
+  });
   await page.route(/\/auth\/login/, (route) =>
     route.fulfill({
       status: 302,
@@ -43,10 +45,11 @@ async function freshLogin(page: Page, startLocale?: 'ar' | 'en'): Promise<void> 
 }
 
 test.beforeEach(async () => {
-  await fetch('http://127.0.0.1:4100/__e2e/reset', { method: 'POST' });
+  await fetch('http://127.0.0.1:4100/__e2e/reset?accountKey=t103-account', { method: 'POST' });
 });
 
 test.describe('T103 — locale persists across fresh login sessions', () => {
+  test.describe.configure({ mode: 'serial' });
   test('ar choice survives logout → fresh login in a new context', async ({ browser }) => {
     test.setTimeout(120_000);
 
@@ -55,23 +58,22 @@ test.describe('T103 — locale persists across fresh login sessions', () => {
     const page1 = await ctx1.newPage();
     await freshLogin(page1);
 
-    let patchSeen = false;
-    page1.on('request', (req) => {
-      if (req.url().includes('/api/accounts/me/locale') && req.method() === 'PATCH') patchSeen = true;
-    });
-
     await page1.goto('/auth/login', { timeout: 90_000, waitUntil: 'domcontentloaded' });
     await page1.waitForURL(/\/(plans|$)/);
     await expect(page1.getByTestId('locale-switcher')).toBeVisible();
 
+    const patch = page1.waitForRequest(
+      (request) =>
+        request.url().includes('/api/accounts/me/locale') && request.method() === 'PATCH',
+    );
     await page1.getByTestId('locale-switcher').click();
+    await patch;
     await page1.waitForFunction(() => document.documentElement.lang === 'ar');
-    expect(patchSeen).toBe(true); // T104's end-to-end wiring actually fired.
 
     // The persistence MUST have landed server-side before we log out — assert it
     // directly so a silent BFF/upstream failure fails HERE, loudly, not downstream.
     await expect
-      .poll(() => page1.request.get('http://127.0.0.1:4100/__e2e/state').then((r) => r.json()), { timeout: 5_000 })
+      .poll(() => page1.request.get('http://127.0.0.1:4100/__e2e/state?accountKey=t103-account').then((r) => r.json()), { timeout: 5_000 })
       .toEqual({ locale: 'ar' });
 
     await ctx1.close(); // logout: every cookie of session 1 is gone.
