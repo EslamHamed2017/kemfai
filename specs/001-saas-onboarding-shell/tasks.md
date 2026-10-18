@@ -910,21 +910,21 @@ change without requiring later invoicing slices.
 
 ### Tests for User Story 7
 
-- [ ] T078 [P] [US7] Contract test: `GET /onboarding/checklist` against `contracts/openapi.yaml` in
+- [x] T078 [P] [US7] Contract test: `GET /onboarding/checklist` against `contracts/openapi.yaml` in
   `backend/api/test/contract/checklist.contract-spec.ts`
   - **Dependencies**: T022
   - **Acceptance Criteria**: Response matches `ChecklistState` schema exactly, including
     `gatedOnSubscriptionActivation`.
   - **Roles**: Primary: Codex · Backup: GLM · Reviewer: Gemini
 
-- [ ] T079 [P] [US7] Integration test: create then delete each underlying record (customer/bank/product) and
+- [x] T079 [P] [US7] Integration test: create then delete each underlying record (customer/bank/product) and
   assert the checklist item flips back to incomplete without any direct checklist mutation, in
   `backend/api/test/integration/checklist-liveness.integration-spec.ts`
   - **Dependencies**: T026
   - **Acceptance Criteria**: Direct test for SC-010 and the Edge Case on deleted underlying records.
   - **Roles**: Primary: Codex · Backup: GLM · Reviewer: Gemini
 
-- [ ] T080 [P] [US7] Playwright EN/AR-RTL + axe test: checklist empty state, item completion without a manual
+- [x] T080 [P] [US7] Playwright EN/AR-RTL + axe test: checklist empty state, item completion without a manual
   reload, and activation-gated first-invoice messaging in `frontend/tests/e2e/us7-checklist.spec.ts`
   - **Dependencies**: T023
   - **Acceptance Criteria**: Matches Acceptance Scenarios 7.1–7.4.
@@ -932,7 +932,7 @@ change without requiring later invoicing slices.
 
 ### Implementation for User Story 7
 
-- [ ] T081 [US7] Implement the `kemfai_onboarding_checklist` Odoo addon's computed views
+- [x] T081 [US7] Implement the `kemfai_onboarding_checklist` Odoo addon's computed views
   (`customer_added`, `bank_added`, `product_added`, `first_invoice_ready`) over `res.partner` /
   `res.partner.bank`/`account.journal` / `product.product`, with no independently-stored "done" flag, in
   `backend/addons/kemfai_onboarding_checklist/models/`
@@ -941,7 +941,7 @@ change without requiring later invoicing slices.
     SC-010.
   - **Roles**: Primary: GLM · Backup: Claude · Reviewer: Codex
 
-- [ ] T082 [US7] Implement `GET /onboarding/checklist` (live-computed via Odoo JSON-RPC,
+- [x] T082 [US7] Implement `GET /onboarding/checklist` (live-computed via Odoo JSON-RPC,
   `gatedOnSubscriptionActivation` sourced from `Subscription.status`) in
   `backend/api/src/modules/checklist/checklist.controller.ts` and `.service.ts`
   - **Dependencies**: T026, T081, T011, T100, T101
@@ -954,7 +954,7 @@ change without requiring later invoicing slices.
     T076, checklist) that must each carry this guard explicitly (Round 2 remediation — see analysis.md).
   - **Roles**: Primary: GLM · Backup: Claude · Reviewer: Codex
 
-- [ ] T083 [P] [US7] Build the onboarding checklist UI (four items with direct links, empty state, activation-
+- [x] T083 [P] [US7] Build the onboarding checklist UI (four items with direct links, empty state, activation-
   gate indicator distinct from setup-readiness) in `frontend/src/app/(onboarding)/checklist/page.tsx`
   - **Dependencies**: T024, T082
   - **Acceptance Criteria**: Matches Acceptance Scenarios 7.1–7.4; updates without a page reload initiated
