@@ -108,7 +108,12 @@ export function SupportAccessScreen({
       {message ? (
         <InlineNotification kind="error" lowContrast hideCloseButton title={message} />
       ) : null}
-      <h2>{t('history')}</h2>
+      <div className="kemfai-support-history-heading">
+        <h2>{t('history')}</h2>
+        <Button kind="ghost" size="sm" disabled={phase === 'loading'} onClick={() => void load()}>
+          {t('refresh')}
+        </Button>
+      </div>
       {phase === 'loading' ? <InlineLoading description={t('loading')} /> : null}
       {phase === 'session' || phase === 'error' ? (
         <>
@@ -186,11 +191,11 @@ export function SupportAccessScreen({
             <h3>{t('usageHistory')}</h3>
             {grant.usage.length === 0 ? (
               <p>{t('noUsage')}</p>
-          ) : (
-            <ul className="kemfai-support-usage">
-              {grant.usage.map((usage) => (
-                <li key={usage.id}>
-                  <dl>
+            ) : (
+              <ul className="kemfai-support-usage">
+                {grant.usage.map((usage) => (
+                  <li key={usage.id}>
+                    <dl>
                       <div>
                         <dt>{t('usedBy')}</dt>
                         <dd>{usage.usedBy}</dd>
@@ -211,10 +216,10 @@ export function SupportAccessScreen({
                             : t('allowed')}
                         </dd>
                       </div>
-                  </dl>
-                </li>
-              ))}
-            </ul>
+                    </dl>
+                  </li>
+                ))}
+              </ul>
             )}
           </Tile>
         ))}

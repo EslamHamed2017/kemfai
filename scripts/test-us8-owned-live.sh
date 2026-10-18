@@ -66,9 +66,9 @@ psql "INSERT INTO subscription(tenant_id,plan_id,billing_cycle,status,current_pe
 identity_json="$private_dir/identity.json"
 (cd "$api_dir"; export US8_IDENTITY_OUTPUT="$identity_json" US8_TENANT_A_ID="$tenant_a" US8_TENANT_B_ID="$tenant_b"; exec setsid ./node_modules/.bin/ts-node test/support/us8-live-identity.ts) >"$evidence/identity.log" 2>&1 & identity_pid=$!
 for _ in $(seq 1 100); do [ -s "$identity_json" ] && break; sleep .1; done; [ -s "$identity_json" ]
-readarray -t ident < <(python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); [print(d[k]) for k in ("customerIssuer","internalIssuer","audience","jwksUri","ownerA","ownerB","support","customerSupportSpoof")]' "$identity_json")
-customer_issuer="${ident[0]}"; internal_issuer="${ident[1]}"; audience="${ident[2]}"; jwks="${ident[3]}"; token_a="${ident[4]}"; token_b="${ident[5]}"; token_support="${ident[6]}"; token_spoof="${ident[7]}"
-printf '%s\0%s\0%s\0%s\0' "$token_a" "$token_b" "$token_support" "$token_spoof" >>"$private_dir/secrets"
+readarray -t ident < <(python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); [print(d[k]) for k in ("customerIssuer","internalIssuer","audience","jwksUri","ownerA","ownerB","support","customerSupportSpoof","wrongInternalRole")]' "$identity_json")
+customer_issuer="${ident[0]}"; internal_issuer="${ident[1]}"; audience="${ident[2]}"; jwks="${ident[3]}"; token_a="${ident[4]}"; token_b="${ident[5]}"; token_support="${ident[6]}"; token_spoof="${ident[7]}"; token_wrong_role="${ident[8]}"
+printf '%s\0%s\0%s\0%s\0%s\0' "$token_a" "$token_b" "$token_support" "$token_spoof" "$token_wrong_role" >>"$private_dir/secrets"
 session_a="$(openssl rand -hex 24)"; now_ms="$(date +%s000)"; exp_ms="$((now_ms+1800000))"
 docker exec "$redis" redis-cli -n 14 SET "kemfai:session:$session_a" "{\"accessToken\":\"$token_a\",\"refreshToken\":\"synthetic\",\"accessExpiresAt\":$exp_ms,\"refreshExpiresAt\":$exp_ms}" PX 1800000 >/dev/null
 
@@ -79,7 +79,7 @@ for _ in $(seq 1 60); do curl -sf "http://127.0.0.1:$api_port/" >/dev/null && br
 (cd "$frontend_dir"; export NODE_ENV=production PORT="$frontend_port" KEMFAI_API_URL="http://127.0.0.1:$api_port" REDIS_URL="redis://127.0.0.1:$redis_port/14" NEXT_PUBLIC_DEFAULT_LOCALE=en KEYCLOAK_ISSUER="$customer_issuer" KEYCLOAK_BACKCHANNEL_URL="$customer_issuer" KEYCLOAK_JWKS_URI="$jwks" KEYCLOAK_CLIENT_ID=kemfai-api KEYCLOAK_REDIRECT_URI="http://127.0.0.1:$frontend_port/auth/callback"; exec setsid npx next start -H 127.0.0.1 -p "$frontend_port") >"$evidence/frontend.log" 2>&1 & frontend_pid=$!
 for _ in $(seq 1 90); do curl -sf "http://127.0.0.1:$frontend_port/" >/dev/null && break; sleep .5; done; curl -sf "http://127.0.0.1:$frontend_port/" >/dev/null
 
-export US8_BASE_URL="http://127.0.0.1:$frontend_port" US8_API_URL="http://127.0.0.1:$api_port" US8_SESSION_A="$session_a" US8_OWNER_A_TOKEN="$token_a" US8_SUPPORT_TOKEN="$token_support" US8_CUSTOMER_SUPPORT_SPOOF_TOKEN="$token_spoof" US8_OWNER_ACCOUNT_ID="$acct_a" US8_TENANT_A_ID="$tenant_a" US8_TENANT_B_ID="$tenant_b" US8_PG_CONTAINER="$pg" US8_PG_USER="$pg_user" US8_CONTROL_DB="$control_db" US8_PLAYWRIGHT_OUTPUT_DIR="$evidence/playwright"
+export US8_BASE_URL="http://127.0.0.1:$frontend_port" US8_API_URL="http://127.0.0.1:$api_port" US8_SESSION_A="$session_a" US8_OWNER_A_TOKEN="$token_a" US8_SUPPORT_TOKEN="$token_support" US8_CUSTOMER_SUPPORT_SPOOF_TOKEN="$token_spoof" US8_WRONG_INTERNAL_ROLE_TOKEN="$token_wrong_role" US8_OWNER_ACCOUNT_ID="$acct_a" US8_TENANT_A_ID="$tenant_a" US8_TENANT_B_ID="$tenant_b" US8_PG_CONTAINER="$pg" US8_REDIS_CONTAINER="$redis" US8_PG_USER="$pg_user" US8_CONTROL_DB="$control_db" US8_PLAYWRIGHT_OUTPUT_DIR="$evidence/playwright"
 (cd "$frontend_dir" && PLAYWRIGHT_BROWSERS_PATH="$(node ../scripts/fixtures/t071_resolve_playwright_browser.mjs)" npx playwright test --config tests/e2e-live/playwright.us8-live.config.ts) >"$evidence/browser.log" 2>&1
 cp "$evidence"/playwright/*/*.png "$evidence"/ 2>/dev/null || true
 psql "SELECT json_build_object('grants',count(DISTINCT g.id),'usages',count(DISTINCT u.id),'audits',count(DISTINCT a.id)) FROM support_access_grant g LEFT JOIN support_access_usage u ON u.grant_id=g.id LEFT JOIN audit_event a ON a.subject_id=g.id" >"$evidence/db-audit-counts.json"

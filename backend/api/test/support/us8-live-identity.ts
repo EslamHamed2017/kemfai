@@ -35,6 +35,12 @@ async function main() {
     tenantId: tenantA,
     expiresIn: '30m',
   });
+  const wrongInternalRole = await fixture.signAccessToken({
+    sub: '08400000-0000-4000-8000-000000000004',
+    issuer: internalIssuer,
+    roles: ['TechnicalAdmin'],
+    expiresIn: '30m',
+  });
   await writeFile(
     output,
     JSON.stringify({
@@ -46,6 +52,7 @@ async function main() {
       ownerB,
       support,
       customerSupportSpoof,
+      wrongInternalRole,
     }),
     { mode: 0o600 },
   );

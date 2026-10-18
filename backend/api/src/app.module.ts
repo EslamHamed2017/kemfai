@@ -68,9 +68,11 @@ import { SupportAccessSweepModule } from './integrations/provisioning/support-ac
     // TrialWindowGuard only acts on handlers declaring @EnforceTrialWindow().
     { provide: APP_GUARD, useClass: BearerAuthGuard },
     { provide: APP_GUARD, useClass: TenantScopeGuard },
-    { provide: APP_GUARD, useClass: RoleGuard },
-    { provide: APP_GUARD, useClass: SupportAccessGuard },
     { provide: APP_GUARD, useClass: FeatureFlagGuard },
+    // Hide disabled surfaces before grant lookup/audit. Grant-scoped authorization then runs
+    // before the general role gate so wrong internal roles are recorded as denied attempts.
+    { provide: APP_GUARD, useClass: SupportAccessGuard },
+    { provide: APP_GUARD, useClass: RoleGuard },
     { provide: APP_GUARD, useClass: TrialWindowGuard },
     // Global idempotency-key replay guard (T020) — applies to every mutating route, current
     // and future, without each one opting in; it only activates when a caller actually

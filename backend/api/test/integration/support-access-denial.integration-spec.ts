@@ -13,6 +13,7 @@ import {
   SUPPORT_WORKSPACE_SUMMARY_ACTION,
   SupportAccessGrant,
   SupportAccessGranteeRole,
+  SupportAccessGrantStatus,
 } from '../../src/modules/support-access/entities/support-access-grant.entity';
 import { FakeKeycloak, startFakeKeycloak } from '../support/fake-keycloak';
 
@@ -23,6 +24,7 @@ describe('support access live denial and audit (T085/T089)', () => {
   let keycloak: FakeKeycloak;
   let app: INestApplication;
   let token: string;
+  let wrongRoleToken: string;
   let owner: Account;
   let tenant: Tenant;
   let otherTenant: Tenant;
@@ -41,6 +43,10 @@ describe('support access live denial and audit (T085/T089)', () => {
     app = moduleRef.createNestApplication();
     await app.init();
     token = await keycloak.signAccessToken({ sub: supportUser, roles: ['Support'] });
+    wrongRoleToken = await keycloak.signAccessToken({
+      sub: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+      roles: ['TechnicalAdmin'],
+    });
   });
   beforeEach(async () => {
     const accounts = controlDataSource.getRepository(Account);
@@ -86,6 +92,9 @@ describe('support access live denial and audit (T085/T089)', () => {
       .query({ grantId })
       .set('Authorization', `Bearer ${token}`);
 
+  const deniedAudits = () =>
+    controlDataSource.getRepository(AuditEvent).findBy({ action: 'support_access.grant.denied' });
+
   it.each([['expired'], ['revoked']] as const)(
     'denies every %s existing-session attempt and writes usage plus audit every time',
     async (kind) => {
@@ -119,6 +128,80 @@ describe('support access live denial and audit (T085/T089)', () => {
         .getRepository(SupportAccessUsage)
         .findOneByOrFail({ grantId: row.id }),
     ).toMatchObject({ wasDenied: true, denialReason: 'wrong_tenant' });
+  });
+  it('audits missing, malformed, unknown-grant, and wrong-internal-role attempts safely', async () => {
+    const row = await grant(new Date(Date.now() + 60_000));
+    await request(app.getHttpServer())
+      .get(`/internal/support-access/workspaces/${tenant.id}/summary`)
+      .set('Authorization', `Bearer ${token}`)
+      .expect(403);
+    await call(tenant.id, 'not-a-uuid').expect(403);
+    const unknown = randomUUID();
+    await call(tenant.id, unknown).expect(403);
+    await request(app.getHttpServer())
+      .get(`/internal/support-access/workspaces/${tenant.id}/summary`)
+      .query({ grantId: row.id })
+      .set('Authorization', `Bearer ${wrongRoleToken}`)
+      .expect(403);
+
+    const audits = await deniedAudits();
+    expect(audits).toHaveLength(4);
+    expect(audits.map((event) => event.payload.denial_reason)).toEqual(
+      expect.arrayContaining([
+        'grant_required',
+        'invalid_grant',
+        'unknown_grant',
+        'action_not_permitted',
+      ]),
+    );
+    expect(JSON.stringify(audits)).not.toMatch(/authorization|bearer|not-a-uuid|query/i);
+    expect(
+      await controlDataSource
+        .getRepository(SupportAccessUsage)
+        .countBy({ grantId: row.id, wasDenied: true }),
+    ).toBe(1);
+  });
+  it('hides a disabled internal route before authorization and records no usage or audit', async () => {
+    const row = await grant(new Date(Date.now() + 60_000));
+    await controlDataSource
+      .getRepository(FeatureFlag)
+      .update({ featureKey: 'module.support_access' }, { enabled: false });
+    await call(tenant.id, row.id).expect(404);
+    expect(
+      await controlDataSource.getRepository(SupportAccessUsage).countBy({ grantId: row.id }),
+    ).toBe(0);
+    expect(await controlDataSource.getRepository(AuditEvent).countBy({ subjectId: row.id })).toBe(
+      0,
+    );
+    await controlDataSource
+      .getRepository(FeatureFlag)
+      .update({ featureKey: 'module.support_access' }, { enabled: true });
+  });
+  it('serializes revoke versus use so no allowed use can commit after revocation', async () => {
+    const row = await grant(new Date(Date.now() + 60_000));
+    const revoke = controlDataSource.transaction(async (manager) => {
+      const locked = await manager
+        .getRepository(SupportAccessGrant)
+        .createQueryBuilder('grant')
+        .setLock('pessimistic_write')
+        .where('grant.id = :id', { id: row.id })
+        .getOneOrFail();
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      locked.status = SupportAccessGrantStatus.REVOKED;
+      locked.revokedAt = new Date();
+      await manager.save(locked);
+      return locked.revokedAt;
+    });
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    const use = call(tenant.id, row.id);
+    const [revokedAt, response] = await Promise.all([revoke, use]);
+    expect(response.status).toBe(403);
+    const usage = await controlDataSource
+      .getRepository(SupportAccessUsage)
+      .findOneByOrFail({ grantId: row.id });
+    expect(usage.wasDenied).toBe(true);
+    expect(usage.denialReason).toBe('revoked');
+    expect(usage.usedAt.getTime()).toBeGreaterThanOrEqual(revokedAt.getTime());
   });
   it('returns a meaningful safe workspace summary and records each permitted read', async () => {
     const row = await grant(new Date(Date.now() + 60_000));

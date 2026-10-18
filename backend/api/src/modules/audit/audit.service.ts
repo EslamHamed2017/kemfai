@@ -185,7 +185,7 @@ export interface SupportAccessGrantUsedInput {
 
 export interface SupportAccessGrantDeniedInput {
   internalUserId: string;
-  tenantId: string;
+  tenantId: string | null;
   grantId: string;
   denialReason: string;
   occurredAt?: Date;

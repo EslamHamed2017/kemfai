@@ -1,4 +1,15 @@
-import { Body, Controller, Get, Param, ParseUUIDPipe, Post, Query, Req } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  HttpCode,
+  HttpStatus,
+  Param,
+  ParseUUIDPipe,
+  Post,
+  Query,
+  Req,
+} from '@nestjs/common';
 import { RequireFeatureFlag } from '../../common/decorators/feature-flag.decorator';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { RequireSupportAccess } from '../../common/decorators/support-access.decorator';
@@ -26,6 +37,7 @@ export class SupportAccessController {
   }
 
   @Post(':grantId/revoke')
+  @HttpCode(HttpStatus.OK)
   @TenantOwnedResource({ resource: 'support_access_grant', idParam: 'grantId' })
   revoke(@Req() req: TenantScopedRequest, @Param('grantId', new ParseUUIDPipe()) grantId: string) {
     return this.supportAccess.revoke(req, grantId);

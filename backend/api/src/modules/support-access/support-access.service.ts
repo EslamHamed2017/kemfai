@@ -67,6 +67,15 @@ export class SupportAccessService {
     return expiry;
   }
 
+  assertRevocable(grant: SupportAccessGrant, now = new Date()): void {
+    if (
+      grant.status !== SupportAccessGrantStatus.ACTIVE ||
+      grant.revokedAt ||
+      grant.expiresAt.getTime() <= now.getTime()
+    )
+      throw new ConflictException('Grant is not active');
+  }
+
   async list(req: TenantScopedRequest): Promise<SupportAccessGrantView[]> {
     const { callerTenantId } = await this.tenantContext.resolveForRequest(req);
     if (!callerTenantId) throw new NotFoundException('Workspace not found');
@@ -141,8 +150,7 @@ export class SupportAccessService {
         })
         .getOne();
       if (!grant) throw new NotFoundException('Grant not found');
-      if (grant.status !== SupportAccessGrantStatus.ACTIVE || grant.revokedAt)
-        throw new ConflictException('Grant is not active');
+      this.assertRevocable(grant);
       const revokedAt = new Date();
       grant.revokedAt = revokedAt;
       grant.status = SupportAccessGrantStatus.REVOKED;

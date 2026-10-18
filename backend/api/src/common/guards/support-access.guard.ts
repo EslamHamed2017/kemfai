@@ -15,8 +15,11 @@ import {
   SupportAccessGrant,
   SupportAccessGranteeRole,
 } from '../../modules/support-access/entities/support-access-grant.entity';
+import { Tenant } from '../../modules/tenants/entities/tenant.entity';
 
 const SAFE_ACTION = /^[a-z][a-z0-9]*(?:\.[a-z0-9_]+)+$/;
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const UNKNOWN_GRANT_ID = '00000000-0000-4000-8000-000000000000';
 
 @Injectable()
 export class SupportAccessGuard implements CanActivate {
@@ -55,10 +58,17 @@ export class SupportAccessGuard implements CanActivate {
     const req = context.switchToHttp().getRequest<TenantScopedRequest>();
     const targetTenantId = req.params?.tenantId;
     const grantId = req.query?.grantId;
-    if (typeof targetTenantId !== 'string' || typeof grantId !== 'string')
-      throw new ForbiddenException('Explicit tenant and grant are required');
 
     try {
+      if (typeof grantId !== 'string' || !UUID.test(grantId)) {
+        await this.auditAttemptWithoutGrant(
+          req,
+          typeof targetTenantId === 'string' ? targetTenantId : null,
+          typeof grantId === 'string' ? 'invalid_grant' : 'grant_required',
+          safeAction,
+        );
+        throw new ForbiddenException('Support access denied');
+      }
       const denied = await controlDataSource.transaction(async (manager) => {
         // Serialize evaluation with revoke and expiry transitions so an already-committed
         // revocation can never be followed by a stale-read allowed usage.
@@ -68,14 +78,30 @@ export class SupportAccessGuard implements CanActivate {
           .setLock('pessimistic_write')
           .where('grant.id = :grantId', { grantId })
           .getOne();
-        if (!grant) throw new ForbiddenException('Support access denied');
+        if (!grant) {
+          const tenant =
+            typeof targetTenantId === 'string' && UUID.test(targetTenantId)
+              ? await manager.getRepository(Tenant).findOneBy({ id: targetTenantId })
+              : null;
+          await this.audit.recordSupportAccessGrantDenied(
+            {
+              internalUserId: req.auth!.keycloakUserId,
+              tenantId: tenant?.id ?? null,
+              grantId,
+              denialReason: 'unknown_grant',
+            },
+            manager,
+          );
+          return true;
+        }
         let denialReason: string | null = null;
         if (
           !(req.auth?.roles ?? []).includes('Support') ||
           grant.granteeRole !== SupportAccessGranteeRole.SUPPORT
         )
           denialReason = 'action_not_permitted';
-        else if (grant.tenantId !== targetTenantId) denialReason = 'wrong_tenant';
+        else if (typeof targetTenantId !== 'string' || grant.tenantId !== targetTenantId)
+          denialReason = 'wrong_tenant';
         else if (grant.revokedAt) denialReason = 'revoked';
         else if (grant.expiresAt.getTime() <= Date.now()) denialReason = 'expired';
         else if (!grant.permittedActions.includes(safeAction))
@@ -83,6 +109,9 @@ export class SupportAccessGuard implements CanActivate {
         const usage = await manager.getRepository(SupportAccessUsage).save({
           grantId: grant.id,
           usedBy: req.auth!.keycloakUserId,
+          // PostgreSQL now() is fixed at transaction start. This request may have waited on
+          // the grant row behind a concurrent revoke, so persist the post-lock decision time.
+          usedAt: new Date(),
           actionSummary: safeAction,
           wasDenied: denialReason !== null,
           denialReason,
@@ -117,5 +146,29 @@ export class SupportAccessGuard implements CanActivate {
       throw new InternalServerErrorException('Support access evaluation could not be audited');
     }
     return true;
+  }
+
+  private async auditAttemptWithoutGrant(
+    req: TenantScopedRequest,
+    targetTenantId: string | null,
+    denialReason: 'grant_required' | 'invalid_grant',
+    action: string,
+  ): Promise<void> {
+    await controlDataSource.transaction(async (manager) => {
+      const tenant =
+        targetTenantId && UUID.test(targetTenantId)
+          ? await manager.getRepository(Tenant).findOneBy({ id: targetTenantId })
+          : null;
+      await this.audit.recordSupportAccessGrantDenied(
+        {
+          internalUserId: req.auth!.keycloakUserId,
+          tenantId: tenant?.id ?? null,
+          grantId: UNKNOWN_GRANT_ID,
+          denialReason,
+        },
+        manager,
+      );
+      void action;
+    });
   }
 }

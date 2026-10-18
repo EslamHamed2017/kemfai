@@ -1,4 +1,4 @@
-import { UnprocessableEntityException } from '@nestjs/common';
+import { ConflictException, UnprocessableEntityException } from '@nestjs/common';
 import { SupportAccessService } from './support-access.service';
 
 describe('SupportAccessService grant validation (T088 RED)', () => {
@@ -17,5 +17,18 @@ describe('SupportAccessService grant validation (T088 RED)', () => {
     expect(service.validateExpiry('2026-10-19T19:00:00.000Z', now)).toEqual(
       new Date('2026-10-19T19:00:00.000Z'),
     );
+  });
+
+  it('rejects revocation when wall-clock expiry has passed before the sweep', () => {
+    expect(() =>
+      service.assertRevocable(
+        {
+          status: 'Active',
+          revokedAt: null,
+          expiresAt: new Date('2026-10-18T18:59:59.000Z'),
+        } as never,
+        new Date('2026-10-18T19:00:00.000Z'),
+      ),
+    ).toThrow(ConflictException);
   });
 });

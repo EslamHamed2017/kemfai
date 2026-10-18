@@ -334,10 +334,26 @@
     "active": "Subscription active — the separate full-usage gate is clear.",
     "live": "This checklist updates automatically when source records change.",
     "items": {
-      "customer": { "title": "Add a customer", "description": "At least one active customer record exists.", "action": "Set up Sales module" },
-      "bank": { "title": "Add a bank", "description": "At least one active bank account exists.", "action": "Set up Accounting module" },
-      "product": { "title": "Add a product or service", "description": "At least one active saleable item exists.", "action": "Set up Inventory module" },
-      "firstInvoice": { "title": "First-invoice readiness", "description": "Customer, bank, and product setup prerequisites are complete.", "action": "Review activation status" }
+      "customer": {
+        "title": "Add a customer",
+        "description": "At least one active customer record exists.",
+        "action": "Set up Sales module"
+      },
+      "bank": {
+        "title": "Add a bank",
+        "description": "At least one active bank account exists.",
+        "action": "Set up Accounting module"
+      },
+      "product": {
+        "title": "Add a product or service",
+        "description": "At least one active saleable item exists.",
+        "action": "Set up Inventory module"
+      },
+      "firstInvoice": {
+        "title": "First-invoice readiness",
+        "description": "Customer, bank, and product setup prerequisites are complete.",
+        "action": "Review activation status"
+      }
     }
   },
   "billingReview": {
@@ -422,6 +438,7 @@
     "create": "Grant temporary access",
     "creating": "Creating grant…",
     "history": "Access history",
+    "refresh": "Refresh history",
     "empty": "No support access history yet.",
     "loading": "Loading support access history…",
     "error": "Support access history could not be loaded.",
