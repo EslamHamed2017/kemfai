@@ -1152,6 +1152,51 @@ export interface paths {
                         "application/json": components["schemas"]["ChecklistState"];
                     };
                 };
+                /** @description Missing or invalid customer bearer token */
+                401: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["NestErrorResponse"];
+                    };
+                };
+                /** @description Caller lacks Workspace Owner permission or the configured trial window is restricted */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["NestErrorResponse"];
+                    };
+                };
+                /** @description Checklist feature is disabled by configuration */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["NestErrorResponse"];
+                    };
+                };
+                /** @description Tenant routing or Odoo readiness response failed closed */
+                500: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["NestErrorResponse"];
+                    };
+                };
+                /** @description Customer-facing BFF could not reach the checklist service */
+                502: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["NestErrorResponse"];
+                    };
+                };
             };
         };
         put?: never;
@@ -1205,12 +1250,14 @@ export interface paths {
                 };
             };
             responses: {
-                /** @description Grant created */
+                /** @description Grant created and audited */
                 201: {
                     headers: {
                         [name: string]: unknown;
                     };
-                    content?: never;
+                    content: {
+                        "application/json": components["schemas"]["SupportAccessGrantView"];
+                    };
                 };
             };
         };
@@ -1241,15 +1288,57 @@ export interface paths {
             };
             requestBody?: never;
             responses: {
-                /** @description Revoked, audited */
+                /** @description Revoked, audited, and returned with complete history */
                 200: {
                     headers: {
                         [name: string]: unknown;
                     };
-                    content?: never;
+                    content: {
+                        "application/json": components["schemas"]["SupportAccessGrantView"];
+                    };
                 };
             };
         };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/internal/support-access/workspaces/{tenantId}/summary": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Grant-scoped, read-only support workspace summary */
+        get: {
+            parameters: {
+                query: {
+                    grantId: string;
+                };
+                header?: never;
+                path: {
+                    tenantId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Safe tenant and subscription summary; no accounting-engine internals */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["SupportWorkspaceSummary"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -1490,28 +1579,60 @@ export interface components {
             activatedAt: string;
         };
         ChecklistState: {
-            customerAdded?: boolean;
-            bankAdded?: boolean;
-            productAdded?: boolean;
-            firstInvoiceReady?: boolean;
-            gatedOnSubscriptionActivation?: boolean;
+            customerAdded: boolean;
+            bankAdded: boolean;
+            productAdded: boolean;
+            firstInvoiceReady: boolean;
+            gatedOnSubscriptionActivation: boolean;
         };
         SupportAccessGrantInput: {
-            granteeRole: string;
+            /** @enum {string} */
+            granteeRole: "Support";
             /** Format: date-time */
             expiresAt: string;
         };
+        SupportAccessUsageView: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            usedBy: string;
+            /** Format: date-time */
+            usedAt: string;
+            /** @enum {string} */
+            actionSummary: "workspace.summary.read";
+            wasDenied: boolean;
+            /** @enum {string|null} */
+            denialReason: "expired" | "revoked" | "wrong_tenant" | "action_not_permitted" | null;
+        };
         SupportAccessGrantView: {
             /** Format: uuid */
-            id?: string;
-            granteeRole?: string;
+            id: string;
+            /** @enum {string} */
+            granteeRole: "Support";
+            /** Format: uuid */
+            grantedBy: string;
             /** Format: date-time */
-            grantedAt?: string;
+            grantedAt: string;
             /** Format: date-time */
-            expiresAt?: string;
+            expiresAt: string;
             /** Format: date-time */
-            revokedAt?: string | null;
-            usageCount?: number;
+            revokedAt: string | null;
+            /** Format: date-time */
+            expiredAt: string | null;
+            /** @enum {string} */
+            status: "active" | "expired" | "revoked";
+            permittedActions: "workspace.summary.read"[];
+            usage: components["schemas"]["SupportAccessUsageView"][];
+        };
+        SupportWorkspaceSummary: {
+            /** Format: uuid */
+            tenantId: string;
+            /** @enum {string} */
+            workspaceStatus: "Pending" | "Creating" | "Ready" | "Failed";
+            subscriptionStatus: string | null;
+            billingCycle: string | null;
+            /** Format: date */
+            currentPeriodEnd: string | null;
         };
         AuditEventView: {
             /** Format: uuid */

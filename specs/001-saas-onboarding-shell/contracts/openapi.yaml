@@ -522,7 +522,11 @@ paths:
           application/json:
             schema: { $ref: "#/components/schemas/SupportAccessGrantInput" }
       responses:
-        "201": { description: "Grant created" }
+        "201":
+          description: Grant created and audited
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SupportAccessGrantView" }
   /support-access/grants/{grantId}/revoke:
     post:
       tags: [support-access]
@@ -530,7 +534,24 @@ paths:
       parameters:
         - { name: grantId, in: path, required: true, schema: { type: string, format: uuid } }
       responses:
-        "200": { description: "Revoked, audited" }
+        "200":
+          description: Revoked, audited, and returned with complete history
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SupportAccessGrantView" }
+  /internal/support-access/workspaces/{tenantId}/summary:
+    get:
+      tags: [support-access]
+      summary: Grant-scoped, read-only support workspace summary
+      parameters:
+        - { name: tenantId, in: path, required: true, schema: { type: string, format: uuid } }
+        - { name: grantId, in: query, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200":
+          description: Safe tenant and subscription summary; no accounting-engine internals
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SupportWorkspaceSummary" }
   /internal/audit-events:
     get:
       tags: [audit]
@@ -848,20 +869,54 @@ components:
 
     SupportAccessGrantInput:
       type: object
+      additionalProperties: false
       required: [granteeRole, expiresAt]
       properties:
-        granteeRole: { type: string }
+        granteeRole: { type: string, enum: [Support] }
         expiresAt: { type: string, format: date-time }
+
+    SupportAccessUsageView:
+      type: object
+      additionalProperties: false
+      required: [id, usedBy, usedAt, actionSummary, wasDenied, denialReason]
+      properties:
+        id: { type: string, format: uuid }
+        usedBy: { type: string, format: uuid }
+        usedAt: { type: string, format: date-time }
+        actionSummary: { type: string, enum: [workspace.summary.read] }
+        wasDenied: { type: boolean }
+        denialReason: { type: string, enum: [expired, revoked, wrong_tenant, action_not_permitted], nullable: true }
 
     SupportAccessGrantView:
       type: object
+      additionalProperties: false
+      required: [id, granteeRole, grantedBy, grantedAt, expiresAt, revokedAt, expiredAt, status, permittedActions, usage]
       properties:
         id: { type: string, format: uuid }
-        granteeRole: { type: string }
+        granteeRole: { type: string, enum: [Support] }
+        grantedBy: { type: string, format: uuid }
         grantedAt: { type: string, format: date-time }
         expiresAt: { type: string, format: date-time }
         revokedAt: { type: string, format: date-time, nullable: true }
-        usageCount: { type: integer }
+        expiredAt: { type: string, format: date-time, nullable: true }
+        status: { type: string, enum: [active, expired, revoked] }
+        permittedActions:
+          type: array
+          items: { type: string, enum: [workspace.summary.read] }
+        usage:
+          type: array
+          items: { $ref: "#/components/schemas/SupportAccessUsageView" }
+
+    SupportWorkspaceSummary:
+      type: object
+      additionalProperties: false
+      required: [tenantId, workspaceStatus, subscriptionStatus, billingCycle, currentPeriodEnd]
+      properties:
+        tenantId: { type: string, format: uuid }
+        workspaceStatus: { type: string, enum: [Pending, Creating, Ready, Failed] }
+        subscriptionStatus: { type: string, nullable: true }
+        billingCycle: { type: string, nullable: true }
+        currentPeriodEnd: { type: string, format: date, nullable: true }
 
     AuditEventView:
       type: object

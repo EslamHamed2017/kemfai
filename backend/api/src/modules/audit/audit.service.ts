@@ -236,6 +236,10 @@ export interface TenantAccessDeniedCrossTenantInput {
  */
 @Injectable()
 export class AuditService {
+  private async appendInContext(event: AuditEventInput, manager?: EntityManager): Promise<void> {
+    if (manager) await this.append(event, manager);
+    else await this.append(event);
+  }
   /**
    * `manager` lets a caller enlist this write in an already-open DB transaction (T035:
    * MFA confirmation's state flip and its mandatory audit event must commit or roll back
@@ -303,7 +307,7 @@ export class AuditService {
     input: AccountLocaleChangedInput,
     manager?: EntityManager,
   ): Promise<void> {
-    await this.append(
+    await this.appendInContext(
       {
         actorType: AuditActorType.ACCOUNT,
         actorId: input.accountId,
@@ -534,69 +538,100 @@ export class AuditService {
     else await this.append(event);
   }
 
-  async recordSupportAccessGrantCreated(input: SupportAccessGrantCreatedInput): Promise<void> {
-    await this.append({
-      actorType: AuditActorType.ACCOUNT,
-      actorId: input.accountId,
-      tenantId: input.tenantId,
-      action: 'support_access.grant.created',
-      subjectType: 'support_access_grant',
-      subjectId: input.grantId,
-      occurredAt: input.occurredAt ?? new Date(),
-      payload: { grantee_role: input.granteeRole, expires_at: input.expiresAt.toISOString() },
-    });
+  async recordSupportAccessGrantCreated(
+    input: SupportAccessGrantCreatedInput,
+    manager?: EntityManager,
+  ): Promise<void> {
+    await this.appendInContext(
+      {
+        actorType: AuditActorType.ACCOUNT,
+        actorId: input.accountId,
+        tenantId: input.tenantId,
+        action: 'support_access.grant.created',
+        subjectType: 'support_access_grant',
+        subjectId: input.grantId,
+        occurredAt: input.occurredAt ?? new Date(),
+        payload: { grantee_role: input.granteeRole, expires_at: input.expiresAt.toISOString() },
+      },
+      manager,
+    );
   }
 
-  async recordSupportAccessGrantUsed(input: SupportAccessGrantUsedInput): Promise<void> {
-    await this.append({
-      actorType: AuditActorType.INTERNAL_USER,
-      actorId: input.internalUserId,
-      tenantId: input.tenantId,
-      action: 'support_access.grant.used',
-      subjectType: 'support_access_grant',
-      subjectId: input.grantId,
-      occurredAt: input.occurredAt ?? new Date(),
-      payload: { action_summary: input.actionSummary },
-    });
+  async recordSupportAccessGrantUsed(
+    input: SupportAccessGrantUsedInput,
+    manager?: EntityManager,
+  ): Promise<void> {
+    await this.appendInContext(
+      {
+        actorType: AuditActorType.INTERNAL_USER,
+        actorId: input.internalUserId,
+        tenantId: input.tenantId,
+        action: 'support_access.grant.used',
+        subjectType: 'support_access_grant',
+        subjectId: input.grantId,
+        occurredAt: input.occurredAt ?? new Date(),
+        payload: { action_summary: input.actionSummary },
+      },
+      manager,
+    );
   }
 
-  async recordSupportAccessGrantDenied(input: SupportAccessGrantDeniedInput): Promise<void> {
-    await this.append({
-      actorType: AuditActorType.INTERNAL_USER,
-      actorId: input.internalUserId,
-      tenantId: input.tenantId,
-      action: 'support_access.grant.denied',
-      subjectType: 'support_access_grant',
-      subjectId: input.grantId,
-      occurredAt: input.occurredAt ?? new Date(),
-      payload: { denial_reason: input.denialReason },
-    });
+  async recordSupportAccessGrantDenied(
+    input: SupportAccessGrantDeniedInput,
+    manager?: EntityManager,
+  ): Promise<void> {
+    await this.appendInContext(
+      {
+        actorType: AuditActorType.INTERNAL_USER,
+        actorId: input.internalUserId,
+        tenantId: input.tenantId,
+        action: 'support_access.grant.denied',
+        subjectType: 'support_access_grant',
+        subjectId: input.grantId,
+        occurredAt: input.occurredAt ?? new Date(),
+        payload: { denial_reason: input.denialReason },
+      },
+      manager,
+    );
   }
 
-  async recordSupportAccessGrantRevoked(input: SupportAccessGrantRevokedInput): Promise<void> {
-    await this.append({
-      actorType: AuditActorType.ACCOUNT,
-      actorId: input.accountId,
-      tenantId: input.tenantId,
-      action: 'support_access.grant.revoked',
-      subjectType: 'support_access_grant',
-      subjectId: input.grantId,
-      occurredAt: input.occurredAt ?? new Date(),
-      payload: { revoked_by: input.revokedBy },
-    });
+  async recordSupportAccessGrantRevoked(
+    input: SupportAccessGrantRevokedInput,
+    manager?: EntityManager,
+  ): Promise<void> {
+    await this.appendInContext(
+      {
+        actorType: AuditActorType.ACCOUNT,
+        actorId: input.accountId,
+        tenantId: input.tenantId,
+        action: 'support_access.grant.revoked',
+        subjectType: 'support_access_grant',
+        subjectId: input.grantId,
+        occurredAt: input.occurredAt ?? new Date(),
+        payload: { revoked_by: input.revokedBy },
+      },
+      manager,
+    );
   }
 
-  async recordSupportAccessGrantExpired(input: SupportAccessGrantExpiredInput): Promise<void> {
-    await this.append({
-      actorType: AuditActorType.SYSTEM,
-      actorId: null,
-      tenantId: input.tenantId,
-      action: 'support_access.grant.expired',
-      subjectType: 'support_access_grant',
-      subjectId: input.grantId,
-      occurredAt: input.occurredAt ?? new Date(),
-      payload: {},
-    });
+  async recordSupportAccessGrantExpired(
+    input: SupportAccessGrantExpiredInput,
+    manager?: EntityManager,
+  ): Promise<void> {
+    await this.appendInContext(
+      {
+        actorType: AuditActorType.SYSTEM,
+        actorId: null,
+        tenantId: input.tenantId,
+        action: 'support_access.grant.expired',
+        subjectType: 'support_access_grant',
+        subjectId: input.grantId,
+        occurredAt: input.occurredAt ?? new Date(),
+        payload: {},
+        dedupeKey: `support-access-expired:${input.grantId}`,
+      },
+      manager,
+    );
   }
 
   async recordTenantTrialRestricted(input: TenantTrialRestrictedInput): Promise<void> {
