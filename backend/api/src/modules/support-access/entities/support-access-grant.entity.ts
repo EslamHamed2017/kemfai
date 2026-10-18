@@ -17,6 +17,14 @@ export enum SupportAccessGranteeRole {
   TECHNICAL_ADMIN = 'TechnicalAdmin',
 }
 
+export enum SupportAccessGrantStatus {
+  ACTIVE = 'Active',
+  EXPIRED = 'Expired',
+  REVOKED = 'Revoked',
+}
+
+export const SUPPORT_WORKSPACE_SUMMARY_ACTION = 'workspace.summary.read';
+
 /**
  * Customer-authorized, time-bounded internal access to a tenant's workspace
  * (data-model.md "SupportAccessGrant", FR-039–FR-041). `expiresAt` is mandatory — enforced
@@ -49,11 +57,25 @@ export class SupportAccessGrant {
   })
   granteeRole: SupportAccessGranteeRole;
 
+  @Column({ name: 'permitted_actions', type: 'text', array: true })
+  permittedActions: string[];
+
   @Column({ name: 'expires_at', type: 'timestamptz' })
   expiresAt: Date;
 
   @Column({ name: 'revoked_at', type: 'timestamptz', nullable: true })
   revokedAt: Date | null;
+
+  @Column({ name: 'expired_at', type: 'timestamptz', nullable: true })
+  expiredAt: Date | null;
+
+  @Column({
+    type: 'enum',
+    enum: SupportAccessGrantStatus,
+    enumName: 'support_access_grant_status_enum',
+    default: SupportAccessGrantStatus.ACTIVE,
+  })
+  status: SupportAccessGrantStatus;
 
   @CreateDateColumn({ name: 'created_at', type: 'timestamptz' })
   createdAt: Date;

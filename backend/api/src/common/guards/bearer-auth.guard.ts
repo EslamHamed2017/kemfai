@@ -82,8 +82,7 @@ export class BearerAuthGuard implements CanActivate {
     }
     const token = header.slice('Bearer '.length).trim();
     const path = req.path ?? req.originalUrl ?? req.url ?? '';
-    const internalBillingRoute =
-      path === '/internal/billing' || path.startsWith('/internal/billing/');
+    const internalBillingRoute = path === '/internal' || path.startsWith('/internal/');
     const { issuer, audience, jwksUri } = resolveAuthConfig(internalBillingRoute);
 
     let sub: string | undefined;

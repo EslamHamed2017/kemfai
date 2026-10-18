@@ -16,6 +16,7 @@ import { TenantScopeGuard } from './common/guards/tenant-scope.guard';
 import { RoleGuard } from './common/guards/role.guard';
 import { FeatureFlagGuard } from './common/guards/feature-flag.guard';
 import { TrialWindowGuard } from './common/guards/trial-window.guard';
+import { SupportAccessGuard } from './common/guards/support-access.guard';
 import { IdempotencyKeyInterceptor } from './common/interceptors/idempotency.interceptor';
 import { QueuesModule } from './common/queues/queues.module';
 import { TenantProvisionModule } from './integrations/provisioning/tenant-provision.module';
@@ -24,6 +25,8 @@ import { BillingCustomerModule } from './modules/billing-customer/billing-custom
 import { BillingAdminModule } from './modules/billing-admin/billing-admin.module';
 import { ModuleSelectionModule } from './modules/module-selection/module-selection.module';
 import { ChecklistModule } from './modules/checklist/checklist.module';
+import { SupportAccessModule } from './modules/support-access/support-access.module';
+import { SupportAccessSweepModule } from './integrations/provisioning/support-access-sweep.module';
 
 @Module({
   imports: [
@@ -38,9 +41,11 @@ import { ChecklistModule } from './modules/checklist/checklist.module';
     BillingAdminModule,
     ModuleSelectionModule,
     ChecklistModule,
+    SupportAccessModule,
     AccountsModule,
     QueuesModule,
     TrialExpirySweepModule,
+    SupportAccessSweepModule,
     TenantProvisionModule,
   ],
   controllers: [AppController],
@@ -63,8 +68,11 @@ import { ChecklistModule } from './modules/checklist/checklist.module';
     // TrialWindowGuard only acts on handlers declaring @EnforceTrialWindow().
     { provide: APP_GUARD, useClass: BearerAuthGuard },
     { provide: APP_GUARD, useClass: TenantScopeGuard },
-    { provide: APP_GUARD, useClass: RoleGuard },
     { provide: APP_GUARD, useClass: FeatureFlagGuard },
+    // Hide disabled surfaces before grant lookup/audit. Grant-scoped authorization then runs
+    // before the general role gate so wrong internal roles are recorded as denied attempts.
+    { provide: APP_GUARD, useClass: SupportAccessGuard },
+    { provide: APP_GUARD, useClass: RoleGuard },
     { provide: APP_GUARD, useClass: TrialWindowGuard },
     // Global idempotency-key replay guard (T020) — applies to every mutating route, current
     // and future, without each one opting in; it only activates when a caller actually

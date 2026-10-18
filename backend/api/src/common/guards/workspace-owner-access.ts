@@ -14,7 +14,12 @@ export async function requireReadyWorkspaceOwner(req: TenantScopedRequest): Prom
   });
   const tenant =
     account && (await controlDataSource.getRepository(Tenant).findOneBy({ accountId: account.id }));
-  if (!tenant || tenant.status !== TenantStatus.READY || tenant.id !== req.auth.tenantId) {
+  if (
+    !account?.emailVerified ||
+    !tenant ||
+    tenant.status !== TenantStatus.READY ||
+    tenant.id !== req.auth.tenantId
+  ) {
     throw new ForbiddenException('Workspace owner access denied');
   }
 }

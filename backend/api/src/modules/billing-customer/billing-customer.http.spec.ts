@@ -104,6 +104,7 @@ describe('GET /billing/subscription (T061)', () => {
   const account = {
     id: ACCOUNT_ID,
     keycloakUserId: SUBJECT_ID,
+    emailVerified: true,
     preferredLocale: Locale.EN,
   } as Account;
   const tenant = {
