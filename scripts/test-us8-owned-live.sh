@@ -11,44 +11,92 @@ mkdir -p "$evidence"; chmod 700 "$evidence"
 prefix="kemfai-us8-${operation,,}"; label="kemfai.us8.operation=$operation"
 pg="${prefix}-pg"; redis="${prefix}-redis"; pg_volume="${prefix}-pgdata"
 private_dir="$(mktemp -d)"; chmod 700 "$private_dir"
-api_pid=''; frontend_pid=''; identity_pid=''; cleanup_failed=0
+api_pid=''; frontend_pid=''; identity_pid=''; port_keeper_pid=''; cleanup_failed=0
 
 redact() { python3 -c 'import pathlib,sys; d=sys.stdin.buffer.read(); [globals().__setitem__("d",d.replace(v,b"[REDACTED]")) for v in pathlib.Path(sys.argv[1]).read_bytes().split(b"\0") if v]; sys.stdout.buffer.write(d)' "$private_dir/secrets"; }
+fail() { printf '%s\n' "$1" >&2; return 1; }
 stop_owned() { local pid="$1" marker="$2"; [ -z "$pid" ] && return 0; if kill -0 "$pid" 2>/dev/null; then tr '\0' ' ' <"/proc/$pid/cmdline" | grep -Fq "$marker" || return 1; kill -TERM -- "-$pid" 2>/dev/null || kill -TERM "$pid" 2>/dev/null || true; for _ in $(seq 1 50); do kill -0 "$pid" 2>/dev/null || return 0; sleep .1; done; kill -KILL -- "-$pid" 2>/dev/null || true; fi; }
+capture_startup_diagnostics() {
+  {
+    printf 'operation=%s\n' "$operation"
+    for file in "$private_dir"/*-start.err; do [ ! -f "$file" ] || { printf '\n== %s ==\n' "$(basename "$file")"; cat "$file"; }; done
+    for container in "$pg" "$redis"; do
+      docker inspect "$container" 2>&1 || true
+      docker logs --tail 200 "$container" 2>&1 || true
+    done
+  } | redact >"$evidence/startup-diagnostics.sanitized.log"
+  chmod 600 "$evidence/startup-diagnostics.sanitized.log"
+}
+wait_for_container_service() {
+  local container="$1" service="$2"
+  local readiness="$evidence/${service}-readiness.sanitized.log"
+  : >"$readiness"; chmod 600 "$readiness"
+  for attempt in $(seq 1 180); do
+    local running output code
+    running="$(docker inspect -f '{{.State.Running}}' "$container" 2>/dev/null || true)"
+    if [ "$running" != true ]; then
+      printf 'attempt=%s container_running=%s\n' "$attempt" "${running:-missing}" | redact >>"$readiness"
+      capture_startup_diagnostics
+      return 1
+    fi
+    set +e
+    if [ "$service" = postgres ]; then output="$(docker exec "$container" pg_isready -U "$pg_user" -d "$control_db" 2>&1)"; code=$?
+    else output="$(docker exec "$container" redis-cli ping 2>&1)"; code=$?; [ "$output" = PONG ] || code=1
+    fi
+    set -e
+    printf 'attempt=%s exit_code=%s\n%s\n' "$attempt" "$code" "$output" | redact >>"$readiness"
+    [ "$code" -eq 0 ] && return 0
+    sleep .5
+  done
+  capture_startup_diagnostics
+  return 1
+}
+release_port() {
+  local name="$1" acknowledgement
+  printf 'release %s\n' "$name" >&"${US8_PORT_KEEPER[1]}"
+  read -r acknowledgement <&"${US8_PORT_KEEPER[0]}"
+  [ "$acknowledgement" = "released $name" ] || fail "port reservation release failed for $name"
+}
+assert_tcp_listener() { python3 - "$1" <<'PY'
+import socket,sys
+with socket.create_connection(('127.0.0.1', int(sys.argv[1])), timeout=2): pass
+PY
+}
 cleanup() {
   local status=$? survivors
   trap - EXIT INT TERM; set +e
   stop_owned "$frontend_pid" 'next' || cleanup_failed=1; stop_owned "$api_pid" 'dist/main.js' || cleanup_failed=1; stop_owned "$identity_pid" 'us8-live-identity.ts' || cleanup_failed=1
+  [ -z "$port_keeper_pid" ] || kill -TERM "$port_keeper_pid" 2>/dev/null || true
   mapfile -t owned < <(docker ps -aq --filter "label=$label" 2>/dev/null); [ "${#owned[@]}" -eq 0 ] || docker rm -fv "${owned[@]}" >/dev/null 2>&1 || cleanup_failed=1
   mapfile -t volumes < <(docker volume ls -q --filter "label=$label" 2>/dev/null); [ "${#volumes[@]}" -eq 0 ] || docker volume rm "${volumes[@]}" >/dev/null 2>&1 || cleanup_failed=1
-  survivors="$(docker ps -aq --filter "label=$label"; docker volume ls -q --filter "label=$label")"
+  mapfile -t networks < <(docker network ls -q --filter "label=$label" 2>/dev/null); [ "${#networks[@]}" -eq 0 ] || docker network rm "${networks[@]}" >/dev/null 2>&1 || cleanup_failed=1
+  survivors="$(docker ps -aq --filter "label=$label"; docker volume ls -q --filter "label=$label"; docker network ls -q --filter "label=$label")"
   printf 'operation=%s\nsurvivors=%s\nprocess_cleanup=%s\n' "$operation" "${survivors:-none}" "$cleanup_failed" >"$evidence/cleanup-receipt.txt"
   rm -rf -- "$private_dir"; [ -z "$survivors" ] || status=1; [ "$cleanup_failed" -eq 0 ] || status=1; exit "$status"
 }
 trap cleanup EXIT INT TERM
 for command in docker node npm python3 curl openssl; do command -v "$command" >/dev/null || { echo "$command missing" >&2; exit 1; }; done
 docker info >/dev/null 2>&1; [ ! -e "$api_dir/.env" ] && [ ! -e "$frontend_dir/.env" ] || { echo 'checkout-local env refused' >&2; exit 1; }
-[ -z "$(docker ps -aq --filter "label=$label")$(docker volume ls -q --filter "label=$label")" ] || { echo 'owned operation resources already exist' >&2; exit 1; }
-free_port() { python3 - <<'PY'
-import random,socket
-for port in random.sample(range(20000,60000),40000):
- s=socket.socket()
- try: s.bind(('127.0.0.1',port)); print(port); break
- except OSError: pass
- finally: s.close()
-PY
-}
-pg_port="$(free_port)"; redis_port="$(free_port)"; api_port="$(free_port)"; frontend_port="$(free_port)"
+[ -z "$(docker ps -aq --filter "label=$label")$(docker volume ls -q --filter "label=$label")$(docker network ls -q --filter "label=$label")" ] || { echo 'owned operation resources already exist' >&2; exit 1; }
+coproc US8_PORT_KEEPER { python3 "$repo_dir/scripts/reserve_loopback_ports.py"; }
+port_keeper_pid="$US8_PORT_KEEPER_PID"
+read -r port_json <&"${US8_PORT_KEEPER[0]}"
+readarray -t reserved_ports < <(python3 -c 'import json,sys; d=json.loads(sys.argv[1]); [print(d[n]) for n in ("pg","redis","api","frontend")]' "$port_json")
+[ "${#reserved_ports[@]}" -eq 4 ] || fail 'four-port reservation failed'
+pg_port="${reserved_ports[0]}"; redis_port="${reserved_ports[1]}"; api_port="${reserved_ports[2]}"; frontend_port="${reserved_ports[3]}"
 pg_user="us8_$(openssl rand -hex 5)"; pg_password="$(openssl rand -hex 24)"; control_db='kemfai_control'
 printf '%s\0' "$pg_password" >"$private_dir/secrets"; chmod 600 "$private_dir/secrets"
 printf 'operation=%s\nlabel=%s\npostgres=%s:%s\nredis=%s:%s\napi=127.0.0.1:%s\nfrontend=127.0.0.1:%s\n' "$operation" "$label" "$pg" "$pg_port" "$redis" "$redis_port" "$api_port" "$frontend_port" >"$evidence/fixture-registry.txt"
 chmod 600 "$evidence/fixture-registry.txt"
 
 docker volume create --label "$label" "$pg_volume" >/dev/null
-docker run -d --name "$pg" --label "$label" --memory=512m --cpus=1 -e POSTGRES_USER="$pg_user" -e POSTGRES_PASSWORD="$pg_password" -e POSTGRES_DB="$control_db" -v "$pg_volume:/var/lib/postgresql/data" -p "127.0.0.1:$pg_port:5432" postgres:16-alpine >/dev/null
-docker run -d --name "$redis" --label "$label" --memory=256m --cpus=.5 -p "127.0.0.1:$redis_port:6379" redis:7-alpine redis-server --save '' --appendonly no >/dev/null
-for _ in $(seq 1 60); do docker exec "$pg" pg_isready -U "$pg_user" -d "$control_db" >/dev/null 2>&1 && break; sleep .5; done
-docker exec "$pg" pg_isready -U "$pg_user" -d "$control_db" >/dev/null; [ "$(docker exec "$redis" redis-cli ping)" = PONG ]
+release_port pg
+docker run -d --name "$pg" --label "$label" --memory=512m --cpus=1 -e POSTGRES_USER="$pg_user" -e POSTGRES_PASSWORD="$pg_password" -e POSTGRES_DB="$control_db" -v "$pg_volume:/var/lib/postgresql/data" -p "127.0.0.1:$pg_port:5432" postgres:16-alpine >"$private_dir/pg-id" 2>"$private_dir/pg-start.err" || { capture_startup_diagnostics; fail 'PostgreSQL container failed to start'; }
+release_port redis
+docker run -d --name "$redis" --label "$label" --memory=256m --cpus=.5 -p "127.0.0.1:$redis_port:6379" redis:7-alpine redis-server --save '' --appendonly no >"$private_dir/redis-id" 2>"$private_dir/redis-start.err" || { capture_startup_diagnostics; fail 'Redis container failed to start'; }
+wait_for_container_service "$pg" postgres || fail 'PostgreSQL readiness timed out'
+wait_for_container_service "$redis" redis || fail 'Redis readiness timed out'
+assert_tcp_listener "$pg_port"; assert_tcp_listener "$redis_port"
 export CONTROL_DB_HOST=127.0.0.1 CONTROL_DB_PORT="$pg_port" CONTROL_DB_USER="$pg_user" CONTROL_DB_PASSWORD="$pg_password" CONTROL_DB_NAME="$control_db" REDIS_URL="redis://127.0.0.1:$redis_port/14" SUPPORT_ACCESS_MAX_DURATION_HOURS=24
 (cd "$api_dir" && npm run migration:run) >"$evidence/migration-up.log" 2>&1
 (cd "$api_dir" && npm run migration:revert && npm run migration:run) >"$evidence/migration-roundtrip.log" 2>&1
@@ -74,10 +122,14 @@ docker exec "$redis" redis-cli -n 14 SET "kemfai:session:$session_a" "{\"accessT
 
 (cd "$api_dir" && npm run build) >"$evidence/api-build-live.log" 2>&1
 (cd "$frontend_dir"; export KEMFAI_API_URL="http://127.0.0.1:$api_port" REDIS_URL="redis://127.0.0.1:$redis_port/14" NEXT_PUBLIC_DEFAULT_LOCALE=en KEYCLOAK_ISSUER="$customer_issuer" KEYCLOAK_BACKCHANNEL_URL="$customer_issuer" KEYCLOAK_JWKS_URI="$jwks" KEYCLOAK_CLIENT_ID=kemfai-api KEYCLOAK_REDIRECT_URI="http://127.0.0.1:$frontend_port/auth/callback"; NEXT_PRIVATE_BUILD_WORKER=1 npm run build) >"$evidence/frontend-build-live.log" 2>&1
+release_port api
 (cd "$api_dir"; export PORT="$api_port" HOST=127.0.0.1 NODE_ENV=test KEYCLOAK_ISSUER="$customer_issuer" KEYCLOAK_JWKS_URI="$jwks" KEYCLOAK_API_AUDIENCE="$audience" KEYCLOAK_INTERNAL_ISSUER="$internal_issuer" KEYCLOAK_INTERNAL_JWKS_URI="$jwks" KEYCLOAK_INTERNAL_API_AUDIENCE="$audience" OPENAPI_CONTRACT_PATH="$repo_dir/specs/001-saas-onboarding-shell/contracts/openapi.yaml" KEMFAI_ODOO_MASTER_PASSWORD=owned-live-unused KEMFAI_TENANT_ADMIN_LOGIN=owned-live-unused KEMFAI_TENANT_ADMIN_PASSWORD=owned-live-unused; exec setsid node dist/main.js) >"$evidence/api.log" 2>&1 & api_pid=$!
 for _ in $(seq 1 60); do curl -sf "http://127.0.0.1:$api_port/" >/dev/null && break; sleep .5; done; curl -sf "http://127.0.0.1:$api_port/" >/dev/null
+assert_tcp_listener "$api_port"
+release_port frontend
 (cd "$frontend_dir"; export NODE_ENV=production PORT="$frontend_port" KEMFAI_API_URL="http://127.0.0.1:$api_port" REDIS_URL="redis://127.0.0.1:$redis_port/14" NEXT_PUBLIC_DEFAULT_LOCALE=en KEYCLOAK_ISSUER="$customer_issuer" KEYCLOAK_BACKCHANNEL_URL="$customer_issuer" KEYCLOAK_JWKS_URI="$jwks" KEYCLOAK_CLIENT_ID=kemfai-api KEYCLOAK_REDIRECT_URI="http://127.0.0.1:$frontend_port/auth/callback"; exec setsid npx next start -H 127.0.0.1 -p "$frontend_port") >"$evidence/frontend.log" 2>&1 & frontend_pid=$!
 for _ in $(seq 1 90); do curl -sf "http://127.0.0.1:$frontend_port/" >/dev/null && break; sleep .5; done; curl -sf "http://127.0.0.1:$frontend_port/" >/dev/null
+assert_tcp_listener "$frontend_port"
 
 export US8_BASE_URL="http://127.0.0.1:$frontend_port" US8_API_URL="http://127.0.0.1:$api_port" US8_SESSION_A="$session_a" US8_OWNER_A_TOKEN="$token_a" US8_SUPPORT_TOKEN="$token_support" US8_CUSTOMER_SUPPORT_SPOOF_TOKEN="$token_spoof" US8_WRONG_INTERNAL_ROLE_TOKEN="$token_wrong_role" US8_OWNER_ACCOUNT_ID="$acct_a" US8_TENANT_A_ID="$tenant_a" US8_TENANT_B_ID="$tenant_b" US8_PG_CONTAINER="$pg" US8_REDIS_CONTAINER="$redis" US8_PG_USER="$pg_user" US8_CONTROL_DB="$control_db" US8_PLAYWRIGHT_OUTPUT_DIR="$evidence/playwright"
 (cd "$frontend_dir" && PLAYWRIGHT_BROWSERS_PATH="$(node ../scripts/fixtures/t071_resolve_playwright_browser.mjs)" npx playwright test --config tests/e2e-live/playwright.us8-live.config.ts) >"$evidence/browser.log" 2>&1

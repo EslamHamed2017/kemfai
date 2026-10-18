@@ -110,6 +110,9 @@ services:
       KEMFAI_TENANT_ADMIN_PASSWORD: ${KEMFAI_TENANT_ADMIN_PASSWORD:?Set tenant admin password}
       KEMFAI_BANK_TRANSFER_INSTRUCTIONS_EN: ${KEMFAI_BANK_TRANSFER_INSTRUCTIONS_EN:?Set owner-provided English bank transfer instructions}
       KEMFAI_BANK_TRANSFER_INSTRUCTIONS_AR: ${KEMFAI_BANK_TRANSFER_INSTRUCTIONS_AR:?Set owner-provided Arabic bank transfer instructions}
+      # No production default is permitted. Owner/security approval must choose the finite
+      # positive ceiling; empty/unset is passed through so grant creation fails closed.
+      SUPPORT_ACCESS_MAX_DURATION_HOURS: ${SUPPORT_ACCESS_MAX_DURATION_HOURS:-}
       KEYCLOAK_URL: http://keycloak:8080
       # Tokens minted through either browser or backchannel carry this one canonical issuer.
       KEYCLOAK_ISSUER: ${KEYCLOAK_ISSUER:-http://localhost:8080/realms/kemfai-customers}
