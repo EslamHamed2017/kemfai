@@ -979,21 +979,21 @@ refusal after expiry, and confirm every action is audit-logged — independent o
 
 ### Tests for User Story 8
 
-- [ ] T084 [P] [US8] Contract test: `GET`/`POST /support-access/grants` and
+- [x] T084 [P] [US8] Contract test: `GET`/`POST /support-access/grants` and
   `POST /support-access/grants/{id}/revoke` against `contracts/openapi.yaml` in
   `backend/api/test/contract/support-access.contract-spec.ts`
   - **Dependencies**: T022
   - **Acceptance Criteria**: 200/201 response codes each exercised and schema-conformant.
   - **Roles**: Primary: Codex · Backup: GLM · Reviewer: Gemini
 
-- [ ] T085 [P] [US8] Integration test: an expired or revoked grant denies access and logs the attempt
+- [x] T085 [P] [US8] Integration test: an expired or revoked grant denies access and logs the attempt
   (`SupportAccessUsage.was_denied=true`) for every attempt, in
   `backend/api/test/integration/support-access-denial.integration-spec.ts`
   - **Dependencies**: T013
   - **Acceptance Criteria**: Matches Acceptance Scenario 8.3 and FR-041.
   - **Roles**: Primary: Codex · Backup: GLM · Reviewer: Gemini
 
-- [ ] T086 [P] [US8] Integration test: running the expiry sweep twice in the same tick window does not
+- [x] T086 [P] [US8] Integration test: running the expiry sweep twice in the same tick window does not
   double-flip or double-audit a grant, in
   `backend/api/test/integration/support-access-sweep-idempotency.integration-spec.ts`
   - **Dependencies**: T013
@@ -1001,7 +1001,7 @@ refusal after expiry, and confirm every action is audit-logged — independent o
     research.md §8.
   - **Roles**: Primary: Codex · Backup: GLM · Reviewer: Gemini
 
-- [ ] T087 [P] [US8] Playwright EN/AR-RTL + axe test: grant creation (mandatory expiry), history view, and
+- [x] T087 [P] [US8] Playwright EN/AR-RTL + axe test: grant creation (mandatory expiry), history view, and
   revoke action in `frontend/tests/e2e/us8-support-access.spec.ts`
   - **Dependencies**: T023
   - **Acceptance Criteria**: Matches Acceptance Scenarios 8.1/8.4/8.5.
@@ -1009,7 +1009,7 @@ refusal after expiry, and confirm every action is audit-logged — independent o
 
 ### Implementation for User Story 8
 
-- [ ] T088 [US8] Implement `GET`/`POST /support-access/grants` (mandatory expiry, emits
+- [x] T088 [US8] Implement `GET`/`POST /support-access/grants` (mandatory expiry, emits
   `support_access.grant.created`) and `POST /support-access/grants/{id}/revoke` (immediate, emits
   `support_access.grant.revoked`) in `backend/api/src/modules/support-access/support-access.controller.ts` and
   `.service.ts`
@@ -1020,14 +1020,14 @@ refusal after expiry, and confirm every action is audit-logged — independent o
     analysis.md).
   - **Roles**: Primary: GLM · Backup: Claude · Reviewer: Codex
 
-- [ ] T089 [US8] Implement support-access read-time enforcement (checks `expires_at`/`revoked_at` on every
+- [x] T089 [US8] Implement support-access read-time enforcement (checks `expires_at`/`revoked_at` on every
   access, logs `SupportAccessUsage` including denials, emits `support_access.grant.used`/`.denied`) in
   `backend/api/src/common/guards/support-access.guard.ts`
   - **Dependencies**: T088
   - **Acceptance Criteria**: Matches Acceptance Scenarios 8.2/8.3 and FR-005/FR-041.
   - **Roles**: Primary: GLM · Backup: Claude · Reviewer: Codex
 
-- [ ] T090 [US8] Implement the `support_access.expiry_sweep` BullMQ scheduled job (every 30 seconds, flips
+- [x] T090 [US8] Implement the `support_access.expiry_sweep` BullMQ scheduled job (every 30 seconds, flips
   newly-expired grants, emits `support_access.grant.expired`) in
   `backend/api/src/integrations/provisioning/support-access-sweep.processor.ts`
   - **Dependencies**: T021, T088
@@ -1035,7 +1035,7 @@ refusal after expiry, and confirm every action is audit-logged — independent o
     and research.md §8's rationale for proactive sweeping over lazy-only checks.
   - **Roles**: Primary: GLM · Backup: Claude · Reviewer: Codex
 
-- [ ] T091 [P] [US8] Build the support-access grant creation form, active-grant status, and history view
+- [x] T091 [P] [US8] Build the support-access grant creation form, active-grant status, and history view
   (every past grant/usage/revocation visible) in `frontend/src/app/(onboarding)/support-access/page.tsx`
   - **Dependencies**: T024, T088
   - **Acceptance Criteria**: Matches Acceptance Scenarios 8.1/8.4/8.5; when `FeatureFlag.enabled=false` for the
