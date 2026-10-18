@@ -1,6 +1,7 @@
 import {
   ConflictException,
   Injectable,
+  InternalServerErrorException,
   NotFoundException,
   UnprocessableEntityException,
 } from '@nestjs/common';
@@ -17,8 +18,6 @@ import {
   SupportAccessGrantStatus,
 } from './entities/support-access-grant.entity';
 import { CreateSupportAccessGrantDto } from './dto/create-support-access-grant.dto';
-
-const DEFAULT_MAX_DURATION_HOURS = 168;
 
 export interface SupportAccessUsageView {
   id: string;
@@ -50,11 +49,10 @@ export class SupportAccessService {
 
   validateExpiry(value: string, now = new Date()): Date {
     const expiry = new Date(value);
-    const configured = Number(
-      process.env.SUPPORT_ACCESS_MAX_DURATION_HOURS ?? DEFAULT_MAX_DURATION_HOURS,
-    );
-    const maxHours =
-      Number.isFinite(configured) && configured > 0 ? configured : DEFAULT_MAX_DURATION_HOURS;
+    const configuredValue = process.env.SUPPORT_ACCESS_MAX_DURATION_HOURS;
+    const maxHours = Number(configuredValue);
+    if (!configuredValue || !Number.isFinite(maxHours) || maxHours <= 0)
+      throw new InternalServerErrorException('Support access maximum duration is not configured');
     if (
       !Number.isFinite(expiry.getTime()) ||
       expiry.getTime() <= now.getTime() ||

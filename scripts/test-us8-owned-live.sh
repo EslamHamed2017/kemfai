@@ -49,7 +49,7 @@ docker run -d --name "$pg" --label "$label" --memory=512m --cpus=1 -e POSTGRES_U
 docker run -d --name "$redis" --label "$label" --memory=256m --cpus=.5 -p "127.0.0.1:$redis_port:6379" redis:7-alpine redis-server --save '' --appendonly no >/dev/null
 for _ in $(seq 1 60); do docker exec "$pg" pg_isready -U "$pg_user" -d "$control_db" >/dev/null 2>&1 && break; sleep .5; done
 docker exec "$pg" pg_isready -U "$pg_user" -d "$control_db" >/dev/null; [ "$(docker exec "$redis" redis-cli ping)" = PONG ]
-export CONTROL_DB_HOST=127.0.0.1 CONTROL_DB_PORT="$pg_port" CONTROL_DB_USER="$pg_user" CONTROL_DB_PASSWORD="$pg_password" CONTROL_DB_NAME="$control_db" REDIS_URL="redis://127.0.0.1:$redis_port/14"
+export CONTROL_DB_HOST=127.0.0.1 CONTROL_DB_PORT="$pg_port" CONTROL_DB_USER="$pg_user" CONTROL_DB_PASSWORD="$pg_password" CONTROL_DB_NAME="$control_db" REDIS_URL="redis://127.0.0.1:$redis_port/14" SUPPORT_ACCESS_MAX_DURATION_HOURS=24
 (cd "$api_dir" && npm run migration:run) >"$evidence/migration-up.log" 2>&1
 (cd "$api_dir" && npm run migration:revert && npm run migration:run) >"$evidence/migration-roundtrip.log" 2>&1
 (cd "$api_dir" && npm run test:contract -- --runInBand) >"$evidence/api-contract-full.log" 2>&1
