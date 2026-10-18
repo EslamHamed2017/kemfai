@@ -14,6 +14,7 @@
     "test:watch": "jest --watch",
     "test:cov": "jest --coverage",
     "test:integration": "jest --config test/jest-integration.json",
+    "test:integration:nonlive": "jest --config test/jest-integration-nonlive.json",
     "test:contract": "jest --config test/jest-contract.json --detectOpenHandles",
     "typeorm": "typeorm-ts-node-commonjs",
     "migration:run": "npm run typeorm -- migration:run -d src/database/data-source.ts",

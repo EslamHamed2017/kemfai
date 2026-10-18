@@ -77,9 +77,9 @@ export function ChecklistScreen({ initialState }: { initialState?: ChecklistStat
     );
 
   const items = [
-    { key: 'customer', done: state.customerAdded, href: '/workspace/modules/module.sales' },
-    { key: 'bank', done: state.bankAdded, href: '/workspace/modules/module.accounting' },
-    { key: 'product', done: state.productAdded, href: '/workspace/modules/module.inventory' },
+    { key: 'customer', done: state.customerAdded, href: '/modules#module.sales' },
+    { key: 'bank', done: state.bankAdded, href: '/modules#module.accounting' },
+    { key: 'product', done: state.productAdded, href: '/modules#module.inventory' },
     { key: 'firstInvoice', done: state.firstInvoiceReady, href: '/billing' },
   ] as const;
   const empty = !state.customerAdded && !state.bankAdded && !state.productAdded;

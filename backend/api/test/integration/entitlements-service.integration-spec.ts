@@ -71,6 +71,7 @@ describe('EntitlementsService (T010)', () => {
     // that state itself — rather than assume migration-seeded defaults survived — and restore
     // whatever it found afterward, so it passes regardless of suite execution order.
     const shippedDisabledKeys = [
+      'module.onboarding_checklist',
       'module.accounts',
       'module.company_setup',
       'module.module_selection',
@@ -104,7 +105,8 @@ describe('EntitlementsService (T010)', () => {
       expect(result.autoRestrictUnpaid).toBe(false);
       // Feature flags are platform-wide (T099), and the platform permanently ships a growing
       // set of module gate rows via migration (`module.accounts` since T032,
-      // `module.company_setup` since T042, and `module.module_selection` since T076). This test
+      // `module.company_setup` since T042, `module.module_selection` since T076, and
+      // `module.onboarding_checklist` since T082). This test
       // creates no flags, so the only rows that may legitimately appear are those shipped
       // platform gates (in their shipped, disabled state) — never a test-created flag.
       expect(result.featureFlags).toEqual(

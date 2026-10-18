@@ -11,6 +11,7 @@ body { margin: 0; background: var(--kemfai-surface); color: #17152b; font-family
 .kemfai-module-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 1rem; margin-block: 1.5rem; }
 .kemfai-module-card { border: 1px solid var(--kemfai-border); border-radius: 12px; background: #fff; box-shadow: 0 4px 16px rgba(45, 35, 90, .05); min-height: 150px; }
 .kemfai-module-card[data-included="true"] { border-block-start: 3px solid var(--kemfai-violet); }
+.kemfai-module-card:target, .kemfai-module-card[data-targeted="true"] { outline: 3px solid #0f62fe; outline-offset: 3px; }
 .kemfai-module-actions { display: flex; align-items: center; gap: 1rem; margin-block: 1rem 2rem; }
 .kemfai-module-actions .cds--btn--primary { background: var(--kemfai-purple); }
 .kemfai-module-actions .cds--btn--primary:hover { background: var(--kemfai-purple); }

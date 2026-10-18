@@ -93,9 +93,9 @@ test.describe.serial('T080 owned real checklist journey', () => {
     await expect(page.getByTestId('activation-gate')).toBeVisible();
     await expect(page.getByTestId('checklist-firstInvoice')).toContainText('Not complete');
     const setupTargets = [
-      ['customer', '/workspace/modules/module.sales', /\/workspace\/modules\/module\.sales$/],
-      ['bank', '/workspace/modules/module.accounting', /\/workspace\/modules\/module\.accounting$/],
-      ['product', '/workspace/modules/module.inventory', /\/workspace\/modules\/module\.inventory$/],
+      ['customer', '/modules#module.sales', /\/modules#module\.sales$/],
+      ['bank', '/modules#module.accounting', /\/modules#module\.accounting$/],
+      ['product', '/modules#module.inventory', /\/modules#module\.inventory$/],
       ['firstInvoice', '/billing', /\/billing$/],
     ] as const;
     for (const [item, href, url] of setupTargets) {
@@ -106,9 +106,13 @@ test.describe.serial('T080 owned real checklist journey', () => {
       if (item === 'firstInvoice') {
         await expect(page.getByRole('heading').first()).toBeVisible();
       } else {
-        await expect(
-          page.getByText('This module is enabled and available in your workspace.', { exact: true }),
-        ).toBeVisible();
+        const key = item === 'customer' ? 'module.sales' : item === 'bank' ? 'module.accounting' : 'module.inventory';
+        const card = page.locator(`[id="${key}"]`);
+        await expect(card).toBeVisible();
+        await expect(card).toHaveAttribute('data-targeted', 'true');
+        await page.locator(`label[for="select-${key}"]`).click();
+        await page.getByTestId('module-selection-save').click();
+        await expect(page.getByTestId('module-selection-success')).toBeVisible();
       }
       await page.goto('/checklist');
     }
@@ -218,8 +222,11 @@ test.describe.serial('T080 owned real checklist journey', () => {
     expect(crossSiteGet.status).toBe(200);
     expect(await crossSiteGet.text()).toBe(text);
     expect((await fetch(`${required('T080_API_URL')}/onboarding/checklist`)).status).toBe(401);
-    sql("UPDATE feature_flag SET enabled=false WHERE feature_key='module.onboarding_checklist'");
-    expect((await beta.goto('/checklist'))?.status()).toBe(404);
+    expect(
+      sql(
+        "UPDATE feature_flag SET enabled=false WHERE feature_key='module.onboarding_checklist' RETURNING enabled",
+      ),
+    ).toBe('f');
     expect(
       (
         await fetch(`${required('T080_API_URL')}/onboarding/checklist`, {
@@ -227,6 +234,9 @@ test.describe.serial('T080 owned real checklist journey', () => {
         })
       ).status,
     ).toBe(404);
+    await beta.goto('/checklist');
+    await expect(beta.getByTestId('checklist-navigation')).toHaveCount(0);
+    await expect(beta.getByTestId('checklist-customer')).toHaveCount(0);
     sql(
       `UPDATE feature_flag SET enabled=true WHERE feature_key='module.onboarding_checklist'; UPDATE subscription SET status='PendingActivation',current_period_end=current_date-30 WHERE tenant_id='${required('T080_TENANT_A_ID')}'; UPDATE tenant SET ready_at=current_date-30 WHERE id='${required('T080_TENANT_A_ID')}'`,
     );

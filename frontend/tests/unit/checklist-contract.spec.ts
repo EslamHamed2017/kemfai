@@ -13,9 +13,9 @@ describe('T083 checklist surface', () => {
       readFileSync(path.join(root, 'src/locales/en/common.json'), 'utf8'),
     );
     expect(page).toContain('ChecklistScreen');
-    expect(screen).toContain('/workspace/modules/module.sales');
-    expect(screen).toContain('/workspace/modules/module.accounting');
-    expect(screen).toContain('/workspace/modules/module.inventory');
+    expect(screen).toContain('/modules#module.sales');
+    expect(screen).toContain('/modules#module.accounting');
+    expect(screen).toContain('/modules#module.inventory');
     expect(screen).toContain('/billing');
     expect(screen).toContain("fetch('/api/onboarding/checklist'");
     expect(Object.keys(messages.onboardingChecklist.items)).toEqual([
@@ -24,5 +24,9 @@ describe('T083 checklist surface', () => {
       'product',
       'firstInvoice',
     ]);
+    expect(messages.onboardingChecklist.items.customer.action).toBe('Set up Sales module');
+    expect(messages.onboardingChecklist.items.bank.action).toBe('Set up Accounting module');
+    expect(messages.onboardingChecklist.items.product.action).toBe('Set up Inventory module');
+    expect(JSON.stringify(messages.onboardingChecklist.items)).not.toMatch(/create|record creation/i);
   });
 });

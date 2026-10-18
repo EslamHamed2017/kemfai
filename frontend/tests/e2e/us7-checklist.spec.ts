@@ -55,14 +55,14 @@ for (const locale of ['en', 'ar'] as const) {
     await expect(page.locator('.kemfai-checklist-item')).toHaveCount(4);
     const actionLinks = page.locator('.kemfai-checklist-item a');
     await expect(actionLinks).toHaveCount(4);
-    await expect(actionLinks.nth(0)).toHaveAttribute('href', '/workspace/modules/module.sales');
-    await expect(actionLinks.nth(1)).toHaveAttribute('href', '/workspace/modules/module.accounting');
-    await expect(actionLinks.nth(2)).toHaveAttribute('href', '/workspace/modules/module.inventory');
+    await expect(actionLinks.nth(0)).toHaveAttribute('href', '/modules#module.sales');
+    await expect(actionLinks.nth(1)).toHaveAttribute('href', '/modules#module.accounting');
+    await expect(actionLinks.nth(2)).toHaveAttribute('href', '/modules#module.inventory');
     await expect(actionLinks.nth(3)).toHaveAttribute('href', '/billing');
     const expectedDestinations = [
-      /\/workspace\/modules\/module\.sales$/,
-      /\/workspace\/modules\/module\.accounting$/,
-      /\/workspace\/modules\/module\.inventory$/,
+      /\/modules#module\.sales$/,
+      /\/modules#module\.accounting$/,
+      /\/modules#module\.inventory$/,
       /\/billing$/,
     ];
     for (let index = 0; index < expectedDestinations.length; index += 1) {
@@ -71,7 +71,13 @@ for (const locale of ['en', 'ar'] as const) {
       if (index === 3) {
         await expect(page.getByRole('heading', { name: messages.billing.title })).toBeVisible();
       } else {
-        await expect(page.getByText(messages.moduleSelection.workspaceModuleReady, { exact: true })).toBeVisible();
+        const key = ['module.sales', 'module.accounting', 'module.inventory'][index];
+        const card = page.locator(`[id="${key}"]`);
+        await expect(card).toBeVisible();
+        await expect(card).toHaveAttribute('data-targeted', 'true');
+        await page.locator(`label[for="select-${key}"]`).click();
+        await page.getByTestId('module-selection-save').click();
+        await expect(page.getByTestId('module-selection-success')).toBeVisible();
       }
       await page.goto('/checklist');
     }

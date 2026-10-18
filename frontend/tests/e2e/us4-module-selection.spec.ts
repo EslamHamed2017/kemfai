@@ -48,8 +48,10 @@ for (const locale of ['en', 'ar'] as const) {
     await expect(page.getByTestId('module-selection-success')).toContainText(messages.moduleSelection.saved);
     await expect(page.getByTestId('workspace-module-navigation')).toContainText(locale === 'ar' ? 'المخزون' : 'Inventory');
     await expect(page.getByTestId('workspace-module-checklist')).toContainText(locale === 'ar' ? 'وحدتين' : '2 enabled modules');
-    await page.getByTestId('workspace-module-navigation').getByRole('link', { name: locale === 'ar' ? 'المخزون' : 'Inventory' }).click();
-    await expect(page).toHaveURL(/\/workspace\/modules\/module\.inventory$/);
+    await Promise.all([
+      page.waitForURL(/\/workspace\/modules\/module\.inventory$/),
+      page.getByTestId('workspace-module-navigation').getByRole('link', { name: locale === 'ar' ? 'المخزون' : 'Inventory' }).click(),
+    ]);
     await expect(page.getByRole('heading', { name: locale === 'ar' ? 'المخزون' : 'Inventory' })).toBeVisible();
     await page.goBack();
     await page.reload();

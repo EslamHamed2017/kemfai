@@ -19,8 +19,7 @@ class KemfaiOnboardingChecklist(models.AbstractModel):
             ('active', '=', True), ('customer_rank', '>', 0), *company_domain,
         ], limit=1))
         bank_added = bool(self.env['account.journal'].search_count([
-            ('active', '=', True), ('type', '=', 'bank'), ('bank_account_id', '!=', False),
-            ('company_id', '=', company.id),
+            ('active', '=', True), ('type', '=', 'bank'), ('company_id', '=', company.id),
         ], limit=1)) or bool(self.env['res.partner.bank'].search_count([
             ('active', '=', True), ('partner_id', '=', company.partner_id.id),
         ], limit=1))

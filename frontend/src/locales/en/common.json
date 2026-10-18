@@ -334,9 +334,9 @@
     "active": "Subscription active — the separate full-usage gate is clear.",
     "live": "This checklist updates automatically when source records change.",
     "items": {
-      "customer": { "title": "Add a customer", "description": "At least one active customer record exists.", "action": "Open Sales workspace" },
-      "bank": { "title": "Add a bank", "description": "At least one active bank account exists.", "action": "Open Accounting workspace" },
-      "product": { "title": "Add a product or service", "description": "At least one active saleable item exists.", "action": "Open Inventory workspace" },
+      "customer": { "title": "Add a customer", "description": "At least one active customer record exists.", "action": "Set up Sales module" },
+      "bank": { "title": "Add a bank", "description": "At least one active bank account exists.", "action": "Set up Accounting module" },
+      "product": { "title": "Add a product or service", "description": "At least one active saleable item exists.", "action": "Set up Inventory module" },
       "firstInvoice": { "title": "First-invoice readiness", "description": "Customer, bank, and product setup prerequisites are complete.", "action": "Review activation status" }
     }
   },

@@ -3,7 +3,8 @@
 const http = require('http');
 const { createClient } = require('redis');
 
-let persisted = null; // ONE shared account: same user across both login sessions (T103's scenario)
+const preferredLocales = new Map();
+const tokenAccounts = new Map();
 const moduleSelections = new Map();
 const revokedModuleTokens = new Set();
 
@@ -21,8 +22,9 @@ async function readBody(req) {
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, 'http://127.0.0.1:4100');
   if (url.pathname === '/__e2e/seed') {
-    const { sessionId, token = 'e2e-access-token', locale = null } = JSON.parse(await readBody(req));
-    if (locale !== null && locale !== undefined) persisted = locale;
+    const { sessionId, token = 'e2e-access-token', locale = null, accountKey = token } = JSON.parse(await readBody(req));
+    tokenAccounts.set(token, accountKey);
+    if (locale !== null && locale !== undefined) preferredLocales.set(accountKey, locale);
     try {
       if (!client.isOpen) await client.connect();
       await client.set(`kemfai:session:${sessionId}`, JSON.stringify({
@@ -38,8 +40,9 @@ const server = http.createServer(async (req, res) => {
     return res.end();
   }
   if (url.pathname === '/__e2e/state') {
+    const accountKey = url.searchParams.get('accountKey') || 'e2e-access-token';
     res.writeHead(200, { 'content-type': 'application/json' });
-    return res.end(JSON.stringify({ locale: persisted }));
+    return res.end(JSON.stringify({ locale: preferredLocales.get(accountKey) || null }));
   }
   if (url.pathname === '/__e2e/modules') {
     const { token, featureKeys, revoked = false } = JSON.parse(await readBody(req));
@@ -49,7 +52,9 @@ const server = http.createServer(async (req, res) => {
     return res.end();
   }
   if (url.pathname === '/__e2e/reset') {
-    persisted = null;
+    const accountKey = url.searchParams.get('accountKey');
+    if (accountKey) preferredLocales.delete(accountKey);
+    else preferredLocales.clear();
     res.writeHead(204);
     return res.end();
   }
@@ -68,6 +73,18 @@ const server = http.createServer(async (req, res) => {
       { key: 'module.projects', name: 'Projects', nameAr: 'المشاريع', includedInCurrentPlan: false, selected: false, requiredPlanTier: 'Growth', requiredPlanTierAr: 'النمو' },
     ]));
   }
+  if (url.pathname === '/modules/selection' && req.method === 'PUT') {
+    const token = (req.headers.authorization || '').replace(/^Bearer /, '');
+    let featureKeys = null;
+    try { featureKeys = JSON.parse(await readBody(req)).featureKeys; } catch { featureKeys = null; }
+    if (!Array.isArray(featureKeys) || featureKeys.some((key) => typeof key !== 'string')) {
+      res.writeHead(400, { 'content-type': 'application/json' });
+      return res.end(JSON.stringify({ message: 'featureKeys must be an array of strings' }));
+    }
+    moduleSelections.set(token, featureKeys);
+    res.writeHead(200, { 'content-type': 'application/json' });
+    return res.end(JSON.stringify({ featureKeys }));
+  }
   if (url.pathname === '/onboarding/checklist') {
     res.writeHead(200, { 'content-type': 'application/json' });
     return res.end(JSON.stringify({ customerAdded: false, bankAdded: false, productAdded: false, firstInvoiceReady: false, gatedOnSubscriptionActivation: true }));
@@ -79,12 +96,14 @@ const server = http.createServer(async (req, res) => {
   if (req.method === 'PATCH') {
     let locale = null;
     try { locale = JSON.parse(await readBody(req)).locale; } catch { locale = null; }
-    persisted = locale;
+    const token = (req.headers.authorization || '').replace(/^Bearer /, '');
+    preferredLocales.set(tokenAccounts.get(token) || token, locale);
     res.writeHead(200, { 'content-type': 'application/json' });
     return res.end('{}');
   }
   res.writeHead(200, { 'content-type': 'application/json' });
-  res.end(JSON.stringify({ locale: persisted }));
+  const token = (req.headers.authorization || '').replace(/^Bearer /, '');
+  res.end(JSON.stringify({ locale: preferredLocales.get(tokenAccounts.get(token) || token) || null }));
 });
 
 server.listen(4100, '127.0.0.1', () => console.log('stub-api on 4100'));

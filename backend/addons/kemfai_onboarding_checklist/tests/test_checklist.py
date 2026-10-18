@@ -5,6 +5,17 @@ class TestOnboardingChecklist(TransactionCase):
     def setUp(self):
         super().setUp()
         self.checklist = self.env['kemfai.onboarding.checklist']
+        # Accounting bootstrap data may include a bank journal. Establish the
+        # empty checklist precondition inside this test transaction only.
+        self.env['account.journal'].search([
+            ('active', '=', True),
+            ('type', '=', 'bank'),
+            ('company_id', '=', self.env.company.id),
+        ]).write({'active': False})
+        self.env['res.partner.bank'].search([
+            ('active', '=', True),
+            ('partner_id', '=', self.env.company.partner_id.id),
+        ]).write({'active': False})
 
     def test_customer_bank_product_create_archive_delete_are_live(self):
         self.assertEqual(self.checklist.kemfai_get_state(), {
@@ -50,4 +61,27 @@ class TestOnboardingChecklist(TransactionCase):
         self.env['res.partner'].create({
             'name': 'Foreign Customer', 'customer_rank': 1, 'company_id': other.id,
         })
-        self.assertFalse(self.checklist.with_company(self.env.company).kemfai_get_state()['customerAdded'])
+        self.env['account.journal'].create({
+            'name': 'Foreign Bank Journal', 'code': 'F81B', 'type': 'bank',
+            'company_id': other.id,
+        })
+        self.env['res.partner.bank'].create({
+            'acc_number': 'T079-FOREIGN-ACCOUNT',
+            'partner_id': other.partner_id.id,
+        })
+        state = self.checklist.with_company(self.env.company).kemfai_get_state()
+        self.assertFalse(state['customerAdded'])
+        self.assertFalse(state['bankAdded'])
+
+    def test_bank_journal_without_partner_bank_is_live_readiness(self):
+        journal = self.env['account.journal'].create({
+            'name': 'T081 Bank Journal',
+            'code': 'T81B',
+            'type': 'bank',
+            'company_id': self.env.company.id,
+        })
+        self.assertFalse(journal.bank_account_id)
+        self.assertTrue(self.checklist.kemfai_get_state()['bankAdded'])
+
+        journal.active = False
+        self.assertFalse(self.checklist.kemfai_get_state()['bankAdded'])
