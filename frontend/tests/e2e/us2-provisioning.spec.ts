@@ -2,15 +2,20 @@ import { test, expect, type Page } from '@playwright/test';
 import en from '../../src/locales/en/common.json';
 import ar from '../../src/locales/ar/common.json';
 import { openLocalePage, assertMirrored, assertNoHorizontalOverflow, runAxe, VIEWPORT } from './support/rtl';
-async function authenticated(page: Page, baseURL: string) {
-  await page.route('**/auth/login?e2e-provisioning', (route) => route.fulfill({ status: 302, headers: { location: `${baseURL}/provisioning`, 'set-cookie': '__Host-kemfai_session=playwright-session; Path=/; Secure; HttpOnly; SameSite=Lax' } }));
+async function authenticated(page: Page, baseURL: string, locale: 'en' | 'ar' = 'en') {
+  await fetch('http://127.0.0.1:4100/__e2e/seed', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ sessionId: `playwright-session-${locale}`, token: `playwright-token-${locale}`, locale }),
+  });
+  await page.route('**/auth/login?e2e-provisioning', (route) => route.fulfill({ status: 302, headers: { location: `${baseURL}/provisioning`, 'set-cookie': `__Host-kemfai_session=playwright-session-${locale}; Path=/; Secure; HttpOnly; SameSite=Lax` } }));
   await page.goto('/auth/login?e2e-provisioning');
 }
 for (const locale of ['en', 'ar'] as const) {
   test(`${locale}: loading polls, failure retry, status transition and contact`, async ({ browser, baseURL }) => {
     const { context, page } = await openLocalePage(browser, baseURL!, locale);
     try {
-      await authenticated(page, baseURL!);
+      await authenticated(page, baseURL!, locale);
       let count = 0, retried = false, posts = 0;
       await page.route('**/api/tenants/me', async (route) => {
         count++;
@@ -47,7 +52,7 @@ for (const locale of ['en', 'ar'] as const) {
 test('the shared sign-out control is present and triggers a real logout POST + navigation to login', async ({ browser, baseURL }) => {
   const { context, page } = await openLocalePage(browser, baseURL!, 'en');
   try {
-    await authenticated(page, baseURL!);
+    await authenticated(page, baseURL!, 'en');
     await page.route('**/api/tenants/me', (route) =>
       route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ status: 'Creating' }) }),
     );
@@ -77,7 +82,7 @@ test('EN/AR failure actions mirror and network recovery stays actionable', async
   const arabic = await openLocalePage(browser, baseURL!, 'ar');
   try {
     for (const { page } of [english, arabic]) {
-      await authenticated(page, baseURL!);
+      await authenticated(page, baseURL!, page === english.page ? 'en' : 'ar');
       let healthy = false;
       await page.route('**/api/tenants/me', (route) => healthy ? route.fulfill({ status: 200, contentType: 'application/json', body: '{"status":"Failed"}' }) : route.abort());
       await page.route('**/api/tenants/me/provisioning-retry', (route) => route.fulfill({ status: 409 }));
