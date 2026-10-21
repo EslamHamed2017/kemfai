@@ -27,6 +27,8 @@ set -euo pipefail
 repo_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 addons_dir="$repo_dir/backend/addons"
 api_dir="$repo_dir/backend/api"
+# shellcheck source=scripts/lib_docker_test_cleanup.sh
+. "$repo_dir/scripts/lib_docker_test_cleanup.sh"
 
 command -v docker >/dev/null 2>&1 || { echo "FAIL: docker CLI is not available" >&2; exit 1; }
 docker info >/dev/null 2>&1 || { echo "FAIL: docker daemon is not reachable" >&2; exit 1; }
@@ -72,44 +74,23 @@ fail() {
 # Resources this run actually created, in creation order — the only things
 # `cleanup()` is allowed to remove, and only after re-verifying the ownership
 # label on each one at removal time.
-declare -a owned_containers=()
-owned_network=""
-
-verify_owned_container() {
-  local name="$1"
-  local actual
-  actual="$(docker inspect -f '{{ index .Config.Labels "kemfai.t054.run" }}' "$name" 2>/dev/null || true)"
-  [ "$actual" = "$run_id" ]
-}
-
-verify_owned_network() {
-  local name="$1"
-  local actual
-  actual="$(docker network inspect -f '{{ index .Labels "kemfai.t054.run" }}' "$name" 2>/dev/null || true)"
-  [ "$actual" = "$run_id" ]
-}
+kemfai_docker_cleanup_init "kemfai.t054.run" "$run_id"
 
 cleanup() {
+  local cleanup_status=$?
+  local cleanup_failed=0
+  trap - EXIT
   set +e
   echo "== Cleanup: removing only resources labelled ${label} =="
-  for name in "${owned_containers[@]}"; do
-    if verify_owned_container "$name"; then
-      docker rm -f "$name" >/dev/null 2>&1
-    else
-      echo "SKIP cleanup: '$name' is missing the ${label} label — not touching it" >&2
-    fi
-  done
-  if [ -n "$owned_network" ]; then
-    if verify_owned_network "$owned_network"; then
-      docker network rm "$owned_network" >/dev/null 2>&1
-    else
-      echo "SKIP cleanup: network '$owned_network' is missing the ${label} label — not touching it" >&2
-    fi
-  fi
+  kemfai_cleanup_owned_containers || cleanup_failed=1
+  kemfai_cleanup_owned_networks || cleanup_failed=1
   # Evidence/logs in $artifacts_dir are deliberately KEPT (nonsecret job artifacts).
-  rm -rf "$private_dir"
+  rm -rf "$private_dir" || cleanup_failed=1
+  [ "$cleanup_failed" -eq 0 ] || [ "$cleanup_status" -ne 0 ] || cleanup_status=1
+  exit "$cleanup_status"
 }
 trap cleanup EXIT
+kemfai_install_cleanup_signal_traps
 
 {
   echo "T054 live gate evidence (no secrets) — $(date -u +%Y-%m-%dT%H:%M:%SZ)"
@@ -125,19 +106,19 @@ trap cleanup EXIT
 
 echo
 echo "== Creating a newly-owned private network and PostgreSQL/Redis containers =="
+kemfai_register_network_intent "$network"
 docker network create --label "$label" "$network" >/dev/null
-owned_network="$network"
 
 pg_env_file="$private_dir/pg.env"
 printf 'POSTGRES_USER=odoo\nPOSTGRES_PASSWORD=%s\n' "$pg_password" > "$pg_env_file"
 chmod 600 "$pg_env_file"
+kemfai_register_container_intent "$pg_container"
 docker run -d --label "$label" --name "$pg_container" --network "$network" \
   --env-file "$pg_env_file" -p 127.0.0.1::5432 postgres:16 >/dev/null
-owned_containers+=("$pg_container")
 
+kemfai_register_container_intent "$redis_container"
 docker run -d --label "$label" --name "$redis_container" --network "$network" \
   -p 127.0.0.1::6379 redis:7-alpine >/dev/null
-owned_containers+=("$redis_container")
 
 pg_host_port=""
 redis_host_port=""
@@ -166,7 +147,7 @@ log_file="$artifacts_dir/addon-tests.log"
 # Named and label-registered BEFORE the attached run starts, so cleanup() can
 # verify-and-remove this container even if the bounded run below times out —
 # an unnamed --rm container can never be targeted for label-verified cleanup.
-owned_containers+=("$orm_container")
+kemfai_register_container_intent "$orm_container"
 set +e
 timeout --kill-after=30 1800 \
   docker run --rm --name "$orm_container" --label "$label" --network "$network" \
@@ -209,7 +190,7 @@ echo "== Phase 2a: offline bootstrap of scratch DB ${http_db} (list_db=False for
 # while no list_db=False HTTP server is listening yet, using the same scratch Postgres as the
 # eventual HTTP container. Named and label-registered BEFORE it starts, exactly like orm_container,
 # so cleanup() can verify-and-remove it even if the bounded run below times out.
-owned_containers+=("$http_bootstrap_init_container")
+kemfai_register_container_intent "$http_bootstrap_init_container"
 set +e
 bootstrap_init_log="$artifacts_dir/http-db-bootstrap-init.log"
 timeout --kill-after=30 900 \
@@ -244,7 +225,7 @@ user.write({'login': os.environ['ADMIN_LOGIN'], 'password': os.environ['ADMIN_PA
 env.cr.commit()
 PYEOF
 chmod 600 "$shell_script_file"
-owned_containers+=("$http_bootstrap_admin_container")
+kemfai_register_container_intent "$http_bootstrap_admin_container"
 set +e
 bootstrap_admin_log="$artifacts_dir/http-db-bootstrap-admin.log"
 timeout --kill-after=15 180 \
@@ -280,12 +261,12 @@ dbfilter = ^${run_id}_.*\$
 list_db = False
 EOF
 chmod 644 "$conf_file"
+kemfai_register_container_intent "$http_container"
 docker run -d --label "$label" --name "$http_container" --network "$network" \
   --env-file "$odoo_env_file" \
   -v "${addons_dir}:/mnt/extra-addons:ro" \
   -v "${conf_file}:/etc/odoo/odoo.conf:ro" \
   -p 127.0.0.1::8069 odoo:18 >/dev/null
-owned_containers+=("$http_container")
 
 odoo_host_port="$(docker port "$http_container" 8069/tcp | head -1 | cut -d: -f2)"
 ready=0
