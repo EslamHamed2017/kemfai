@@ -7,6 +7,8 @@ set -euo pipefail
 repo_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 api_dir="$repo_dir/backend/api"
 addons_dir="$repo_dir/backend/addons"
+# shellcheck source=scripts/lib_docker_test_cleanup.sh
+. "$repo_dir/scripts/lib_docker_test_cleanup.sh"
 
 command -v docker >/dev/null 2>&1 || { echo "FAIL: docker CLI is unavailable" >&2; exit 1; }
 docker info >/dev/null 2>&1 || { echo "FAIL: docker daemon is unreachable" >&2; exit 1; }
@@ -40,26 +42,11 @@ odoo_master_password="$(openssl rand -hex 24)"
 odoo_admin_login="t050-${run_id}@example.invalid"
 odoo_admin_password="$(openssl rand -hex 24)"
 
-declare -a owned_containers=()
-owned_network=""
+kemfai_docker_cleanup_init "$label_key" "$run_id"
 
 fail() {
   echo "FAIL: $*" >&2
   exit 1
-}
-
-verify_owned_container() {
-  local name="$1"
-  local actual
-  actual="$(docker inspect -f "{{ index .Config.Labels \"${label_key}\" }}" "$name" 2>/dev/null || true)"
-  [ "$actual" = "$run_id" ]
-}
-
-verify_owned_network() {
-  local name="$1"
-  local actual
-  actual="$(docker network inspect -f "{{ index .Labels \"${label_key}\" }}" "$name" 2>/dev/null || true)"
-  [ "$actual" = "$run_id" ]
 }
 
 cleanup() {
@@ -67,30 +54,13 @@ cleanup() {
   trap - EXIT
   set +e
   echo "== Cleanup: label-verified T050 resources ==" | tee -a "$evidence_file"
-  for ((index=${#owned_containers[@]}-1; index>=0; index--)); do
-    name="${owned_containers[$index]}"
-    if verify_owned_container "$name"; then
-      docker rm -f "$name" >/dev/null 2>&1
-    elif docker inspect "$name" >/dev/null 2>&1; then
-      echo "FAIL cleanup ownership check: ${name}" | tee -a "$evidence_file" >&2
-      exit_status=1
-    fi
-  done
-  if [ -n "$owned_network" ]; then
-    if verify_owned_network "$owned_network"; then
-      docker network rm "$owned_network" >/dev/null 2>&1
-    elif docker network inspect "$owned_network" >/dev/null 2>&1; then
-      echo "FAIL cleanup ownership check: ${owned_network}" | tee -a "$evidence_file" >&2
-      exit_status=1
-    fi
+  if ! kemfai_cleanup_owned_containers; then
+    [ "$exit_status" -ne 0 ] || exit_status=1
   fi
-  if [ -n "$(docker ps -aq --filter "label=${label}" 2>/dev/null)" ] || \
-     [ -n "$(docker network ls -q --filter "label=${label}" 2>/dev/null)" ]; then
-    echo "FAIL: labelled resources remain after cleanup" | tee -a "$evidence_file" >&2
-    exit_status=1
-  else
-    echo "PASS: zero resources carrying ${label} remain." | tee -a "$evidence_file"
+  if ! kemfai_cleanup_owned_networks; then
+    [ "$exit_status" -ne 0 ] || exit_status=1
   fi
+  echo "Cleanup verification completed for ${label}." | tee -a "$evidence_file"
   if [ "$fixture_addons" = "$private_dir/addons" ] && [ -d "$fixture_addons" ]; then
     find "$fixture_addons" -depth -delete
   fi
@@ -99,6 +69,7 @@ cleanup() {
   exit "$exit_status"
 }
 trap cleanup EXIT
+kemfai_install_cleanup_signal_traps
 
 {
   echo "T050 live integration evidence (nonsecret)"
@@ -112,19 +83,19 @@ trap cleanup EXIT
   echo "control_db=${control_db}"
 } | tee "$evidence_file"
 
+kemfai_register_network_intent "$network"
 docker network create --label "$label" "$network" >/dev/null
-owned_network="$network"
 
 pg_env_file="$private_dir/postgres.env"
 printf 'POSTGRES_USER=odoo\nPOSTGRES_PASSWORD=%s\n' "$pg_password" > "$pg_env_file"
 chmod 600 "$pg_env_file"
+kemfai_register_container_intent "$pg_container"
 docker run -d --name "$pg_container" --label "$label" --network "$network" \
   --env-file "$pg_env_file" -p 127.0.0.1::5432 postgres:16 >/dev/null
-owned_containers+=("$pg_container")
 
+kemfai_register_container_intent "$redis_container"
 docker run -d --name "$redis_container" --label "$label" --network "$network" \
   -p 127.0.0.1::6379 redis:7-alpine >/dev/null
-owned_containers+=("$redis_container")
 
 ready=0
 for _ in $(seq 1 60); do
@@ -145,7 +116,7 @@ printf 'HOST=%s\nUSER=odoo\nPASSWORD=%s\nADMIN_LOGIN=%s\nADMIN_PASSWORD=%s\n' \
   "$pg_container" "$pg_password" "$odoo_admin_login" "$odoo_admin_password" > "$odoo_env_file"
 chmod 600 "$odoo_env_file"
 
-owned_containers+=("$bootstrap_container")
+kemfai_register_container_intent "$bootstrap_container"
 timeout --kill-after=30 900 docker run --name "$bootstrap_container" --label "$label" \
   --network "$network" --env-file "$odoo_env_file" \
   -v "${fixture_addons}:/mnt/extra-addons:ro" odoo:18 odoo \
@@ -165,7 +136,7 @@ printf '%s\n' \
   "user.write({'login': os.environ['ADMIN_LOGIN'], 'password': os.environ['ADMIN_PASSWORD']})" \
   'env.cr.commit()' > "$admin_script"
 chmod 600 "$admin_script"
-owned_containers+=("$admin_container")
+kemfai_register_container_intent "$admin_container"
 timeout --kill-after=15 180 docker run -i --name "$admin_container" --label "$label" \
   --network "$network" --env-file "$odoo_env_file" \
   -v "${fixture_addons}:/mnt/extra-addons:ro" odoo:18 odoo shell \
@@ -184,10 +155,10 @@ printf '%s\n' \
   "dbfilter = ^${run_id}_.*\$" \
   'list_db = False' > "$odoo_conf"
 chmod 644 "$odoo_conf"
+kemfai_register_container_intent "$odoo_container"
 docker run -d --name "$odoo_container" --label "$label" --network "$network" \
   --env-file "$odoo_env_file" -v "${fixture_addons}:/mnt/extra-addons:ro" \
   -v "${odoo_conf}:/etc/odoo/odoo.conf:ro" -p 127.0.0.1::8069 odoo:18 >/dev/null
-owned_containers+=("$odoo_container")
 odoo_port="$(docker port "$odoo_container" 8069/tcp | head -1 | cut -d: -f2)"
 ready=0
 for _ in $(seq 1 90); do

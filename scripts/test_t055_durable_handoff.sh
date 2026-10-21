@@ -25,6 +25,8 @@ set -euo pipefail
 
 repo_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 api_dir="$repo_dir/backend/api"
+# shellcheck source=scripts/lib_docker_test_cleanup.sh
+. "$repo_dir/scripts/lib_docker_test_cleanup.sh"
 
 command -v docker >/dev/null 2>&1 || { echo "FAIL: docker CLI is not available" >&2; exit 1; }
 docker info >/dev/null 2>&1 || { echo "FAIL: docker daemon is not reachable" >&2; exit 1; }
@@ -40,27 +42,20 @@ artifacts_dir="${KEMFAI_ARTIFACTS_DIR:-$(dirname "$repo_dir")/t055-handoff-evide
 mkdir -p "$artifacts_dir"
 evidence_file="$artifacts_dir/evidence.txt"
 
-declare -a owned_containers=()
-
-verify_owned_container() {
-  local name="$1"
-  local actual
-  actual="$(docker inspect -f '{{ index .Config.Labels "kemfai.t055.run" }}' "$name" 2>/dev/null || true)"
-  [ "$actual" = "$run_id" ]
-}
+kemfai_docker_cleanup_init "kemfai.t055.run" "$run_id"
 
 cleanup() {
+  local cleanup_status=$?
+  local cleanup_failed=0
+  trap - EXIT
   set +e
   echo "== Cleanup: removing only resources labelled ${label} =="
-  for name in "${owned_containers[@]}"; do
-    if verify_owned_container "$name"; then
-      docker rm -f "$name" >/dev/null 2>&1
-    else
-      echo "SKIP cleanup: '$name' is missing the ${label} label — not touching it" >&2
-    fi
-  done
+  kemfai_cleanup_owned_containers || cleanup_failed=1
+  [ "$cleanup_failed" -eq 0 ] || [ "$cleanup_status" -ne 0 ] || cleanup_status=1
+  exit "$cleanup_status"
 }
 trap cleanup EXIT
+kemfai_install_cleanup_signal_traps
 
 {
   echo "T055 durable-handoff live gate evidence (no secrets) — $(date -u +%Y-%m-%dT%H:%M:%SZ)"
@@ -72,10 +67,10 @@ trap cleanup EXIT
 
 echo
 echo "== Creating a newly-owned private PostgreSQL container =="
+kemfai_register_container_intent "$pg_container"
 docker run -d --label "$label" --name "$pg_container" \
   -e POSTGRES_USER=odoo -e POSTGRES_PASSWORD="$pg_password" \
   -p 127.0.0.1::5432 postgres:16 >/dev/null
-owned_containers+=("$pg_container")
 
 ready=0
 for _ in $(seq 1 60); do

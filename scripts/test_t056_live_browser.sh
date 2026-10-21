@@ -23,6 +23,8 @@ repo_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 addons_dir="$repo_dir/backend/addons"
 api_dir="$repo_dir/backend/api"
 frontend_dir="$repo_dir/frontend"
+# shellcheck source=scripts/lib_docker_test_cleanup.sh
+. "$repo_dir/scripts/lib_docker_test_cleanup.sh"
 
 command -v docker >/dev/null 2>&1 || { echo "FAIL: docker CLI is not available" >&2; exit 1; }
 docker info >/dev/null 2>&1 || { echo "FAIL: docker daemon is not reachable" >&2; exit 1; }
@@ -181,47 +183,9 @@ scrub_retained_artifacts() {
   python3 "$redactor_program" tree "$redaction_secrets_file" "$artifacts_dir"
 }
 
-declare -a owned_containers=()
-owned_network=""
 api_pid=""
 frontend_pid=""
-
-# Return an exact-name resource id only when its run label is also exact.  Status 1
-# means genuinely absent (normal for a completed --rm container), 2 means an existing
-# wrong-label resource, and 3 means listing/inspection could not establish ownership.
-exact_owned_container_id() {
-  local name="$1"
-  local resource_id actual
-  if ! resource_id="$(docker ps -aq --filter "name=^/${name}$" 2>/dev/null)"; then
-    return 3
-  fi
-  [ -n "$resource_id" ] || return 1
-  case "$resource_id" in
-    *$'\n'*) return 3 ;;
-  esac
-  if ! actual="$(docker inspect -f '{{ index .Config.Labels "kemfai.t056.run" }}' "$resource_id" 2>/dev/null)"; then
-    return 3
-  fi
-  [ "$actual" = "$run_id" ] || return 2
-  printf '%s\n' "$resource_id"
-}
-
-exact_owned_network_id() {
-  local name="$1"
-  local resource_id actual
-  if ! resource_id="$(docker network ls -q --filter "name=^${name}$" 2>/dev/null)"; then
-    return 3
-  fi
-  [ -n "$resource_id" ] || return 1
-  case "$resource_id" in
-    *$'\n'*) return 3 ;;
-  esac
-  if ! actual="$(docker network inspect -f '{{ index .Labels "kemfai.t056.run" }}' "$resource_id" 2>/dev/null)"; then
-    return 3
-  fi
-  [ "$actual" = "$run_id" ] || return 2
-  printf '%s\n' "$resource_id"
-}
+kemfai_docker_cleanup_init "kemfai.t056.run" "$run_id"
 
 # Each of api_pid/frontend_pid is started below via `setsid`, which puts it in a brand
 # new session/process group equal to its own pid — so `kill -- -$pid` (negative: the
@@ -262,48 +226,8 @@ cleanup() {
   echo "== Cleanup: removing only resources labelled ${label} =="
   terminate_owned_process_group "$frontend_pid" "next"
   terminate_owned_process_group "$api_pid" "dist/main.js"
-  for name in "${owned_containers[@]}"; do
-    resource_id="$(exact_owned_container_id "$name")"
-    ownership_status=$?
-    case "$ownership_status" in
-      0)
-        if ! docker rm -f "$resource_id" >/dev/null 2>&1; then
-          echo "FAIL cleanup: could not remove verified T056 container '$name'" >&2
-          cleanup_verification_failed=1
-        fi
-        ;;
-      1) ;;
-      2)
-        echo "FAIL cleanup: tracked container '$name' exists with a nonmatching run label — not touching it" >&2
-        cleanup_verification_failed=1
-        ;;
-      *)
-        echo "FAIL cleanup: unable to verify tracked container '$name' — not touching it" >&2
-        cleanup_verification_failed=1
-        ;;
-    esac
-  done
-  if [ -n "$owned_network" ]; then
-    resource_id="$(exact_owned_network_id "$owned_network")"
-    ownership_status=$?
-    case "$ownership_status" in
-      0)
-        if ! docker network rm "$resource_id" >/dev/null 2>&1; then
-          echo "FAIL cleanup: could not remove verified T056 network '$owned_network'" >&2
-          cleanup_verification_failed=1
-        fi
-        ;;
-      1) ;;
-      2)
-        echo "FAIL cleanup: tracked network '$owned_network' exists with a nonmatching run label — not touching it" >&2
-        cleanup_verification_failed=1
-        ;;
-      *)
-        echo "FAIL cleanup: unable to verify tracked network '$owned_network' — not touching it" >&2
-        cleanup_verification_failed=1
-        ;;
-    esac
-  fi
+  kemfai_cleanup_owned_containers || cleanup_verification_failed=1
+  kemfai_cleanup_owned_networks || cleanup_verification_failed=1
   if ! container_survivors="$(
     docker ps -aq --filter "label=kemfai.t056.run=${run_id}" 2>/dev/null
   )"; then
@@ -341,6 +265,7 @@ cleanup() {
   exit "$cleanup_status"
 }
 trap cleanup EXIT
+kemfai_install_cleanup_signal_traps
 
 {
   echo "T056 round-5 live browser gate evidence (no secrets) — $(date -u +%Y-%m-%dT%H:%M:%SZ)"
@@ -358,17 +283,17 @@ trap cleanup EXIT
 
 echo
 echo "== Phase 1: network + scratch PostgreSQL + Redis =="
-owned_network="$network"
+kemfai_register_network_intent "$network"
 docker network create --label "$label" "$network" >/dev/null
 
 pg_env_file="$private_dir/pg.env"
 printf 'POSTGRES_USER=odoo\nPOSTGRES_PASSWORD=%s\n' "$pg_password" > "$pg_env_file"
 chmod 600 "$pg_env_file"
-owned_containers+=("$pg_container")
+kemfai_register_container_intent "$pg_container"
 docker run -d --label "$label" --name "$pg_container" --network "$network" \
   --env-file "$pg_env_file" -p 127.0.0.1::5432 postgres:16 >/dev/null
 
-owned_containers+=("$redis_container")
+kemfai_register_container_intent "$redis_container"
 docker run -d --label "$label" --name "$redis_container" --network "$network" \
   -p 127.0.0.1::6379 redis:7-alpine >/dev/null
 
@@ -394,7 +319,7 @@ kc_env_file="$private_dir/kc.env"
 printf 'KEYCLOAK_ADMIN=%s\nKEYCLOAK_ADMIN_PASSWORD=%s\nKC_HTTP_ENABLED=true\n' \
   "$kc_admin_user" "$kc_admin_password" > "$kc_env_file"
 chmod 600 "$kc_env_file"
-owned_containers+=("$kc_container")
+kemfai_register_container_intent "$kc_container"
 docker run -d --label "$label" --name "$kc_container" --network "$network" \
   --env-file "$kc_env_file" \
   -p 127.0.0.1::8080 quay.io/keycloak/keycloak:26.0 start-dev >/dev/null
@@ -551,7 +476,7 @@ bootstrap_db() {
   local db="$1"
   local init_name="${run_id}_${db##*_}init"
   local admin_name="${run_id}_${db##*_}admin"
-  owned_containers+=("$init_name")
+  kemfai_register_container_intent "$init_name"
   timeout --kill-after=30 900 \
     docker run --rm --name "$init_name" --label "$label" --network "$network" \
     --env-file "$odoo_env_file" -v "${addons_dir}:/mnt/extra-addons:ro" \
@@ -569,7 +494,7 @@ user = env['res.users'].browse(2)
 user.write({'login': os.environ['ADMIN_LOGIN'], 'password': os.environ['ADMIN_PASSWORD']})
 env.cr.commit()
 PYEOF
-  owned_containers+=("$admin_name")
+  kemfai_register_container_intent "$admin_name"
   timeout --kill-after=15 180 \
     docker run --rm -i --name "$admin_name" --label "$label" --network "$network" \
     --env-file "$odoo_env_file" -v "${addons_dir}:/mnt/extra-addons:ro" \
@@ -592,7 +517,7 @@ dbfilter = ^${run_id}_.*\$
 list_db = False
 EOF
 chmod 644 "$conf_file"
-owned_containers+=("$http_container")
+kemfai_register_container_intent "$http_container"
 docker run -d --label "$label" --name "$http_container" --network "$network" \
   --env-file "$odoo_env_file" -v "${addons_dir}:/mnt/extra-addons:ro" \
   -v "${conf_file}:/etc/odoo/odoo.conf:ro" -p 127.0.0.1::8069 odoo:18 >/dev/null

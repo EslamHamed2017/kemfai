@@ -4,8 +4,24 @@
 # tests run in isolated scratch git repos under mktemp).
 set -uo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO="$(cd "$HERE/../.." && pwd)"
 
 FAIL=0
+
+echo "########## repository Docker cleanup static gate ##########"
+(
+  cd "$REPO"
+  python3 scripts/check_docker_test_cleanup.py
+)
+[ $? -eq 0 ] || FAIL=1
+
+echo ""
+
+echo "########## test_docker_test_cleanup.sh ##########"
+bash "$HERE/test_docker_test_cleanup.sh"
+[ $? -eq 0 ] || FAIL=1
+
+echo ""
 
 echo "########## test_lib_governance.sh ##########"
 bash "$HERE/test_lib_governance.sh"
