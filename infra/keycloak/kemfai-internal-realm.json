@@ -47,6 +47,14 @@
         "composite": false,
         "clientRole": false,
         "containerId": "kemfai-internal"
+      },
+      {
+        "id": "9a1f2c34-1b2c-4e3f-8a9b-4c5d6e7f8c06",
+        "name": "ReadOnlyManagement",
+        "description": "Read-only Management - least-privilege internal audit and management reporting access.",
+        "composite": false,
+        "clientRole": false,
+        "containerId": "kemfai-internal"
       }
     ]
   }

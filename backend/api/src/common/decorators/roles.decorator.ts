@@ -9,7 +9,8 @@ export type Role =
   | 'Support'
   | 'SuperAdmin'
   | 'CustomerSuccess'
-  | 'TechnicalAdmin';
+  | 'TechnicalAdmin'
+  | 'ReadOnlyManagement';
 
 /**
  * Roles that only exist in the `kemfai-internal` realm — never assignable to a
@@ -25,6 +26,7 @@ export const INTERNAL_ROLES: readonly Role[] = [
   'SuperAdmin',
   'CustomerSuccess',
   'TechnicalAdmin',
+  'ReadOnlyManagement',
 ];
 
 /**
