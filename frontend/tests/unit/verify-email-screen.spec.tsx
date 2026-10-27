@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 
 import { VerifyEmailScreen } from '../../src/app/(auth)/verify/verify-email-screen';
 import en from '../../src/locales/en/common.json';
@@ -42,7 +42,9 @@ async function submitResend(email: string) {
   fireEvent.change(screen.getByLabelText(en.verifyEmail.resend.emailLabel), {
     target: { value: email },
   });
-  fireEvent.click(screen.getByRole('button', { name: en.verifyEmail.resend.submit }));
+  await act(async () => {
+    fireEvent.click(screen.getByRole('button', { name: en.verifyEmail.resend.submit }));
+  });
 }
 
 describe('VerifyEmailScreen (T038)', () => {
@@ -66,24 +68,58 @@ describe('VerifyEmailScreen (T038)', () => {
     expect(screen.getByText(en.verifyEmail.verifying)).toBeInTheDocument();
 
     await waitFor(() => {
-      expect(screen.getByRole('heading', { name: en.verifyEmail.success.title })).toBeInTheDocument();
+      expect(
+        screen.getByRole('heading', { name: en.verifyEmail.success.title }),
+      ).toBeInTheDocument();
     });
 
-    expect(postMock).toHaveBeenCalledWith('/accounts/verify-email', { body: { token: 'valid-token' } });
+    expect(postMock).toHaveBeenCalledWith('/accounts/verify-email', {
+      body: { token: 'valid-token' },
+    });
 
-    expect(screen.getByRole('link', { name: en.verifyEmail.success.continue }))
-      .toHaveAttribute('href', '/auth/login?returnTo=%2Fmfa');
+    expect(screen.getByRole('link', { name: en.verifyEmail.success.continue })).toHaveAttribute(
+      'href',
+      '/auth/login?returnTo=%2Fmfa',
+    );
   });
 
-  it('shows the actionable resend form when the token is expired/invalid/reused (410)', async () => {
-    postMock.mockResolvedValueOnce({ error: { message: 'Gone' } });
+  it.each([
+    ['invalid', en.verifyEmail.invalid.title, en.verifyEmail.invalid.body],
+    ['expired', en.verifyEmail.expired.title, en.verifyEmail.expired.body],
+    ['used', en.verifyEmail.used.title, en.verifyEmail.used.body],
+  ] as const)(
+    'shows a distinct actionable %s-link error from the backend 410 reason',
+    async (reason, title, body) => {
+      postMock.mockResolvedValueOnce({ error: { reason, message: 'Gone' } });
 
-    renderScreen('expired-token');
+      renderScreen(`${reason}-token`);
+
+      await waitFor(() => {
+        expect(screen.getByRole('heading', { name: title })).toBeInTheDocument();
+      });
+      expect(screen.getByText(body)).toBeInTheDocument();
+      expect(screen.getByTestId('verify-invalid-message')).toHaveAttribute(
+        'data-verification-error',
+        reason,
+      );
+      expect(screen.getByLabelText(en.verifyEmail.resend.emailLabel)).toBeInTheDocument();
+    },
+  );
+
+  it('treats a superseded or unclassified failure as invalid with the same safe resend action', async () => {
+    postMock.mockResolvedValueOnce({ error: { reason: 'superseded', message: 'Gone' } });
+
+    renderScreen('superseded-token');
 
     await waitFor(() => {
-      expect(screen.getByRole('heading', { name: en.verifyEmail.invalid.title })).toBeInTheDocument();
+      expect(
+        screen.getByRole('heading', { name: en.verifyEmail.invalid.title }),
+      ).toBeInTheDocument();
     });
-    expect(screen.getByLabelText(en.verifyEmail.resend.emailLabel)).toBeInTheDocument();
+    expect(screen.getByTestId('verify-invalid-message')).toHaveAttribute(
+      'data-verification-error',
+      'invalid',
+    );
   });
 
   it('does not stay stuck on "verifying" when the verify request itself throws (network error)', async () => {
@@ -92,7 +128,9 @@ describe('VerifyEmailScreen (T038)', () => {
     renderScreen('any-token');
 
     await waitFor(() => {
-      expect(screen.getByRole('heading', { name: en.verifyEmail.invalid.title })).toBeInTheDocument();
+      expect(
+        screen.getByRole('heading', { name: en.verifyEmail.invalid.title }),
+      ).toBeInTheDocument();
     });
     expect(screen.queryByText(en.verifyEmail.verifying)).not.toBeInTheDocument();
   });

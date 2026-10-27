@@ -1,5 +1,5 @@
-// T103/T104 e2e — stand-in control-plane for /accounts/me/locale ONLY.
-// Deterministic: module-level state + explicit control endpoints (seed/reset).
+// Deterministic e2e stand-in for locale, module, checklist, and support-access reads.
+// All mutable fixture state is private to this loopback-only process and explicit endpoints.
 const http = require('http');
 const { createClient } = require('redis');
 
@@ -8,6 +8,7 @@ const tokenAccounts = new Map();
 const moduleSelections = new Map();
 const revokedModuleTokens = new Set();
 const supportAccessGrants = new Map();
+let supportGrants = [];
 
 const client = createClient({ url: process.env.REDIS_URL || 'redis://127.0.0.1:6379' });
 client.on('error', () => undefined);
@@ -62,18 +63,22 @@ const server = http.createServer(async (req, res) => {
     res.writeHead(204);
     return res.end();
   }
-  if (url.pathname === '/__e2e/reset') {
-    const accountKey = url.searchParams.get('accountKey');
-    if (accountKey) preferredLocales.delete(accountKey);
-    else preferredLocales.clear();
+  if (url.pathname === '/__e2e/support-grants') {
+    const body = JSON.parse(await readBody(req));
+    supportGrants = Array.isArray(body.grants) ? body.grants : [];
     res.writeHead(204);
     return res.end();
   }
-  // T094 frontend-only fixture: this read happens during SSR, before
-  // Playwright browser routes can stimulate hydrated support-history states.
-  if (url.pathname === '/support-access/grants' && req.method === 'GET') {
-    res.writeHead(200, { 'content-type': 'application/json' });
-    return res.end('[]');
+  if (url.pathname === '/__e2e/reset') {
+    const accountKey = url.searchParams.get('accountKey');
+    if (accountKey) preferredLocales.delete(accountKey);
+    else {
+      preferredLocales.clear();
+      supportAccessGrants.clear();
+      supportGrants = [];
+    }
+    res.writeHead(204);
+    return res.end();
   }
   if (url.pathname === '/modules') {
     if (req.headers.authorization === 'Bearer t074-flagoff-token') {
@@ -108,12 +113,9 @@ const server = http.createServer(async (req, res) => {
   }
   if (url.pathname === '/support-access/grants' && req.method === 'GET') {
     const token = (req.headers.authorization || '').replace(/^Bearer /, '');
-    if (!supportAccessGrants.has(token)) {
-      res.writeHead(404, { 'content-type': 'application/json' });
-      return res.end(JSON.stringify({ message: 'No synthetic support-access fixture' }));
-    }
+    const grants = supportAccessGrants.has(token) ? supportAccessGrants.get(token) : supportGrants;
     res.writeHead(200, { 'content-type': 'application/json' });
-    return res.end(JSON.stringify(supportAccessGrants.get(token)));
+    return res.end(JSON.stringify(grants));
   }
   if (url.pathname !== '/accounts/me/locale') {
     res.writeHead(404);
