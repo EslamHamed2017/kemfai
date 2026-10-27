@@ -448,6 +448,9 @@
     "revoke": "إلغاء الآن",
     "revoking": "جارٍ الإلغاء…",
     "role": "الدور الداخلي",
+    "roles": {
+      "support": "الدعم"
+    },
     "grantedBy": "مُنح بواسطة",
     "grantedAt": "تاريخ المنح",
     "expiresAt": "تاريخ الانتهاء",
@@ -457,6 +460,9 @@
     "noUsage": "لم تُسجل محاولات وصول.",
     "usedBy": "المستخدم الداخلي",
     "action": "الإجراء",
+    "usageActions": {
+      "workspaceSummaryRead": "قراءة ملخص مساحة العمل"
+    },
     "attemptedAt": "وقت المحاولة",
     "result": "النتيجة",
     "allowed": "مسموح",

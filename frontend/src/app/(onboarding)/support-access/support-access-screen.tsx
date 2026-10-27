@@ -152,7 +152,7 @@ export function SupportAccessScreen({
             <dl>
               <div>
                 <dt>{t('role')}</dt>
-                <dd>{grant.granteeRole}</dd>
+                <dd>{t('roles.support')}</dd>
               </div>
               <div>
                 <dt>{t('grantedBy')}</dt>
@@ -202,7 +202,7 @@ export function SupportAccessScreen({
                       </div>
                       <div>
                         <dt>{t('action')}</dt>
-                        <dd>{usage.actionSummary}</dd>
+                        <dd>{t('usageActions.workspaceSummaryRead')}</dd>
                       </div>
                       <div>
                         <dt>{t('attemptedAt')}</dt>

@@ -7,6 +7,7 @@ const preferredLocales = new Map();
 const tokenAccounts = new Map();
 const moduleSelections = new Map();
 const revokedModuleTokens = new Set();
+const supportAccessGrants = new Map();
 
 const client = createClient({ url: process.env.REDIS_URL || 'redis://127.0.0.1:6379' });
 client.on('error', () => undefined);
@@ -48,6 +49,16 @@ const server = http.createServer(async (req, res) => {
     const { token, featureKeys, revoked = false } = JSON.parse(await readBody(req));
     moduleSelections.set(token, featureKeys);
     if (revoked) revokedModuleTokens.add(token); else revokedModuleTokens.delete(token);
+    res.writeHead(204);
+    return res.end();
+  }
+  if (url.pathname === '/__e2e/support-access') {
+    const { token, grants } = JSON.parse(await readBody(req));
+    if (typeof token !== 'string' || !Array.isArray(grants)) {
+      res.writeHead(400, { 'content-type': 'application/json' });
+      return res.end(JSON.stringify({ message: 'token and grants are required' }));
+    }
+    supportAccessGrants.set(token, grants);
     res.writeHead(204);
     return res.end();
   }
@@ -94,6 +105,15 @@ const server = http.createServer(async (req, res) => {
   if (url.pathname === '/onboarding/checklist') {
     res.writeHead(200, { 'content-type': 'application/json' });
     return res.end(JSON.stringify({ customerAdded: false, bankAdded: false, productAdded: false, firstInvoiceReady: false, gatedOnSubscriptionActivation: true }));
+  }
+  if (url.pathname === '/support-access/grants' && req.method === 'GET') {
+    const token = (req.headers.authorization || '').replace(/^Bearer /, '');
+    if (!supportAccessGrants.has(token)) {
+      res.writeHead(404, { 'content-type': 'application/json' });
+      return res.end(JSON.stringify({ message: 'No synthetic support-access fixture' }));
+    }
+    res.writeHead(200, { 'content-type': 'application/json' });
+    return res.end(JSON.stringify(supportAccessGrants.get(token)));
   }
   if (url.pathname !== '/accounts/me/locale') {
     res.writeHead(404);

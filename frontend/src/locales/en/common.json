@@ -448,6 +448,9 @@
     "revoke": "Revoke now",
     "revoking": "Revoking…",
     "role": "Internal role",
+    "roles": {
+      "support": "Support"
+    },
     "grantedBy": "Granted by",
     "grantedAt": "Granted at",
     "expiresAt": "Expires at",
@@ -457,6 +460,9 @@
     "noUsage": "No access attempts recorded.",
     "usedBy": "Internal user",
     "action": "Action",
+    "usageActions": {
+      "workspaceSummaryRead": "Read workspace summary"
+    },
     "attemptedAt": "Attempted at",
     "result": "Result",
     "allowed": "Allowed",
