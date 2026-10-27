@@ -3,6 +3,18 @@ import { EntityManager } from 'typeorm';
 import { QueryDeepPartialEntity } from 'typeorm/query-builder/QueryPartialEntity';
 import controlDataSource from '../../database/data-source';
 import { AuditActorType, AuditEvent } from './entities/audit-event.entity';
+import { AuditEventsQueryDto } from './dto/audit-events.query.dto';
+
+export interface AuditEventView {
+  id: string;
+  occurredAt: Date;
+  actorType: AuditActorType;
+  actorId: string | null;
+  tenantId: string | null;
+  action: string;
+  subjectType: string;
+  subjectId: string;
+}
 
 export interface AuditEventInput {
   actorType: AuditActorType;
@@ -236,6 +248,36 @@ export interface TenantAccessDeniedCrossTenantInput {
  */
 @Injectable()
 export class AuditService {
+  async findAll(filters: AuditEventsQueryDto): Promise<AuditEventView[]> {
+    const rows = await controlDataSource.getRepository(AuditEvent).find({
+      where: {
+        ...(filters.tenantId ? { tenantId: filters.tenantId } : {}),
+        ...(filters.action ? { action: filters.action } : {}),
+      },
+      select: {
+        id: true,
+        occurredAt: true,
+        actorType: true,
+        actorId: true,
+        tenantId: true,
+        action: true,
+        subjectType: true,
+        subjectId: true,
+      },
+    });
+
+    return rows.map((row) => ({
+      id: row.id,
+      occurredAt: row.occurredAt,
+      actorType: row.actorType,
+      actorId: row.actorId,
+      tenantId: row.tenantId,
+      action: row.action,
+      subjectType: row.subjectType,
+      subjectId: row.subjectId,
+    }));
+  }
+
   private async appendInContext(event: AuditEventInput, manager?: EntityManager): Promise<void> {
     if (manager) await this.append(event, manager);
     else await this.append(event);

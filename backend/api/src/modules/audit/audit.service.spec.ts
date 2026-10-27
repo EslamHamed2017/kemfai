@@ -1,6 +1,7 @@
 import { AuditService } from './audit.service';
 import { AuditActorType } from './entities/audit-event.entity';
 import { EntityManager } from 'typeorm';
+import controlDataSource from '../../database/data-source';
 
 const TENANT = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 const ACCOUNT = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
@@ -471,5 +472,69 @@ describe('AuditService — FR-007 event catalog (T019)', () => {
     const call = appendSpy.mock.calls[0][0];
     expect(call.occurredAt.getTime()).toBeGreaterThanOrEqual(before);
     expect(call.occurredAt.getTime()).toBeLessThanOrEqual(after);
+  });
+});
+
+describe('AuditService.findAll — populated AuditEventView filters (T092)', () => {
+  const occurredAt = new Date('2026-10-20T13:32:31.000Z');
+  const databaseRow = {
+    id: '11111111-1111-4111-8111-111111111111',
+    occurredAt,
+    actorType: AuditActorType.INTERNAL_USER,
+    actorId: INTERNAL_USER,
+    tenantId: TENANT,
+    action: 'account.created',
+    subjectType: 'account',
+    subjectId: SUBJECT,
+    payload: { mustNotLeak: true },
+    dedupeKey: 'must-not-leak',
+    createdAt: new Date('2026-10-20T13:32:32.000Z'),
+  };
+  const find = jest.fn();
+  let repositorySpy: jest.SpyInstance;
+
+  beforeEach(() => {
+    find.mockReset().mockResolvedValue([databaseRow]);
+    repositorySpy = jest
+      .spyOn(controlDataSource, 'getRepository')
+      .mockReturnValue({ find } as never);
+  });
+
+  afterEach(() => repositorySpy.mockRestore());
+
+  it.each([
+    ['tenant only', { tenantId: TENANT }, { tenantId: TENANT }],
+    ['action only', { action: 'account.created' }, { action: 'account.created' }],
+    [
+      'tenant and action',
+      { tenantId: TENANT, action: 'account.created' },
+      { tenantId: TENANT, action: 'account.created' },
+    ],
+  ])('returns the exact populated view for %s filtering', async (_label, filters, where) => {
+    await expect(new AuditService().findAll(filters)).resolves.toEqual([
+      {
+        id: databaseRow.id,
+        occurredAt,
+        actorType: AuditActorType.INTERNAL_USER,
+        actorId: INTERNAL_USER,
+        tenantId: TENANT,
+        action: 'account.created',
+        subjectType: 'account',
+        subjectId: SUBJECT,
+      },
+    ]);
+    expect(find).toHaveBeenCalledWith({
+      where,
+      select: {
+        id: true,
+        occurredAt: true,
+        actorType: true,
+        actorId: true,
+        tenantId: true,
+        action: true,
+        subjectType: true,
+        subjectId: true,
+      },
+    });
   });
 });
