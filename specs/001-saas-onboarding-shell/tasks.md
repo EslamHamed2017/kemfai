@@ -1068,7 +1068,7 @@ refusal after expiry, and confirm every action is audit-logged — independent o
     references an untraceable subject.
   - **Roles**: Primary: Codex · Backup: GLM · Reviewer: Gemini
 
-- [ ] T094 [P] Empty/error/loading-state coverage sweep across FR-010/FR-011/FR-012 (plan list, module list,
+- [x] T094 [P] Empty/error/loading-state coverage sweep across FR-010/FR-011/FR-012 (plan list, module list,
   checklist, support-access history empty states; every listed error state) in
   `frontend/tests/e2e/empty-error-loading-states.spec.ts`
   - **Dependencies**: T036, T077, T083, T091
