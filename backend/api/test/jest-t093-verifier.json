@@ -1,0 +1,12 @@
+{
+  "moduleFileExtensions": ["js", "json", "ts"],
+  "rootDir": "..",
+  "transform": {
+    "^.+\\.ts$": "ts-jest"
+  },
+  "setupFiles": ["<rootDir>/test/setup-integration-env.js"],
+  "setupFilesAfterEnv": ["<rootDir>/test/support/t093-observer.ts"],
+  "testEnvironment": "node",
+  "testTimeout": 30000,
+  "testRegex": ".*\\.integration-spec\\.ts$"
+}

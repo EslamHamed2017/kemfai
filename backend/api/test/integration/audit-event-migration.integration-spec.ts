@@ -3,6 +3,7 @@ import controlDataSource from '../../src/database/data-source';
 import { Account } from '../../src/modules/accounts/entities/account.entity';
 import { AuditActorType, AuditEvent } from '../../src/modules/audit/entities/audit-event.entity';
 import { Tenant } from '../../src/modules/tenants/entities/tenant.entity';
+import { withT093NegativeFixture } from '../support/t093-observer';
 
 /**
  * T014 acceptance test. Requires a reachable Postgres configured via CONTROL_DB_* env vars, same
@@ -109,17 +110,19 @@ describe('AuditEvent migration + entity (T014)', () => {
   it('allows tenant_id and actor_id to be null for a pre-tenant system event', async () => {
     const repo = controlDataSource.getRepository(AuditEvent);
 
-    const saved = await repo.save(
-      repo.create({
-        occurredAt: new Date('2026-02-01T00:00:00.000Z'),
-        actorType: AuditActorType.SYSTEM,
-        actorId: null,
-        tenantId: null,
-        action: 'account.created',
-        subjectType: 'account',
-        subjectId: '99999999-9999-9999-9999-999999999999',
-        payload: {},
-      }),
+    const saved = await withT093NegativeFixture('migration-pretenant-account', () =>
+      repo.save(
+        repo.create({
+          occurredAt: new Date('2026-02-01T00:00:00.000Z'),
+          actorType: AuditActorType.SYSTEM,
+          actorId: null,
+          tenantId: null,
+          action: 'account.created',
+          subjectType: 'account',
+          subjectId: '99999999-9999-9999-9999-999999999999',
+          payload: {},
+        }),
+      ),
     );
 
     const reloaded = await repo.findOneByOrFail({ id: saved.id });
@@ -199,28 +202,32 @@ describe('AuditEvent migration + entity (T014)', () => {
 
   it("the API/BFF's real runtime role (kemfai_api) can INSERT into audit_event", async () => {
     await expect(
-      appRoleDataSource.query(
-        `INSERT INTO "audit_event"
+      withT093NegativeFixture('migration-runtime-role-account', () =>
+        appRoleDataSource.query(
+          `INSERT INTO "audit_event"
            ("occurred_at", "actor_type", "actor_id", "tenant_id", "action", "subject_type", "subject_id", "payload")
          VALUES (now(), 'system', NULL, NULL, 'account.created', 'account', $1, '{}'::jsonb)`,
-        ['99999999-9999-9999-9999-999999999999'],
+          ['99999999-9999-9999-9999-999999999999'],
+        ),
       ),
     ).resolves.not.toThrow();
   });
 
   it("the API/BFF's real runtime role (kemfai_api) cannot UPDATE audit_event rows (FR-008 immutability, DB-enforced)", async () => {
     const repo = controlDataSource.getRepository(AuditEvent);
-    const saved = await repo.save(
-      repo.create({
-        occurredAt: new Date('2026-02-01T00:00:00.000Z'),
-        actorType: AuditActorType.SYSTEM,
-        actorId: null,
-        tenantId: null,
-        action: 'account.created',
-        subjectType: 'account',
-        subjectId: '99999999-9999-9999-9999-999999999999',
-        payload: {},
-      }),
+    const saved = await withT093NegativeFixture('migration-update-orphan', () =>
+      repo.save(
+        repo.create({
+          occurredAt: new Date('2026-02-01T00:00:00.000Z'),
+          actorType: AuditActorType.SYSTEM,
+          actorId: null,
+          tenantId: null,
+          action: 'account.created',
+          subjectType: 'account',
+          subjectId: '99999999-9999-9999-9999-999999999999',
+          payload: {},
+        }),
+      ),
     );
 
     await expect(
@@ -232,17 +239,19 @@ describe('AuditEvent migration + entity (T014)', () => {
 
   it("the API/BFF's real runtime role (kemfai_api) cannot DELETE audit_event rows (FR-008 immutability, DB-enforced)", async () => {
     const repo = controlDataSource.getRepository(AuditEvent);
-    const saved = await repo.save(
-      repo.create({
-        occurredAt: new Date('2026-02-01T00:00:00.000Z'),
-        actorType: AuditActorType.SYSTEM,
-        actorId: null,
-        tenantId: null,
-        action: 'account.created',
-        subjectType: 'account',
-        subjectId: '99999999-9999-9999-9999-999999999999',
-        payload: {},
-      }),
+    const saved = await withT093NegativeFixture('migration-delete-orphan', () =>
+      repo.save(
+        repo.create({
+          occurredAt: new Date('2026-02-01T00:00:00.000Z'),
+          actorType: AuditActorType.SYSTEM,
+          actorId: null,
+          tenantId: null,
+          action: 'account.created',
+          subjectType: 'account',
+          subjectId: '99999999-9999-9999-9999-999999999999',
+          payload: {},
+        }),
+      ),
     );
 
     await expect(

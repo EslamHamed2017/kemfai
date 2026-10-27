@@ -1,0 +1,11 @@
+{
+  "moduleFileExtensions": ["js", "json", "ts"],
+  "rootDir": "..",
+  "testRegex": ".*\\.integration-spec\\.ts$",
+  "testPathIgnorePatterns": ["/test/integration/audit-source-linkage.integration-spec.ts$"],
+  "transform": { "^.+\\.ts$": "ts-jest" },
+  "setupFiles": ["<rootDir>/test/setup-integration-env.js"],
+  "setupFilesAfterEnv": ["<rootDir>/test/support/t093-observer.ts"],
+  "testEnvironment": "node",
+  "testTimeout": 30000
+}
