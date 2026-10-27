@@ -192,6 +192,7 @@
       "back": "Back",
       "next": "Save and continue",
       "finish": "Finish setup",
+      "saving": "Saving company setup…",
       "pauseAndSave": "Save and pause",
       "resume": "Resume setup",
       "retry": "Try again",
@@ -460,6 +461,13 @@
     "result": "Result",
     "allowed": "Allowed",
     "denied": "Denied: {reason}",
+    "denialReasons": {
+      "expired": "This grant expired. Create a new grant if support still needs access.",
+      "revoked": "This grant was revoked. Create a new grant if support still needs access.",
+      "wrong_tenant": "This grant belongs to another workspace. Use a grant for this workspace.",
+      "action_not_permitted": "This grant does not permit that action. Review the permitted support scope.",
+      "unknown": "This support attempt was blocked. Review the grant before trying again."
+    },
     "status": { "active": "Active", "expired": "Expired", "revoked": "Revoked" }
   }
 }

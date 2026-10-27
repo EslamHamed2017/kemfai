@@ -212,7 +212,9 @@ export function SupportAccessScreen({
                         <dt>{t('result')}</dt>
                         <dd>
                           {usage.wasDenied
-                            ? t('denied', { reason: usage.denialReason ?? '' })
+                            ? t('denied', {
+                                reason: t(`denialReasons.${usage.denialReason ?? 'unknown'}`),
+                              })
                             : t('allowed')}
                         </dd>
                       </div>
