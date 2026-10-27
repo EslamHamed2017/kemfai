@@ -115,8 +115,18 @@ beforeAll(async () => {
         insert: async () => undefined, // append-only audit writer uses insert (T014/T019)
       } as any;
     }
-    // Generic fallback for every other repository (FeatureFlag, …) the global
-    // guards/interceptors consult: absent rows, no behavior change.
+    if (name === 'FeatureFlag') {
+      return {
+        // AccountsController is class-gated by module.accounts. Keep this T104 fixture's
+        // prerequisite explicit now that a missing required row correctly fails closed.
+        findOne: async ({ where }: any) =>
+          where.featureKey === 'module.accounts'
+            ? { featureKey: 'module.accounts', enabled: true }
+            : null,
+      } as any;
+    }
+    // Generic fallback for every other repository the global guards/interceptors consult:
+    // absent rows, no behavior change.
     return {
       findOne: async () => null,
       find: async () => [],

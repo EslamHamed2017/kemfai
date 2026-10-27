@@ -166,11 +166,11 @@ describe('EntitlementsService (T010, unit)', () => {
     );
   });
 
-  it('isFeatureFlagEnabled treats a feature with no FeatureFlag row as not gated (defaults true)', async () => {
+  it('isFeatureFlagEnabled fails closed when a required FeatureFlag row is missing', async () => {
     mockRepositories({ featureFlags: [] });
 
     await expect(new EntitlementsService().isFeatureFlagEnabled('module.not-gated')).resolves.toBe(
-      true,
+      false,
     );
   });
 

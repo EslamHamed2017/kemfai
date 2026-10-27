@@ -10,7 +10,13 @@ import { type ChecklistState, isChecklistState } from '@/lib/checklist-state';
 type Phase = 'loading' | 'ready' | 'error' | 'session' | 'denied';
 const POLL_MS = 3000;
 
-export function ChecklistScreen({ initialState }: { initialState?: ChecklistState }) {
+export function ChecklistScreen({
+  initialState,
+  moduleSelectionAvailable = false,
+}: {
+  initialState?: ChecklistState;
+  moduleSelectionAvailable?: boolean;
+}) {
   const t = useTranslations('onboardingChecklist');
   const locale = useLocale() === 'ar' ? 'ar' : 'en';
   const [phase, setPhase] = useState<Phase>(initialState ? 'ready' : 'loading');
@@ -77,9 +83,21 @@ export function ChecklistScreen({ initialState }: { initialState?: ChecklistStat
     );
 
   const items = [
-    { key: 'customer', done: state.customerAdded, href: '/modules#module.sales' },
-    { key: 'bank', done: state.bankAdded, href: '/modules#module.accounting' },
-    { key: 'product', done: state.productAdded, href: '/modules#module.inventory' },
+    {
+      key: 'customer',
+      done: state.customerAdded,
+      href: moduleSelectionAvailable ? '/modules#module.sales' : null,
+    },
+    {
+      key: 'bank',
+      done: state.bankAdded,
+      href: moduleSelectionAvailable ? '/modules#module.accounting' : null,
+    },
+    {
+      key: 'product',
+      done: state.productAdded,
+      href: moduleSelectionAvailable ? '/modules#module.inventory' : null,
+    },
     { key: 'firstInvoice', done: state.firstInvoiceReady, href: '/billing' },
   ] as const;
   const empty = !state.customerAdded && !state.bankAdded && !state.productAdded;
@@ -130,7 +148,7 @@ export function ChecklistScreen({ initialState }: { initialState?: ChecklistStat
             <Tag type={item.done ? 'green' : 'gray'}>
               {item.done ? t('complete') : t('incomplete')}
             </Tag>
-            <Link href={item.href}>{t(`items.${item.key}.action`)}</Link>
+            {item.href ? <Link href={item.href}>{t(`items.${item.key}.action`)}</Link> : null}
           </Tile>
         ))}
       </section>

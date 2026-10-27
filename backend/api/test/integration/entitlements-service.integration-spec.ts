@@ -7,6 +7,14 @@ import { PlanFeatureEntitlement } from '../../src/modules/entitlements/entities/
 import { PlanSetting } from '../../src/modules/entitlements/entities/plan-setting.entity';
 import { Plan } from '../../src/modules/entitlements/entities/plan.entity';
 
+const MIGRATION_SEEDED_MODULE_FLAG_KEYS = [
+  'module.accounts',
+  'module.company_setup',
+  'module.module_selection',
+  'module.onboarding_checklist',
+  'module.support_access',
+] as const;
+
 /**
  * T010 acceptance test. Requires a reachable, already-migrated Postgres configured via
  * CONTROL_DB_* env vars, same convention as T009's entitlements-migration.integration-spec.ts.
@@ -23,20 +31,39 @@ describe('EntitlementsService (T010)', () => {
     await controlDataSource.runMigrations();
   });
 
+  beforeEach(async () => {
+    // This runs after the prior case's cleanup and therefore catches any cleanup that removes
+    // migration-owned configuration. Migrations do not rerun merely because a seeded row vanished.
+    const [features, flags] = await Promise.all([
+      controlDataSource.query(
+        `SELECT "key" FROM "feature" WHERE "key" = ANY($1::text[]) ORDER BY "key"`,
+        [MIGRATION_SEEDED_MODULE_FLAG_KEYS],
+      ),
+      controlDataSource.query(
+        `SELECT "feature_key" FROM "feature_flag" WHERE "feature_key" = ANY($1::text[]) ORDER BY "feature_key"`,
+        [MIGRATION_SEEDED_MODULE_FLAG_KEYS],
+      ),
+    ]);
+    const expectedKeys = [...MIGRATION_SEEDED_MODULE_FLAG_KEYS].sort();
+    expect((features as Array<{ key: string }>).map(({ key }) => key)).toEqual(expectedKeys);
+    expect((flags as Array<{ feature_key: string }>).map(({ feature_key }) => feature_key)).toEqual(
+      expectedKeys,
+    );
+  });
+
   afterEach(async () => {
     await controlDataSource.query('DELETE FROM "account"');
     await controlDataSource.query('DELETE FROM "plan_feature_entitlement"');
     await controlDataSource.query('DELETE FROM "plan_setting"');
-    // Never delete the permanently-shipped module gate rows (module.accounts,
-    // module.company_setup) — they are seeded once by their own migrations, which never
-    // re-run, so deleting them here would leave the platform's feature-flag rows gone for
-    // every suite that runs afterward in the same test process (repeatability lesson).
+    // Never delete migration-owned module gates: their migrations do not rerun when a row is
+    // removed from an already-migrated DB. Delete only rows created by an individual test.
     await controlDataSource.query(
-      `DELETE FROM "feature_flag" WHERE "feature_key" NOT IN ('module.accounts', 'module.company_setup')`,
+      `DELETE FROM "feature_flag" WHERE NOT ("feature_key" = ANY($1::text[]))`,
+      [MIGRATION_SEEDED_MODULE_FLAG_KEYS],
     );
-    await controlDataSource.query(
-      `DELETE FROM "feature" WHERE "key" NOT IN ('module.accounts', 'module.company_setup')`,
-    );
+    await controlDataSource.query(`DELETE FROM "feature" WHERE NOT ("key" = ANY($1::text[]))`, [
+      MIGRATION_SEEDED_MODULE_FLAG_KEYS,
+    ]);
     await controlDataSource.query('DELETE FROM "plan"');
   });
 
@@ -65,24 +92,18 @@ describe('EntitlementsService (T010)', () => {
   }
 
   it('resolves features, trialWindowDays, and autoRestrictUnpaid from an explicit PlanSetting override (no fallback)', async () => {
-    // This assertion requires both shipped module gates to be in their disabled shipped
+    // This assertion requires all shipped module gates to be in their disabled shipped
     // state. Another suite sharing this process/database (e.g. the T054 live HTTP harness)
     // may leave `module.company_setup` enabled if it runs first, so this test must establish
     // that state itself — rather than assume migration-seeded defaults survived — and restore
     // whatever it found afterward, so it passes regardless of suite execution order.
-    const shippedDisabledKeys = [
-      'module.onboarding_checklist',
-      'module.accounts',
-      'module.company_setup',
-      'module.module_selection',
-    ];
     const priorFlagRows = await controlDataSource.query(
       `SELECT feature_key, enabled FROM "feature_flag" WHERE feature_key = ANY($1)`,
-      [shippedDisabledKeys],
+      [MIGRATION_SEEDED_MODULE_FLAG_KEYS],
     );
     await controlDataSource.query(
       `UPDATE "feature_flag" SET enabled = false WHERE feature_key = ANY($1)`,
-      [shippedDisabledKeys],
+      [MIGRATION_SEEDED_MODULE_FLAG_KEYS],
     );
     try {
       const plan = await createPlan('override-plan');
@@ -106,14 +127,17 @@ describe('EntitlementsService (T010)', () => {
       // Feature flags are platform-wide (T099), and the platform permanently ships a growing
       // set of module gate rows via migration (`module.accounts` since T032,
       // `module.company_setup` since T042, `module.module_selection` since T076, and
-      // `module.onboarding_checklist` since T082). This test
-      // creates no flags, so the only rows that may legitimately appear are those shipped
-      // platform gates (in their shipped, disabled state) — never a test-created flag.
+      // `module.onboarding_checklist` since T082, and `module.support_access` since T091).
+      // This test creates no flags, so the only rows that may legitimately appear are those
+      // shipped platform gates (temporarily disabled above) — never a test-created flag.
       expect(result.featureFlags).toEqual(
         result.featureFlags.filter(
-          (flag) => shippedDisabledKeys.includes(flag.key) && flag.enabled === false,
+          (flag) =>
+            (MIGRATION_SEEDED_MODULE_FLAG_KEYS as readonly string[]).includes(flag.key) &&
+            flag.enabled === false,
         ),
       );
+      expect(result.featureFlags).toHaveLength(MIGRATION_SEEDED_MODULE_FLAG_KEYS.length);
     } finally {
       for (const row of priorFlagRows as Array<{ feature_key: string; enabled: boolean }>) {
         await controlDataSource.query(
@@ -180,30 +204,27 @@ describe('EntitlementsService (T010)', () => {
 
     const result = await service.getEntitlementSet(plan.id);
 
-    // This test's own flag must be exposed; the platform-shipped `module.accounts`/
-    // `module.company_setup` gates (migration-seeded, disabled) may also legitimately
-    // appear platform-wide.
+    // This test's own flag and every migration-seeded platform gate must be exposed.
     expect(result.featureFlags).toEqual(
       expect.arrayContaining([{ key: 'module.checklist-flag-test', enabled: false }]),
     );
-    expect(
-      result.featureFlags.every((flag) =>
-        ['module.checklist-flag-test', 'module.accounts', 'module.company_setup'].includes(
-          flag.key,
-        ),
-      ),
-    ).toBe(true);
+    const allowedKeys = new Set<string>([
+      'module.checklist-flag-test',
+      ...MIGRATION_SEEDED_MODULE_FLAG_KEYS,
+    ]);
+    expect(result.featureFlags.every((flag) => allowedKeys.has(flag.key))).toBe(true);
+    expect(result.featureFlags).toHaveLength(allowedKeys.size);
   });
 
-  it('isFeatureFlagEnabled reflects a real FeatureFlag row and defaults true when none exists', async () => {
+  it('isFeatureFlagEnabled reflects a real FeatureFlag row and fails closed when none exists', async () => {
     await createFeature('module.gated-flag-test');
     await controlDataSource
       .getRepository(FeatureFlag)
       .save({ featureKey: 'module.gated-flag-test', enabled: false, notes: null });
-    await createFeature('module.ungated-flag-test');
+    await createFeature('module.missing-flag-test');
 
     await expect(service.isFeatureFlagEnabled('module.gated-flag-test')).resolves.toBe(false);
-    await expect(service.isFeatureFlagEnabled('module.ungated-flag-test')).resolves.toBe(true);
+    await expect(service.isFeatureFlagEnabled('module.missing-flag-test')).resolves.toBe(false);
   });
 
   it('getEntitlementSetForAccount resolves the plan via the account linked to the JWT sub, not a client-supplied planId', async () => {
