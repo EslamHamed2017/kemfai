@@ -22,9 +22,11 @@ const TRIAL_RESTRICTED_ACTION = 'tenant.trial.restricted';
  * column is introduced on Tenant; idempotency ("does not double-audit", mirrors T086) is
  * therefore derived directly from the append-only audit_event log: a
  * `tenant.trial.restricted` row already existing for a tenant IS the "already handled"
- * marker. This also gives the self-heal guarantee in contracts/events.md for free — if a
- * tick's audit write fails, no state was mutated beforehand, so the tenant is simply
- * reconsidered (and retried) on the next tick.
+ * marker. AuditService also supplies a tenant-stable dedupe key, so two workers that both
+ * pass the read optimization converge atomically through audit_event's unique index. This
+ * gives the self-heal guarantee in contracts/events.md for free — if a tick's audit write
+ * fails, no state was mutated beforehand, so the tenant is simply reconsidered (and
+ * retried) on the next tick.
  */
 @Processor(QUEUE_TRIAL_EXPIRY_SWEEP)
 export class TrialExpirySweepProcessor extends WorkerHost {

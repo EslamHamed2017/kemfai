@@ -648,6 +648,10 @@ export class AuditService {
         elapsed_days: input.elapsedDays,
         auto_restrict_unpaid: input.autoRestrictUnpaid,
       },
+      // The trial restriction is a first-crossing event for a tenant, not one event per
+      // scheduler invocation. The existing partial unique index plus append()'s
+      // INSERT ... ON CONFLICT DO NOTHING path closes the concurrent sweep race atomically.
+      dedupeKey: `tenant-trial-restricted:${input.tenantId}`,
     });
   }
 
