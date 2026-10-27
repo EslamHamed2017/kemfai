@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # T016 acceptance test: a fresh `docker compose up` of the keycloak service auto-imports
 # both KEMFAI realms (kemfai-customers with the WorkspaceOwner role and VERIFY_EMAIL +
-# CONFIGURE_TOTP required actions enabled; kemfai-internal with the five internal roles),
+# CONFIGURE_TOTP required actions enabled; kemfai-internal with the six internal roles),
 # and no role or client scope lets a kemfai-customers user obtain a kemfai-internal role
 # (FR-004 - the two realms are separate trust domains with disjoint role name sets and no
 # identity brokering between them).
@@ -38,10 +38,10 @@ def realm_roles(realm):
 c_roles = realm_roles(customers)
 i_roles = realm_roles(internal)
 
-# Task line: customers realm = WorkspaceOwner role; internal realm = the five roles.
+# Task line: customers realm = WorkspaceOwner role; internal realm = the six roles.
 if c_roles != ["WorkspaceOwner"]:
     problems.append(f"customers realm roles {c_roles} != ['WorkspaceOwner']")
-expected_internal = ["BillingAdmin", "Support", "SuperAdmin", "CustomerSuccess", "TechnicalAdmin"]
+expected_internal = ["BillingAdmin", "Support", "SuperAdmin", "CustomerSuccess", "TechnicalAdmin", "ReadOnlyManagement"]
 if sorted(i_roles) != sorted(expected_internal):
     problems.append(f"internal realm roles {sorted(i_roles)} != {sorted(expected_internal)}")
 
@@ -150,16 +150,16 @@ for label, realm in (("kemfai-customers", customers), ("kemfai-internal", intern
     if not realm.get("enabled"):
         problems.append(f"realm {label} is not enabled")
 
-# Customers realm: WorkspaceOwner present, none of the five internal roles present.
+# Customers realm: WorkspaceOwner present, none of the six internal roles present.
 if "WorkspaceOwner" not in c_roles:
     problems.append("WorkspaceOwner role missing from live kemfai-customers realm")
-internal_five = {"BillingAdmin", "Support", "SuperAdmin", "CustomerSuccess", "TechnicalAdmin"}
-leaked = sorted(c_roles & internal_five)
+internal_roles = {"BillingAdmin", "Support", "SuperAdmin", "CustomerSuccess", "TechnicalAdmin", "ReadOnlyManagement"}
+leaked = sorted(c_roles & internal_roles)
 if leaked:
     problems.append(f"kemfai-customers realm exposes internal roles {leaked} (FR-004)")
 
-# Internal realm: all five roles present, no WorkspaceOwner.
-missing = sorted(internal_five - i_roles)
+# Internal realm: all six roles present, no WorkspaceOwner.
+missing = sorted(internal_roles - i_roles)
 if missing:
     problems.append(f"kemfai-internal realm is missing roles {missing}")
 if "WorkspaceOwner" in i_roles:
@@ -178,7 +178,7 @@ if customers.get("identityProviders"):
 # No client scope in the customers realm mentions an internal role (FR-004: no client
 # scope may let a customers user obtain a kemfai-internal role).
 scopes_text = json.dumps(scopes)
-for name in sorted(internal_five):
+for name in sorted(internal_roles):
     if f'"{name}"' in scopes_text:
         problems.append(f"customers realm client scopes reference internal role '{name}'")
 

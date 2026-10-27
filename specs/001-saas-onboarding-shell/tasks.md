@@ -1053,7 +1053,7 @@ refusal after expiry, and confirm every action is audit-logged — independent o
 
 **Purpose**: Cross-story audit read-surface, full-surface test sweeps, and release hardening.
 
-- [ ] T092 [P] Implement `GET /internal/audit-events` (read-only, filterable by `tenantId`/`action`, internal
+- [x] T092 [P] Implement `GET /internal/audit-events` (read-only, filterable by `tenantId`/`action`, internal
   auditor role) in `backend/api/src/modules/audit/audit.controller.ts`
   - **Dependencies**: T019, T018
   - **Acceptance Criteria**: Response matches `AuditEventView` schema; write attempts against this endpoint
