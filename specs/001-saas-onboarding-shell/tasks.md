@@ -1060,7 +1060,7 @@ refusal after expiry, and confirm every action is audit-logged — independent o
     are impossible by design (read-only route).
   - **Roles**: Primary: GLM · Backup: Claude · Reviewer: Codex
 
-- [ ] T093 [P] Source-linkage cross-cutting test: every `AuditEvent` written across all prior test suites
+- [x] T093 [P] Source-linkage cross-cutting test: every `AuditEvent` written across all prior test suites
   resolves `subject_type`/`subject_id` to a real, currently-queryable record or an inspectable historical
   `PaymentSubmission.status_history`, in `backend/api/test/integration/audit-source-linkage.integration-spec.ts`
   - **Dependencies**: T019, T092

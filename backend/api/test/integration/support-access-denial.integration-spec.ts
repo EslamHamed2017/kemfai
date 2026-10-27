@@ -16,11 +16,13 @@ import {
   SupportAccessGrantStatus,
 } from '../../src/modules/support-access/entities/support-access-grant.entity';
 import { FakeKeycloak, startFakeKeycloak } from '../support/fake-keycloak';
+import { withT093NegativeFixture } from '../support/t093-observer';
 
 describe('support access live denial and audit (T085/T089)', () => {
   const issuer = 'http://127.0.0.1/realms/kemfai-internal-us8';
   const audience = 'kemfai-api-us8';
   const supportUser = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+  const missingGrantSentinel = '00000000-0000-4000-8000-000000000000';
   let keycloak: FakeKeycloak;
   let app: INestApplication;
   let token: string;
@@ -131,13 +133,44 @@ describe('support access live denial and audit (T085/T089)', () => {
   });
   it('audits missing, malformed, unknown-grant, and wrong-internal-role attempts safely', async () => {
     const row = await grant(new Date(Date.now() + 60_000));
-    await request(app.getHttpServer())
-      .get(`/internal/support-access/workspaces/${tenant.id}/summary`)
-      .set('Authorization', `Bearer ${token}`)
-      .expect(403);
-    await call(tenant.id, 'not-a-uuid').expect(403);
+    await withT093NegativeFixture(
+      'support-denial-grant-required',
+      {
+        action: 'support_access.grant.denied',
+        subjectType: 'support_access_grant',
+        subjectId: missingGrantSentinel,
+        tenantId: tenant.id,
+        payload: { denial_reason: 'grant_required' },
+      },
+      () =>
+        request(app.getHttpServer())
+          .get(`/internal/support-access/workspaces/${tenant.id}/summary`)
+          .set('Authorization', `Bearer ${token}`)
+          .expect(403),
+    );
+    await withT093NegativeFixture(
+      'support-denial-invalid-grant',
+      {
+        action: 'support_access.grant.denied',
+        subjectType: 'support_access_grant',
+        subjectId: missingGrantSentinel,
+        tenantId: tenant.id,
+        payload: { denial_reason: 'invalid_grant' },
+      },
+      () => call(tenant.id, 'not-a-uuid').expect(403),
+    );
     const unknown = randomUUID();
-    await call(tenant.id, unknown).expect(403);
+    await withT093NegativeFixture(
+      'support-denial-unknown-grant',
+      {
+        action: 'support_access.grant.denied',
+        subjectType: 'support_access_grant',
+        subjectId: unknown,
+        tenantId: tenant.id,
+        payload: { denial_reason: 'unknown_grant' },
+      },
+      () => call(tenant.id, unknown).expect(403),
+    );
     await request(app.getHttpServer())
       .get(`/internal/support-access/workspaces/${tenant.id}/summary`)
       .query({ grantId: row.id })

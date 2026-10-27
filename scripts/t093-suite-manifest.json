@@ -1,0 +1,251 @@
+{
+  "suites": [
+    {
+      "path": "test/integration/accounts-mfa.integration-spec.ts",
+      "run": true,
+      "rationale": "real account MFA HTTP flows append account audit events"
+    },
+    {
+      "path": "test/integration/accounts-resend-verification.integration-spec.ts",
+      "run": true,
+      "rationale": "real resend HTTP flows append account audit events"
+    },
+    {
+      "path": "test/integration/accounts-signup.integration-spec.ts",
+      "run": true,
+      "rationale": "real signup HTTP flows append account audit events"
+    },
+    {
+      "path": "test/integration/accounts-verification.integration-spec.ts",
+      "run": true,
+      "rationale": "real verification HTTP flows append account audit events"
+    },
+    {
+      "path": "test/integration/audit-event-dedupe.integration-spec.ts",
+      "run": true,
+      "rationale": "direct and AuditService audit inserts, including exact negative fixtures"
+    },
+    {
+      "path": "test/integration/audit-event-migration.integration-spec.ts",
+      "run": true,
+      "rationale": "direct entity and kemfai_api-role audit inserts"
+    },
+    {
+      "path": "test/integration/billing-admin-authorization.integration-spec.ts",
+      "run": true,
+      "rationale": "real billing and support authorization paths append audit events"
+    },
+    {
+      "path": "test/integration/billing-approval-idempotency.integration-spec.ts",
+      "run": true,
+      "rationale": "real billing approval paths append payment audit events"
+    },
+    {
+      "path": "test/integration/billing-audit-completeness.integration-spec.ts",
+      "run": true,
+      "rationale": "real billing decisions append payment audit events"
+    },
+    {
+      "path": "test/integration/billing-decision-notification-delivery.integration-spec.ts",
+      "run": true,
+      "rationale": "real billing decision delivery paths append payment audit events"
+    },
+    {
+      "path": "test/integration/billing-decision-notification-durability.integration-spec.ts",
+      "run": true,
+      "rationale": "real durable billing decisions append payment audit events"
+    },
+    {
+      "path": "test/integration/billing-decision-real-failure-recovery.integration-spec.ts",
+      "run": true,
+      "rationale": "real recovery paths append payment audit events"
+    },
+    {
+      "path": "test/integration/billing-decision-reject-more-info.integration-spec.ts",
+      "run": true,
+      "rationale": "real reject and more-info paths append payment audit events"
+    },
+    {
+      "path": "test/integration/billing-more-info-cycles.integration-spec.ts",
+      "run": true,
+      "rationale": "real resubmission cycles append payment audit events"
+    },
+    {
+      "path": "test/integration/company-mutation-handoff.integration-spec.ts",
+      "run": true,
+      "env": { "KEMFAI_LIVE_T055_HANDOFF": "1" },
+      "rationale": "real handoff service appends company audit events with Odoo stubbed; its PostgreSQL-only gate is enabled explicitly"
+    },
+    {
+      "path": "test/integration/feature-flag-gating.integration-spec.ts",
+      "run": true,
+      "rationale": "real support-access feature-gating paths append audit events"
+    },
+    {
+      "path": "test/integration/support-access-denial.integration-spec.ts",
+      "run": true,
+      "rationale": "real support denial guard appends audit events"
+    },
+    {
+      "path": "test/integration/support-access-sweep-idempotency.integration-spec.ts",
+      "run": true,
+      "rationale": "real expiry sweep appends support grant audit events"
+    },
+    {
+      "path": "test/integration/tenant-provisioning.integration-spec.ts",
+      "run": true,
+      "rationale": "stubbed external seams retain real PostgreSQL audit persistence"
+    },
+    {
+      "path": "test/integration/tenant-scope-guard.integration-spec.ts",
+      "run": true,
+      "rationale": "real tenant guard denial paths append audit events"
+    },
+    {
+      "path": "test/integration/trial-window-enforcement.integration-spec.ts",
+      "run": true,
+      "rationale": "real trial guard and sweep paths append audit events with Odoo stubbed"
+    },
+    {
+      "path": "test/integration/tenants-http.integration-spec.ts",
+      "run": true,
+      "rationale": "the wrapper runs the real tenants HTTP suite, whose cross-tenant retry denial reaches TenantScopeGuard and persists tenant_access.denied_cross_tenant through AuditService"
+    },
+
+    {
+      "path": "test/integration/account-migration.integration-spec.ts",
+      "run": false,
+      "rationale": "migration and Account entity persistence only; it does not boot AppModule or write AuditEvent"
+    },
+    {
+      "path": "test/integration/billing-decision-notification-migration-compatibility.integration-spec.ts",
+      "run": false,
+      "rationale": "isolated additive migration compatibility checks only; it does not boot AppModule or write AuditEvent"
+    },
+    {
+      "path": "test/integration/checklist-liveness.integration-spec.ts",
+      "run": false,
+      "rationale": "external live-only Odoo/API suite gated by KEMFAI_LIVE_T079; this owned PostgreSQL/Redis harness cannot execute it"
+    },
+    {
+      "path": "test/integration/control-db-migration.integration-spec.ts",
+      "run": false,
+      "rationale": "control-database migration and connectivity checks only; it does not boot AppModule or write AuditEvent"
+    },
+    {
+      "path": "test/integration/dev-quickstart-seed.integration-spec.ts",
+      "run": false,
+      "rationale": "development seed entity checks only; the seed path does not persist AuditEvent"
+    },
+    {
+      "path": "test/integration/entitlements-http.integration-spec.ts",
+      "run": false,
+      "rationale": "GET /entitlements/me authentication and read-only entitlement checks contain no tenant reference that can trigger an audit-writing denial"
+    },
+    {
+      "path": "test/integration/entitlements-migration.integration-spec.ts",
+      "run": false,
+      "rationale": "entitlement migration and entity persistence only; it does not boot AppModule or write AuditEvent"
+    },
+    {
+      "path": "test/integration/entitlements-service.integration-spec.ts",
+      "run": false,
+      "rationale": "direct read-only EntitlementsService checks; it does not boot AppModule or call AuditService"
+    },
+    {
+      "path": "test/integration/feature-flag-migration.integration-spec.ts",
+      "run": false,
+      "rationale": "feature-flag migration and entity persistence only; it does not boot AppModule or write AuditEvent"
+    },
+    {
+      "path": "test/integration/idempotency-interceptor.integration-spec.ts",
+      "run": false,
+      "rationale": "probe endpoints exercise idempotency-key persistence without tenant-owned references or an audit-writing application path"
+    },
+    {
+      "path": "test/integration/idempotency-key-migration.integration-spec.ts",
+      "run": false,
+      "rationale": "idempotency-key migration and entity persistence only; it does not boot AppModule or write AuditEvent"
+    },
+    {
+      "path": "test/integration/openapi-bootstrap.integration-spec.ts",
+      "run": false,
+      "rationale": "public Swagger/OpenAPI registration endpoints only; public guards bypass audit persistence"
+    },
+    {
+      "path": "test/integration/payment-submission-migration.integration-spec.ts",
+      "run": false,
+      "rationale": "payment-submission migration and entity persistence only; it does not boot AppModule or write AuditEvent"
+    },
+    {
+      "path": "test/integration/payment-submission-uniqueness.integration-spec.ts",
+      "run": false,
+      "rationale": "direct PaymentSubmission database uniqueness checks only; it does not boot AppModule or write AuditEvent"
+    },
+    {
+      "path": "test/integration/payment-submission-upload.integration-spec.ts",
+      "run": false,
+      "rationale": "upload validation sends only the caller's own tenant context and asserts rejected submissions; no audit-writing denial or decision path is reached"
+    },
+    {
+      "path": "test/integration/plans-http.integration-spec.ts",
+      "run": false,
+      "rationale": "public read-only plans endpoint only; public guards bypass audit persistence"
+    },
+    {
+      "path": "test/integration/queues-registration.integration-spec.ts",
+      "run": false,
+      "rationale": "BullMQ registration and job-id checks instantiate queues directly; they do not boot AppModule or write AuditEvent"
+    },
+    {
+      "path": "test/integration/role-guard.integration-spec.ts",
+      "run": false,
+      "rationale": "role probes persist SupportAccessUsage only; internal-role identities bypass TenantScopeGuard and the suite does not call AuditService"
+    },
+    {
+      "path": "test/integration/subscription-migration.integration-spec.ts",
+      "run": false,
+      "rationale": "subscription migration and entity persistence only; it does not boot AppModule or write AuditEvent"
+    },
+    {
+      "path": "test/integration/support-access-migration.integration-spec.ts",
+      "run": false,
+      "rationale": "support-access migration and entity persistence only; it does not boot AppModule or write AuditEvent"
+    },
+    {
+      "path": "test/integration/tenant-migration.integration-spec.ts",
+      "run": false,
+      "rationale": "tenant migration and entity persistence only; it does not boot AppModule or write AuditEvent"
+    },
+    {
+      "path": "test/integration/module-selection-entitlement.integration-spec.ts",
+      "run": false,
+      "rationale": "the suite replaces AuditService with a Jest mock, so it cannot persist an AuditEvent"
+    },
+    {
+      "path": "test/integration/company-setup-validation.integration-spec.ts",
+      "run": false,
+      "rationale": "external-service-only live Odoo suite is skipped unless KEMFAI_LIVE_T050 is set; this owned PostgreSQL/Redis harness cannot execute its audit-writing path"
+    },
+    {
+      "path": "test/integration/company-setup-live.integration-spec.ts",
+      "run": false,
+      "rationale": "external-service-only live Odoo suite is skipped unless KEMFAI_LIVE_T054 is set and an owned tenant database is supplied; this PostgreSQL/Redis harness cannot execute its audit-writing path"
+    },
+    {
+      "path": "test/integration/module-selection-live.integration-spec.ts",
+      "run": false,
+      "rationale": "external-service-only live Odoo suite is skipped unless KEMFAI_LIVE_T072 is set and its exact-owned stack is supplied; this PostgreSQL/Redis harness cannot execute its audit-writing path"
+    },
+    {
+      "path": "test/integration/tenant-isolation.integration-spec.ts",
+      "run": false,
+      "rationale": "external-service-only MinIO and Odoo isolation suite is skipped unless KEMFAI_LIVE_PROVISION is set; this owned PostgreSQL/Redis harness cannot execute its audit-writing path"
+    },
+    {
+      "path": "test/integration/tenant-provisioning-live.integration-spec.ts",
+      "run": false,
+      "rationale": "external-service-only MinIO and Odoo provisioning suite is skipped unless KEMFAI_LIVE_PROVISION is set; this owned PostgreSQL/Redis harness cannot execute its audit-writing path"
+    }
+  ]
+}

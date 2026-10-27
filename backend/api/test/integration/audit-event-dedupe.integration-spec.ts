@@ -3,6 +3,7 @@ import controlDataSource from '../../src/database/data-source';
 import { Account } from '../../src/modules/accounts/entities/account.entity';
 import { AuditActorType, AuditEvent } from '../../src/modules/audit/entities/audit-event.entity';
 import { AuditService } from '../../src/modules/audit/audit.service';
+import { withT093NegativeFixture } from '../support/t093-observer';
 
 /**
  * T055 remediation acceptance test for `uq_audit_event_dedupe_key` (migration
@@ -62,10 +63,12 @@ describe('audit_event dedupe_key (T055 remediation)', () => {
 
   it('rejects a second row for the same dedupe_key at the database level', async () => {
     const dedupeKey = `test:${randomUUID()}`;
-    await controlDataSource.query(
-      `INSERT INTO "audit_event" ("actor_type", "actor_id", "tenant_id", "action", "subject_type", "subject_id", "occurred_at", "payload", "dedupe_key")
+    await withT093NegativeFixture('dedupe-test', () =>
+      controlDataSource.query(
+        `INSERT INTO "audit_event" ("actor_type", "actor_id", "tenant_id", "action", "subject_type", "subject_id", "occurred_at", "payload", "dedupe_key")
        VALUES ('system', NULL, NULL, 'test.action', 'test', $1, now(), '{}'::jsonb, $2)`,
-      [randomUUID(), dedupeKey],
+        [randomUUID(), dedupeKey],
+      ),
     );
 
     await expect(
@@ -79,16 +82,20 @@ describe('audit_event dedupe_key (T055 remediation)', () => {
 
   it('allows any number of rows with a NULL dedupe_key (every pre-existing action is unaffected)', async () => {
     const subjectId = randomUUID();
-    await controlDataSource.query(
-      `INSERT INTO "audit_event" ("actor_type", "actor_id", "tenant_id", "action", "subject_type", "subject_id", "occurred_at", "payload")
-       VALUES ('system', NULL, NULL, 'tenant.provisioning.attempted', 'tenant', $1, now(), '{}'::jsonb)`,
-      [subjectId],
-    );
-    await expect(
+    await withT093NegativeFixture('dedupe-orphan-tenant', () =>
       controlDataSource.query(
         `INSERT INTO "audit_event" ("actor_type", "actor_id", "tenant_id", "action", "subject_type", "subject_id", "occurred_at", "payload")
-         VALUES ('system', NULL, NULL, 'tenant.provisioning.attempted', 'tenant', $1, now(), '{}'::jsonb)`,
+       VALUES ('system', NULL, NULL, 'tenant.provisioning.attempted', 'tenant', $1, now(), '{}'::jsonb)`,
         [subjectId],
+      ),
+    );
+    await expect(
+      withT093NegativeFixture('dedupe-orphan-tenant-second', () =>
+        controlDataSource.query(
+          `INSERT INTO "audit_event" ("actor_type", "actor_id", "tenant_id", "action", "subject_type", "subject_id", "occurred_at", "payload")
+         VALUES ('system', NULL, NULL, 'tenant.provisioning.attempted', 'tenant', $1, now(), '{}'::jsonb)`,
+          [subjectId],
+        ),
       ),
     ).resolves.not.toThrow();
   });
@@ -188,19 +195,21 @@ describe('audit_event dedupe_key (T055 remediation)', () => {
   it('AuditEvent entity exposes dedupe_key as a mapped column', async () => {
     const repo = controlDataSource.getRepository(AuditEvent);
     const dedupeKey = `entity-test:${randomUUID()}`;
-    const saved = await repo.save(
-      repo.create({
-        actorType: AuditActorType.SYSTEM,
-        actorId: null,
-        tenantId: null,
-        action: 'test.entity',
-        subjectType: 'test',
-        subjectId: randomUUID(),
-        occurredAt: new Date(),
-        payload: {},
-        dedupeKey,
-        createdAt: new Date(),
-      }),
+    const saved = await withT093NegativeFixture('dedupe-entity-test', () =>
+      repo.save(
+        repo.create({
+          actorType: AuditActorType.SYSTEM,
+          actorId: null,
+          tenantId: null,
+          action: 'test.entity',
+          subjectType: 'test',
+          subjectId: randomUUID(),
+          occurredAt: new Date(),
+          payload: {},
+          dedupeKey,
+          createdAt: new Date(),
+        }),
+      ),
     );
     const reloaded = await repo.findOneByOrFail({ id: saved.id });
     expect(reloaded.dedupeKey).toBe(dedupeKey);
