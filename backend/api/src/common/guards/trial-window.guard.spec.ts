@@ -11,6 +11,7 @@ import {
   EntitlementsService,
   EntitlementSet,
 } from '../../modules/entitlements/entitlements.service';
+import { AuditService } from '../../modules/audit/audit.service';
 import { TenantContextResolver } from '../tenant-context/tenant-context.resolver';
 import { TenantScopedRequest } from '../tenant-context/tenant-context.model';
 import { TrialWindowGuard } from './trial-window.guard';
@@ -109,11 +110,13 @@ function makeGuard(
   reflector: Reflector,
   resolveForRequest: jest.Mock,
   getEntitlementSet: jest.Mock,
+  recordTenantTrialRestricted: jest.Mock = jest.fn().mockResolvedValue(undefined),
 ) {
   return new TrialWindowGuard(
     reflector,
     { resolveForRequest } as unknown as TenantContextResolver,
     { getEntitlementSet } as unknown as EntitlementsService,
+    { recordTenantTrialRestricted } as unknown as AuditService,
   );
 }
 
@@ -250,13 +253,21 @@ describe('TrialWindowGuard (T101)', () => {
     const getEntitlementSet = jest
       .fn()
       .mockResolvedValue(entitlementSet({ autoRestrictUnpaid: true, trialWindowDays: 14 }));
+    const recordTenantTrialRestricted = jest.fn().mockResolvedValue(undefined);
     const guard = makeGuard(
       makeReflector({ enforced: true }),
       resolveForRequest,
       getEntitlementSet,
+      recordTenantTrialRestricted,
     );
 
     await expect(guard.canActivate(makeContext(makeRequest()))).rejects.toThrow(ForbiddenException);
+    expect(recordTenantTrialRestricted).toHaveBeenCalledWith({
+      tenantId: TENANT_A,
+      trialWindowDays: 14,
+      elapsedDays: 20,
+      autoRestrictUnpaid: true,
+    });
   });
 
   it('denies identically regardless of how the request arrived (no separate UI-only code path exists)', async () => {
@@ -268,13 +279,16 @@ describe('TrialWindowGuard (T101)', () => {
     const getEntitlementSet = jest
       .fn()
       .mockResolvedValue(entitlementSet({ autoRestrictUnpaid: true, trialWindowDays: 14 }));
+    const recordTenantTrialRestricted = jest.fn().mockResolvedValue(undefined);
     const guard = makeGuard(
       makeReflector({ enforced: true }),
       resolveForRequest,
       getEntitlementSet,
+      recordTenantTrialRestricted,
     );
 
     await expect(guard.canActivate(makeContext(makeRequest()))).rejects.toThrow(ForbiddenException);
     await expect(guard.canActivate(makeContext(makeRequest()))).rejects.toThrow(ForbiddenException);
+    expect(recordTenantTrialRestricted).toHaveBeenCalledTimes(2);
   });
 });

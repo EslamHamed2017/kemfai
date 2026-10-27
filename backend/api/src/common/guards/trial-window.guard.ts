@@ -11,6 +11,7 @@ import {
   Subscription,
   SubscriptionStatus,
 } from '../../modules/billing-customer/entities/subscription.entity';
+import { AuditService } from '../../modules/audit/audit.service';
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
@@ -32,6 +33,7 @@ export class TrialWindowGuard implements CanActivate {
     private readonly reflector: Reflector,
     private readonly tenantContextResolver: TenantContextResolver,
     private readonly entitlements: EntitlementsService,
+    private readonly auditService: AuditService,
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
@@ -90,6 +92,16 @@ export class TrialWindowGuard implements CanActivate {
     if (elapsedMs <= windowMs) {
       return true;
     }
+
+    // contracts/events.md defines this as the tenant's first-crossing event, emitted by
+    // either the live guard or the sweep. AuditService's tenant-stable dedupe key makes
+    // both producers converge through PostgreSQL even when they race.
+    await this.auditService.recordTenantTrialRestricted({
+      tenantId: tenant.id,
+      trialWindowDays: entitlementSet.trialWindowDays,
+      elapsedDays: Math.floor(elapsedMs / MS_PER_DAY),
+      autoRestrictUnpaid: entitlementSet.autoRestrictUnpaid,
+    });
 
     throw new ForbiddenException('Trial window has ended; activate a subscription to continue');
   }

@@ -435,6 +435,7 @@ describe('AuditService — FR-007 event catalog (T019)', () => {
         subjectType: 'tenant',
         subjectId: TENANT,
         payload: { trial_window_days: 14, elapsed_days: 15, auto_restrict_unpaid: true },
+        dedupeKey: `tenant-trial-restricted:${TENANT}`,
       }),
     );
   });
