@@ -680,6 +680,11 @@ export function SetupWizardScreen({ createGuard = createLifecycleGuard }: SetupW
           {t('errors.incompleteSteps')}
         </p>
       )}
+      {(saving || completing) && (
+        <p role="status" aria-live="polite" aria-busy="true" data-testid="setup-wizard-submitting">
+          {t('actions.saving')}
+        </p>
+      )}
 
       <form onSubmit={isLastStep ? handleFinish : handleNext} noValidate>
         <h2>{t(`steps.${step.id}`)}</h2>
@@ -760,7 +765,7 @@ export function SetupWizardScreen({ createGuard = createLifecycleGuard }: SetupW
           {t('actions.pauseAndSave')}
         </button>
         <button type="submit" disabled={busyNow} data-testid="setup-wizard-next">
-          {t(isLastStep ? 'actions.finish' : 'actions.next')}
+          {t(saving || completing ? 'actions.saving' : isLastStep ? 'actions.finish' : 'actions.next')}
         </button>
       </form>
     </main>

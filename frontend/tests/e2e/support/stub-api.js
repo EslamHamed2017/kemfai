@@ -58,6 +58,12 @@ const server = http.createServer(async (req, res) => {
     res.writeHead(204);
     return res.end();
   }
+  // T094 frontend-only fixture: this read happens during SSR, before
+  // Playwright browser routes can stimulate hydrated support-history states.
+  if (url.pathname === '/support-access/grants' && req.method === 'GET') {
+    res.writeHead(200, { 'content-type': 'application/json' });
+    return res.end('[]');
+  }
   if (url.pathname === '/modules') {
     if (req.headers.authorization === 'Bearer t074-flagoff-token') {
       res.writeHead(404, { 'content-type': 'application/json' });
