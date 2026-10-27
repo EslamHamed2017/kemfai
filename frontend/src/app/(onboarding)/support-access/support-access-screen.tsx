@@ -82,6 +82,10 @@ export function SupportAccessScreen({
           new Date(value),
         )
       : '—';
+  const denialReason = (reason: SupportAccessGrantView['usage'][number]['denialReason']) =>
+    t(`denialReasons.${reason ?? 'unknown'}`);
+  const denialAction = (reason: SupportAccessGrantView['usage'][number]['denialReason']) =>
+    t(`denialActions.${reason ?? 'unknown'}`);
   return (
     <main dir={locale === 'ar' ? 'rtl' : 'ltr'} className="kemfai-support-shell">
       <header className="kemfai-checklist-header">
@@ -211,11 +215,14 @@ export function SupportAccessScreen({
                       <div>
                         <dt>{t('result')}</dt>
                         <dd>
-                          {usage.wasDenied
-                            ? t('denied', {
-                                reason: t(`denialReasons.${usage.denialReason ?? 'unknown'}`),
-                              })
-                            : t('allowed')}
+                          {usage.wasDenied ? (
+                            <>
+                              <span>{t('denied', { reason: denialReason(usage.denialReason) })}</span>{' '}
+                              <span>{denialAction(usage.denialReason)}</span>
+                            </>
+                          ) : (
+                            t('allowed')
+                          )}
                         </dd>
                       </div>
                     </dl>

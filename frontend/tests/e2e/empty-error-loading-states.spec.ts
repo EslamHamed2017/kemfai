@@ -52,6 +52,21 @@ const reviewSubmission = {
 
 const denialReasons = ['expired', 'revoked', 'wrong_tenant', 'action_not_permitted'] as const;
 
+const supportDenialActions = {
+  en: {
+    expired: 'Create a new grant if support still needs access.',
+    revoked: 'Create a new grant if support still needs access.',
+    wrong_tenant: 'Use a grant for this workspace.',
+    action_not_permitted: 'Review the permitted support scope.',
+  },
+  ar: {
+    expired: 'أنشئ منحة جديدة إذا كان الدعم لا يزال بحاجة إلى الوصول.',
+    revoked: 'أنشئ منحة جديدة إذا كان الدعم لا يزال بحاجة إلى الوصول.',
+    wrong_tenant: 'استخدم منحة مخصصة لمساحة العمل هذه.',
+    action_not_permitted: 'راجع نطاق الدعم المسموح به.',
+  },
+} as const;
+
 type Messages = typeof en;
 type UploadFailure = 'unsupportedType' | 'tooLarge' | 'unreadable';
 
@@ -491,9 +506,14 @@ for (const locale of ['en', 'ar'] as const) {
       supportRows = supportGrantsWithDenials();
       await page.getByRole('button', { name: messages.supportAccess.refresh }).click();
       await expect(page.getByTestId('support-access-empty')).toHaveCount(0);
-      for (const reason of denialReasons) {
+      const grantTiles = page.locator('.kemfai-support-grant');
+      for (const [index, reason] of denialReasons.entries()) {
+        const grantTile = grantTiles.nth(index);
         await expect(
-          page.getByText(messages.supportAccess.denialReasons[reason], { exact: false }),
+          grantTile.getByText(messages.supportAccess.denialReasons[reason], { exact: false }),
+        ).toBeVisible();
+        await expect(
+          grantTile.getByText(supportDenialActions[locale][reason], { exact: true }),
         ).toBeVisible();
       }
       const history = page.locator('.kemfai-support-history');
@@ -593,9 +613,11 @@ for (const locale of ['en', 'ar'] as const) {
 
       for (const failure of ['expired', 'invalid', 'reused'] as const) {
         await page.goto(`/verify?token=${failure}`);
+        const reason = failure === 'reused' ? 'used' : failure;
         const state = page.getByTestId('verify-invalid-message');
-        await expect(state).toContainText(messages.verifyEmail.invalid.title);
-        await expect(state).toContainText(messages.verifyEmail.invalid.body);
+        await expect(state).toHaveAttribute('data-verification-error', reason);
+        await expect(state.locator('h1')).toHaveText(messages.verifyEmail[reason].title);
+        await expect(state.locator('p')).toHaveText(messages.verifyEmail[reason].body);
         await expect(page.getByTestId('verify-resend-button')).toHaveText(
           messages.verifyEmail.resend.submit,
         );

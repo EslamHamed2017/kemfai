@@ -155,20 +155,32 @@ export function ProvisioningScreen({ supportEmail }: { supportEmail: string | nu
           aria-busy="true"
           data-testid="provisioning-loading"
         >
-          <h2>{t('settingUp')}</h2>
+          <h2
+            data-testid={
+              state === 'Pending' || state === 'Creating' ? 'provisioning-status' : undefined
+            }
+          >
+            {state === 'Pending'
+              ? t('status.pending')
+              : state === 'Creating'
+                ? t('status.creating')
+                : t('settingUp')}
+          </h2>
           <p>{t('waiting')}</p>
         </section>
       )}
       {state === 'Ready' && (
         <section role="status" data-testid="provisioning-ready">
-          <h2>{t('ready.title')}</h2>
+          <h2 data-testid="provisioning-status">{t('ready.title')}</h2>
           <p>{t('ready.body')}</p>
           <Link href="/mfa">{t('ready.continue')}</Link>
         </section>
       )}
       {recoverable && (
         <section data-testid="provisioning-failure">
-          <h2>{t(state === 'Failed' ? 'failed.title' : 'connection.title')}</h2>
+          <h2 data-testid={state === 'Failed' ? 'provisioning-status' : undefined}>
+            {t(state === 'Failed' ? 'failed.title' : 'connection.title')}
+          </h2>
           <p role="alert">
             {t(
               state === 'Failed'

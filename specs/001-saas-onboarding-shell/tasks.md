@@ -1146,7 +1146,7 @@ refusal after expiry, and confirm every action is audit-logged — independent o
     SC-011's "across acceptance testing" claim across the feature's full surface, not a subset of it.
   - **Roles**: Primary: Codex · Backup: Gemini · Reviewer: Claude
 
-- [ ] T110 [P] Explicit colour-independent status-label test: for **every** status/warning/error indicator in
+- [x] T110 [P] Explicit colour-independent status-label test: for **every** status/warning/error indicator in
   scope — the billing lifecycle (Pending Review, Approved, Rejected, Request More Information), support-access
   grants (expired/active/revoked), tenant provisioning (Pending/Creating/Ready/Failed), signup/verification
   errors (malformed email, weak password, duplicate email, expired/invalid/reused verification link, T038),

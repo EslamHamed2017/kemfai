@@ -60,8 +60,16 @@
       "continue": "Continue"
     },
     "invalid": {
-      "title": "This link is no longer valid",
-      "body": "This verification link is missing, expired, invalid, or has already been used. Request a new one below."
+      "title": "This verification link is invalid",
+      "body": "This link is missing or has been replaced by a newer link. Request a new one below."
+    },
+    "expired": {
+      "title": "This verification link has expired",
+      "body": "Request a new verification link below to continue."
+    },
+    "used": {
+      "title": "This verification link has already been used",
+      "body": "If your email still needs verification, request a new link below."
     },
     "resend": {
       "emailLabel": "Email address",
@@ -95,6 +103,10 @@
   "provisioning": {
     "title": "Workspace setup",
     "settingUp": "Setting up your workspace",
+    "status": {
+      "pending": "Workspace setup is pending",
+      "creating": "Workspace setup is in progress"
+    },
     "waiting": "Your workspace is being prepared. This page checks progress automatically.",
     "ready": {
       "title": "Your workspace is ready",
@@ -468,11 +480,18 @@
     "allowed": "Allowed",
     "denied": "Denied: {reason}",
     "denialReasons": {
-      "expired": "This grant expired. Create a new grant if support still needs access.",
-      "revoked": "This grant was revoked. Create a new grant if support still needs access.",
-      "wrong_tenant": "This grant belongs to another workspace. Use a grant for this workspace.",
-      "action_not_permitted": "This grant does not permit that action. Review the permitted support scope.",
-      "unknown": "This support attempt was blocked. Review the grant before trying again."
+      "expired": "the support grant had expired.",
+      "revoked": "the support grant had been revoked.",
+      "wrong_tenant": "the request targeted a different workspace.",
+      "action_not_permitted": "the requested action was not permitted.",
+      "unknown": "the access attempt was not permitted."
+    },
+    "denialActions": {
+      "expired": "Create a new grant if support still needs access.",
+      "revoked": "Create a new grant if support still needs access.",
+      "wrong_tenant": "Use a grant for this workspace.",
+      "action_not_permitted": "Review the permitted support scope.",
+      "unknown": "Review the grant before trying again."
     },
     "status": { "active": "Active", "expired": "Expired", "revoked": "Revoked" }
   }
