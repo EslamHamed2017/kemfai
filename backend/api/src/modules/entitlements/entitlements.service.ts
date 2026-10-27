@@ -63,8 +63,8 @@ export class EntitlementsService {
   /**
    * Feature flags gate module *completeness* platform-wide (Constitution Principle VI) and are
    * independent of any plan's entitlements (data-model.md "FeatureFlag" Validation note) — a feature
-   * absent from `feature_flag` is not yet gated at all, so it is omitted rather than defaulted to
-   * enabled.
+   * absent from `feature_flag` is omitted from this inventory. Guard lookups still fail closed for a
+   * missing required row; omission here must never be interpreted as an enabled gate.
    */
   async getFeatureFlags(): Promise<EntitlementSetFeatureFlag[]> {
     const flagRepo = controlDataSource.getRepository(FeatureFlag);
@@ -74,13 +74,14 @@ export class EntitlementsService {
 
   /**
    * Used by FeatureFlagGuard (T100) to decide whether a not-yet-complete module's customer-facing
-   * surface is reachable. A feature with no `feature_flag` row is treated as not gated (unaffected),
-   * matching `getFeatureFlags`'s omission behavior.
+   * surface is reachable. A decorated route is available only when its persisted row explicitly says
+   * `enabled=true`; a deleted, missed, or partially seeded required row therefore preserves the locked
+   * safe default of hidden/off.
    */
   async isFeatureFlagEnabled(featureKey: string): Promise<boolean> {
     const flagRepo = controlDataSource.getRepository(FeatureFlag);
     const flag = await flagRepo.findOne({ where: { featureKey } });
-    return flag?.enabled ?? true;
+    return flag?.enabled ?? false;
   }
 
   /**
