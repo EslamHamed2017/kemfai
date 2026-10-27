@@ -1076,7 +1076,7 @@ refusal after expiry, and confirm every action is audit-logged — independent o
     that it renders under its triggering condition.
   - **Roles**: Primary: Codex · Backup: Claude · Reviewer: Gemini
 
-- [ ] T095 [P] Full-surface EN/AR-RTL + axe accessibility sweep across every screen listed in FR-013, in
+- [x] T095 [P] Full-surface EN/AR-RTL + axe accessibility sweep across every screen listed in FR-013, in
   `frontend/tests/e2e/full-surface-a11y-rtl.spec.ts`
   - **Dependencies**: T030, T043, T052, T060, T071, T074, T080, T087
   - **Acceptance Criteria**: Matches SC-005; a failing axe violation or LTR-only rendering in Arabic fails the
