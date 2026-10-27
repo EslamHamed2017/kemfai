@@ -1180,7 +1180,7 @@ refusal after expiry, and confirm every action is audit-logged — independent o
     covered by inference from another.
   - **Roles**: Primary: Codex · Backup: GLM · Reviewer: Gemini
 
-- [ ] T112 [P] Cross-cutting test: `FeatureFlagGuard` denies access to a flagged-off module identically via the
+- [x] T112 [P] Cross-cutting test: `FeatureFlagGuard` denies access to a flagged-off module identically via the
   documented UI-shaped call and a raw HTTP replay, and no gated route bypasses the guard — AND, separately, a
   rendered-UI check that a flagged-off surface is absent from the DOM/navigation (not merely guarded at the API),
   in `backend/api/test/integration/feature-flag-gating.integration-spec.ts` (HTTP-level) and
