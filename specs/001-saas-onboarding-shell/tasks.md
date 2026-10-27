@@ -1164,7 +1164,7 @@ refusal after expiry, and confirm every action is audit-logged — independent o
     access/provisioning lifecycle states) has a passing assertion of an independent text label.
   - **Roles**: Primary: Codex · Backup: Claude · Reviewer: Gemini
 
-- [ ] T111 [P] Cross-cutting integration test: trial-window enforcement — a tenant past `trialWindowDays` with
+- [x] T111 [P] Cross-cutting integration test: trial-window enforcement — a tenant past `trialWindowDays` with
   `autoRestrictUnpaid` resolved true and a non-`Active` Subscription is denied onboarding-scoped access on ALL
   THREE FR-030a paths (`PUT /companies/current/setup` T054, `PUT /modules/selection` T076,
   `GET /onboarding/checklist` T082), each exercised through BOTH the documented UI-shaped call and a raw HTTP
