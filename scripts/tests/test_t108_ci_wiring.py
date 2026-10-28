@@ -165,11 +165,58 @@ class TestT108CiWiring(unittest.TestCase):
             r'(?m)^    \.\/node_modules\/\.bin\/jest --config test/jest-t093\.json --runInBand \\',
         )
 
-    def test_t093_selected_suite_consumes_exact_owned_redis_url(self) -> None:
-        suite = (ROOT / "backend/api/test/integration/billing-decision-notification-delivery.integration-spec.ts").read_text()
-        harness = (ROOT / "scripts/test_t093_owned_fixture.sh").read_text()
-        self._assert_t093_owned_redis(suite, harness)
+    def _assert_t093_proxy_uses_owned_redis(self, suite: str) -> None:
+        active_suite = strip_javascript_comments(suite)
+        self.assertRegex(
+            active_suite,
+            r"(?m)^    const healthyRedis = new URL\(HEALTHY_REDIS_URL\);$",
+        )
+        self.assertRegex(active_suite, r"(?m)^        host: healthyRedis\.hostname,$")
+        self.assertRegex(
+            active_suite,
+            r"(?m)^        port: Number\(healthyRedis\.port \|\| '6379'\),$",
+        )
+        self.assertRegex(
+            active_suite,
+            r"(?m)^        db: Number\(healthyRedis\.pathname\.slice\(1\) \|\| '0'\),$",
+        )
+        self.assertNotRegex(
+            active_suite,
+            r"backend:\s*\{\s*host:\s*['\"]localhost['\"]",
+        )
 
+    def test_t093_selected_suite_consumes_exact_owned_redis_url(self) -> None:
+        suite_paths = [
+            ROOT / "backend/api/test/integration/billing-decision-notification-delivery.integration-spec.ts",
+            ROOT / "backend/api/test/integration/billing-decision-real-failure-recovery.integration-spec.ts",
+        ]
+        suites = [path.read_text() for path in suite_paths]
+        harness = (ROOT / "scripts/test_t093_owned_fixture.sh").read_text()
+        for suite in suites:
+            self._assert_t093_owned_redis(suite, harness)
+        self._assert_t093_proxy_uses_owned_redis(suites[1])
+
+        fixed_proxy_backend = suites[1].replace(
+            """      backend: {
+        host: healthyRedis.hostname,
+        port: Number(healthyRedis.port || '6379'),
+        db: Number(healthyRedis.pathname.slice(1) || '0'),
+      },""",
+            "backend: { host: 'localhost', port: 6379, db: 14 },",
+            1,
+        )
+        with self.assertRaises(AssertionError):
+            self._assert_t093_proxy_uses_owned_redis(fixed_proxy_backend)
+
+        second_suite_hardcoded = suites[1].replace(
+            "const HEALTHY_REDIS_URL = process.env.REDIS_URL ?? 'redis://127.0.0.1:6379/14';",
+            "const HEALTHY_REDIS_URL = 'redis://localhost:6379/14';",
+            1,
+        )
+        with self.assertRaises(AssertionError):
+            self._assert_t093_owned_redis(second_suite_hardcoded, harness)
+
+        suite = suites[0]
         hardcoded = suite.replace(
             "const HEALTHY_REDIS_URL = process.env.REDIS_URL ?? 'redis://127.0.0.1:6379/14';",
             "const HEALTHY_REDIS_URL = 'redis://127.0.0.1:6379/14';\n// process.env.REDIS_URL ??",

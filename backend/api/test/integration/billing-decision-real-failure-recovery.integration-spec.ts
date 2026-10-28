@@ -44,7 +44,7 @@ const AUDIENCE = 'kemfai-api-t070rr';
 const REJECT_REASON = 'The transferred amount does not match the amount due for this period.';
 const TAKEOVER_DETAILS = 'Please provide the bank confirmation number.';
 const OUTBOX_TABLE = 'billing_decision_notification_outbox';
-const HEALTHY_REDIS_URL = 'redis://localhost:6379/14';
+const HEALTHY_REDIS_URL = process.env.REDIS_URL ?? 'redis://127.0.0.1:6379/14';
 
 /**
  * T070 real-failure recovery specification (Codex round-2 finding 1).
@@ -148,8 +148,13 @@ describe('Billing decision notification real-failure recovery (T070)', () => {
     internalKeycloak = await startFakeKeycloak({ issuer: INTERNAL_ISSUER, audience: AUDIENCE });
     configureAuthRealms();
 
+    const healthyRedis = new URL(HEALTHY_REDIS_URL);
     proxy = await startSelectiveRedisProxy({
-      backend: { host: 'localhost', port: 6379, db: 14 },
+      backend: {
+        host: healthyRedis.hostname,
+        port: Number(healthyRedis.port || '6379'),
+        db: Number(healthyRedis.pathname.slice(1) || '0'),
+      },
       failWhenArgMatches: /notification\.billing_decision/,
     });
     silent = await startSilentServer();

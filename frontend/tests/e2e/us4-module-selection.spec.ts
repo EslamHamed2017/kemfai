@@ -108,16 +108,24 @@ test('revoked entitlement removes persisted selection from navigation and worksp
 test('loading, empty, error/retry, and saving states remain explicit', async ({ page, baseURL }) => {
   await authenticate(page, baseURL!, 't074-states', 't074-states-token', 'en');
   let mode: 'error' | 'ready' = 'error';
+  let releaseInitialLoad!: () => void;
+  const initialLoadGate = new Promise<void>((resolve) => { releaseInitialLoad = resolve; });
+  let initialRequest = true;
   await page.route('**/api/modules', async (route) => {
-    await new Promise((resolve) => setTimeout(resolve, 150));
+    if (initialRequest) {
+      initialRequest = false;
+      await initialLoadGate;
+    }
     await route.fulfill(
       mode === 'error'
         ? { status: 502, contentType: 'application/json', body: '{}' }
         : { status: 200, contentType: 'application/json', body: JSON.stringify(options) },
     );
   });
-  await page.goto('/modules');
+  const navigation = page.goto('/modules');
   await expect(page.getByText(en.moduleSelection.loading, { exact: true })).toBeVisible();
+  releaseInitialLoad();
+  await navigation;
   await expect(page.getByText(en.moduleSelection.loadError, { exact: true })).toBeVisible();
   mode = 'ready';
   await page.getByRole('button', { name: en.moduleSelection.retry }).click();
@@ -141,7 +149,6 @@ test('loading, empty, error/retry, and saving states remain explicit', async ({ 
 });
 
 test('unauthenticated route enters the configured identity-provider flow', async ({ page }) => {
-  // This path has no session cookie; pin IPv4 so resolver-family changes cannot race Next readiness.
-  await page.goto('http://127.0.0.1:3411/modules');
+  await page.goto('/modules');
   await expect(page).toHaveURL(/\/protocol\/openid-connect\/auth\?/);
 });
