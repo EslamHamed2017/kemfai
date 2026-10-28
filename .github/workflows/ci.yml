@@ -199,6 +199,7 @@ jobs:
           docker pull redis:7-alpine
           docker pull redis:7.4.7-alpine
           docker pull odoo:18
+          docker pull odoo:18.0
           docker pull bitnamilegacy/minio@sha256:6dabb4a2088c9a79908de3bc05f4586c23ad2182c8908e7e3acbf61c1467fb20
           docker pull quay.io/keycloak/keycloak:26.0
       - name: T050 company validation owned stack

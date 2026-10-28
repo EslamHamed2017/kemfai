@@ -41,6 +41,11 @@ trap 'exit 130' INT; trap 'exit 143' TERM
 for name in "$pg" "$redis" "$minio" "$keycloak" "$odoo"; do kemfai_register_container_intent "$name"; done
 kemfai_register_network_intent "$network"
 [ -z "$(docker ps -aq --no-trunc --filter "label=$label")" ] || fail 'run label collision'
+for image in postgres:16.10-alpine redis:7.4.7-alpine \
+  bitnamilegacy/minio@sha256:6dabb4a2088c9a79908de3bc05f4586c23ad2182c8908e7e3acbf61c1467fb20 \
+  quay.io/keycloak/keycloak:26.0 odoo:18.0; do
+  docker image inspect "$image" >/dev/null 2>&1 || fail "required offline image missing: $image"
+done
 docker network create --label "$label" "$network" >/dev/null
 
 printf 'POSTGRES_USER=odoo\nPOSTGRES_PASSWORD=%s\nPOSTGRES_DB=%s\n' "$pg_password" "$control_db" >"$private/pg.env"
@@ -71,6 +76,12 @@ chmod 644 "$private/odoo.conf" "$private/realm.json"
 
 docker run -d --name "$pg" --label "$label" --network "$network" --env-file "$private/pg.env" \
   --tmpfs /var/lib/postgresql/data:rw,noexec,nosuid,size=1g -p 127.0.0.1:0:5432 postgres:16.10-alpine >/dev/null
+for _ in $(seq 1 180); do docker exec "$pg" pg_isready -U odoo -d "$control_db" >/dev/null 2>&1 && break; sleep .5; done
+if ! docker exec "$pg" pg_isready -U odoo -d "$control_db" >/dev/null 2>&1; then
+  docker inspect "$pg" >"$evidence/postgres-inspect.json" 2>&1 || true
+  docker logs --tail 300 "$pg" >"$evidence/postgres-readiness.log" 2>&1 || true
+  fail 'PostgreSQL readiness timed out'
+fi
 docker run -d --name "$redis" --label "$label" --network "$network" \
   --tmpfs /data:rw,noexec,nosuid,size=128m -p 127.0.0.1:0:6379 redis:7.4.7-alpine redis-server --save '' --appendonly no >/dev/null
 docker run -d --name "$minio" --label "$label" --network "$network" --env-file "$private/minio.env" \
@@ -93,8 +104,6 @@ redis_port="$(docker port "$redis" 6379/tcp | python3 -c 'import sys; print(sys.
 minio_port="$(docker port "$minio" 9000/tcp | python3 -c 'import sys; print(sys.stdin.read().strip().rsplit(":",1)[1])')"
 kc_port="$(docker port "$keycloak" 8080/tcp | python3 -c 'import sys; print(sys.stdin.read().strip().rsplit(":",1)[1])')"
 odoo_port="$(docker port "$odoo" 8069/tcp | python3 -c 'import sys; print(sys.stdin.read().strip().rsplit(":",1)[1])')"
-for _ in $(seq 1 180); do docker exec "$pg" pg_isready -U odoo -d "$control_db" >/dev/null 2>&1 && break; sleep .5; done
-docker exec "$pg" pg_isready -U odoo -d "$control_db" >/dev/null 2>&1 || fail 'PostgreSQL readiness timed out'
 for _ in $(seq 1 120); do [ "$(docker exec "$redis" redis-cli ping 2>/dev/null || true)" = PONG ] && break; sleep .5; done
 [ "$(docker exec "$redis" redis-cli ping 2>/dev/null)" = PONG ] || fail 'Redis readiness timed out'
 for _ in $(seq 1 180); do curl -fsS "http://127.0.0.1:$minio_port/minio/health/ready" >/dev/null 2>&1 && break; sleep .5; done

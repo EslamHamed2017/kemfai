@@ -134,6 +134,27 @@ class TestT108CiWiring(unittest.TestCase):
         self.assertLess(governance_job.index("Set up Node for governance"), governance_job.index("Install backend dependencies for governance"))
         self.assertLess(governance_job.index("Install backend dependencies for governance"), governance_job.index("Run T108 governance regressions"))
 
+        backend_job = workflow_job(WORKFLOW, "owned-backend-live")
+        backend_images = workflow_named_step(backend_job, "Pull pinned owned-stack images")
+        backend_pulls = set(re.findall(r"(?m)^          docker pull (\S+)$", backend_images))
+        self.assertEqual(
+            {
+                "postgres:16",
+                "postgres:16.10-alpine",
+                "redis:7-alpine",
+                "redis:7.4.7-alpine",
+                "odoo:18",
+                "odoo:18.0",
+                "bitnamilegacy/minio@sha256:6dabb4a2088c9a79908de3bc05f4586c23ad2182c8908e7e3acbf61c1467fb20",
+                "quay.io/keycloak/keycloak:26.0",
+            },
+            backend_pulls,
+        )
+        self.assertLess(
+            backend_job.index("Pull pinned owned-stack images"),
+            backend_job.index("T041 and T044 provisioning isolation owned stack"),
+        )
+
         frontend_job = workflow_job(WORKFLOW, "owned-frontend-live")
         images = workflow_named_step(frontend_job, "Pull T112 and US8 fixture images")
         pulls = set(re.findall(r"(?m)^          docker pull (\S+)$", images))
