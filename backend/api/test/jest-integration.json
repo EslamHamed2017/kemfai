@@ -1,5 +1,9 @@
 {
-  "moduleFileExtensions": ["js", "json", "ts"],
+  "moduleFileExtensions": [
+    "js",
+    "json",
+    "ts"
+  ],
   "rootDir": "..",
   "testRegex": ".*\\.integration-spec\\.ts$",
   "testPathIgnorePatterns": [
@@ -10,12 +14,15 @@
     "/test/integration/company-setup-validation.integration-spec.ts$",
     "/test/integration/module-selection-live.integration-spec.ts$",
     "/test/integration/tenant-isolation.integration-spec.ts$",
-    "/test/integration/tenant-provisioning-live.integration-spec.ts$"
+    "/test/integration/tenant-provisioning-live.integration-spec.ts$",
+    "/test/integration/no-odoo-exposure.integration-spec.ts$"
   ],
   "transform": {
     "^.+\\.ts$": "ts-jest"
   },
-  "setupFiles": ["<rootDir>/test/setup-integration-env.js"],
+  "setupFiles": [
+    "<rootDir>/test/setup-integration-env.js"
+  ],
   "testEnvironment": "node",
   "testTimeout": 30000
 }

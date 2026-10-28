@@ -300,18 +300,21 @@ class TestT108CiWiring(unittest.TestCase):
             text = path.read_text(encoding="utf-8")
             if "describe.skip" in text:
                 gated.add(f"/test/integration/{path.name}$")
-        # T093's final verifier consumes T093_CAPTURE_JSONL and is intentionally owned by
-        # scripts/test_t093_audit_source_linkage.sh. It must never run as an unobserved generic
-        # suite; every other generic exclusion must still be justified by describe.skip.
-        t093_verifier = "/test/integration/audit-source-linkage.integration-spec.ts$"
+        # T093 and T109 are intentionally owned by exact-resource runners. They must never run
+        # as unobserved generic suites; every other generic exclusion remains describe.skip-owned.
+        owned_verifiers = {
+            "/test/integration/audit-source-linkage.integration-spec.ts$",
+            "/test/integration/no-odoo-exposure.integration-spec.ts$",
+        }
         ignored = set(INTEGRATION_CONFIG["testPathIgnorePatterns"])
-        self.assertIn(t093_verifier, ignored)
-        self.assertEqual(gated, ignored - {t093_verifier})
-        dedicated = (ROOT / "scripts/test_t093_owned_fixture.sh").read_text(
-            encoding="utf-8"
-        )
-        self.assertIn("T093_CAPTURE_JSONL", dedicated)
-        self.assertIn("jest-t093.json", dedicated)
+        self.assertTrue(owned_verifiers <= ignored)
+        self.assertEqual(gated, ignored - owned_verifiers)
+        t093 = (ROOT / "scripts/test_t093_owned_fixture.sh").read_text(encoding="utf-8")
+        self.assertIn("T093_CAPTURE_JSONL", t093)
+        self.assertIn("jest-t093.json", t093)
+        t109 = (ROOT / "scripts/test_t109_odoo_exposure.sh").read_text(encoding="utf-8")
+        self.assertIn("test/integration/no-odoo-exposure.integration-spec.ts", t109)
+        self.assertIn("backend-jest.json", t109)
 
     def test_odoo_runner_invokes_and_proves_each_addon(self) -> None:
         runner = (ROOT / "scripts/ci/test_odoo_addons.sh").read_text(encoding="utf-8")
@@ -370,6 +373,7 @@ class TestT108CiWiring(unittest.TestCase):
             "/test/integration/tenant-isolation.integration-spec.ts$": "bash scripts/test_t041_t044_owned_live.sh",
             "/test/integration/tenant-provisioning-live.integration-spec.ts$": "bash scripts/test_t041_t044_owned_live.sh",
             "/test/integration/audit-source-linkage.integration-spec.ts$": "bash scripts/test_t093_owned_fixture.sh",
+            "/test/integration/no-odoo-exposure.integration-spec.ts$": "bash scripts/test_t109_odoo_exposure.sh all",
         }
         self.assertEqual(excluded, set(expected_owned))
         workflow = (ROOT / ".github/workflows/ci.yml").read_text()
@@ -394,10 +398,12 @@ class TestT108CiWiring(unittest.TestCase):
         workflow = (ROOT / ".github/workflows/ci.yml").read_text()
         self.assertIn("bash scripts/test_t112_owned_fixture.sh ui", workflow)
         self.assertIn("bash scripts/test-us8-owned-live.sh", workflow)
-        self.assertEqual(workflow.count("uses: actions/upload-artifact@v4"), 3)
+        self.assertIn("bash scripts/test_t109_odoo_exposure.sh all", workflow)
+        self.assertEqual(workflow.count("uses: actions/upload-artifact@v4"), 4)
         artifacts = (
             ("Upload T112 evidence", "${{ runner.temp }}/t112-evidence"),
             ("Upload US8 evidence", "${{ runner.temp }}/us8-evidence"),
+            ("Upload T109 evidence", "${{ runner.temp }}/t109-evidence"),
             ("Upload T093 evidence", "${{ runner.temp }}/t093-evidence"),
         )
         for label, path in artifacts:

@@ -36,7 +36,7 @@ export class ChecklistService {
       accountId: context.accountId,
     });
     if (!tenant?.odooDbName) {
-      throw new InternalServerErrorException('Tenant has no provisioned Odoo database');
+      throw new InternalServerErrorException('Workspace data is not ready');
     }
     const { login, password } = provisioningCredentials();
     const uid = await this.odoo.authenticate(tenant.odooDbName, login, password);

@@ -21,6 +21,8 @@ export default defineConfig({
     // Canonical-path wrapper for scripts/test-us8-owned-live.sh. Its imported
     // suite executes Docker and calls a genuine API, so it is not a stub e2e.
     '**/us8-support-access.spec.ts',
+    // T109 owns PostgreSQL/Redis, a real Nest AppModule, production Next, and evidence capture.
+    '**/full-surface-odoo-exposure-sweep.spec.ts',
   ],
   fullyParallel: true,
   // The stub API owns process-global fixture state; one worker prevents cross-suite contamination.

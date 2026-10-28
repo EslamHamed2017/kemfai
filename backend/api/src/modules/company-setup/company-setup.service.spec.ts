@@ -860,6 +860,17 @@ describe('CompanySetupService upstream-state validation (T056, unit)', () => {
     });
     await expect(service.getState(req)).rejects.toThrow(InternalServerErrorException);
   });
+
+  it('rejects private-model/RPC keys nested inside an otherwise valid values object', async () => {
+    const service = makeServiceWithResult({
+      currentStep: 'country',
+      setupComplete: false,
+      values: { country: 'AE', jsonrpc: '2.0', model: 'res.company' },
+      version: 1,
+      stale: false,
+    });
+    await expect(service.getState(req)).rejects.toThrow(InternalServerErrorException);
+  });
 });
 
 /**

@@ -15,6 +15,7 @@ import {
 } from './company-mutation-handoff.service';
 import { CompanyMutationHandoffState } from './entities/company-mutation-handoff.entity';
 import { stripKemfaiPrefix } from './kemfai-error.util';
+import { isPublicCompanyField, isPublicCompanyValues } from './company-public-values';
 import {
   CompanySettingsUpdateRequestDto,
   CompanySettingsViewDto,
@@ -150,12 +151,13 @@ export class CompanySettingsService {
     companyId: number,
   ): Promise<OdooCompanySettingsUpdateResult> {
     if (handoff.state === CompanyMutationHandoffState.ODOO_COMMITTED) {
-      return handoff.finalResponse as OdooCompanySettingsUpdateResult;
+      CompanySettingsService.assertValidUpstreamView(handoff.finalResponse, true);
+      return handoff.finalResponse;
     }
 
     let result: OdooCompanySettingsUpdateResult;
     try {
-      result = (await this.odoo.executeKw(
+      const rawResult = await this.odoo.executeKw(
         db,
         uid,
         password,
@@ -168,7 +170,9 @@ export class CompanySettingsService {
           handoff.occurredAt.toISOString(),
           handoff.actorAccountId,
         ],
-      )) as OdooCompanySettingsUpdateResult;
+      );
+      CompanySettingsService.assertValidUpstreamView(rawResult, true);
+      result = rawResult;
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       if (this.isKnownOdooFault(message)) {
@@ -259,8 +263,28 @@ export class CompanySettingsService {
     throw new InternalServerErrorException('Company settings are temporarily unavailable');
   }
 
+  private static assertValidUpstreamView(
+    result: unknown,
+    requireChangedFields: boolean,
+  ): asserts result is OdooCompanySettingsUpdateResult {
+    const view = result as Partial<OdooCompanySettingsUpdateResult> | null | undefined;
+    const validChangedFields =
+      !requireChangedFields ||
+      (Array.isArray(view?.changedFields) && view.changedFields.every(isPublicCompanyField));
+    if (
+      !view ||
+      typeof view !== 'object' ||
+      typeof view.setupComplete !== 'boolean' ||
+      !isPublicCompanyValues(view.values) ||
+      !validChangedFields
+    ) {
+      throw new InternalServerErrorException('Company settings are temporarily unavailable');
+    }
+  }
+
   private toDto(result: unknown): CompanySettingsViewDto {
-    const view = result as OdooCompanySettingsView;
+    CompanySettingsService.assertValidUpstreamView(result, false);
+    const view: OdooCompanySettingsView = result;
     return {
       values: view.values,
       setupComplete: view.setupComplete,

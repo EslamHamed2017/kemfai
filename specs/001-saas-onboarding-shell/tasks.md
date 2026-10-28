@@ -1129,7 +1129,7 @@ refusal after expiry, and confirm every action is audit-logged — independent o
     than only linting frontend and best-effort Python pytest.
   - **Roles**: Primary: GLM · Backup: Codex · Reviewer: Gemini
 
-- [ ] T109 [P] Full-surface Odoo-exposure sweep: assert no native Odoo terminology, URLs, or raw Odoo payloads
+- [x] T109 [P] Full-surface Odoo-exposure sweep: assert no native Odoo terminology, URLs, or raw Odoo payloads
   appear in any HTTP response body or rendered DOM across **every** customer-facing screen/endpoint delivered by
   this feature — public plan list (T036), signup (T037), verify-email (T038), MFA enrollment (T039),
   provisioning status (T048), the company setup wizard (T052/T056), company settings (T107), billing (T063),

@@ -121,6 +121,16 @@ describe('CompanySettingsService (T055, unit)', () => {
     });
   });
 
+  it('getSettings rejects unknown private-model keys instead of forwarding a raw payload', async () => {
+    const executeKw = jest.fn().mockResolvedValue({
+      values: { legal_name: 'Acme FZ', jsonrpc: '2.0', model: 'res.company' },
+      setupComplete: true,
+    });
+    const { service } = makeService({ executeKw });
+
+    await expect(service.getSettings(makeReq())).rejects.toThrow(InternalServerErrorException);
+  });
+
   it('getSettings translates KEMFAI_SETUP_INCOMPLETE into the canonical 409 CompanySetupIncompleteError body', async () => {
     const executeKw = jest
       .fn()

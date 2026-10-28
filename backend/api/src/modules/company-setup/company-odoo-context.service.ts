@@ -56,7 +56,7 @@ export class CompanyOdooContextService {
   async resolveCompanyTarget(tenantId: string): Promise<number> {
     const tenant = await controlDataSource.getRepository(Tenant).findOneBy({ id: tenantId });
     if (!tenant?.odooCompanyId) {
-      throw new InternalServerErrorException('Tenant has no provisioned Odoo company');
+      throw new InternalServerErrorException('Workspace company is not ready');
     }
     return tenant.odooCompanyId;
   }
@@ -73,7 +73,7 @@ export class CompanyOdooContextService {
   ): Promise<{ db: string; uid: number; password: string }> {
     const tenant = await controlDataSource.getRepository(Tenant).findOneBy({ id: tenantId });
     if (!tenant?.odooDbName) {
-      throw new InternalServerErrorException('Tenant has no provisioned Odoo database');
+      throw new InternalServerErrorException('Workspace data is not ready');
     }
     const { login, password } = provisioningCredentials();
     const uid = await this.odoo.authenticate(tenant.odooDbName, login, password);
@@ -92,7 +92,7 @@ export class CompanyOdooContextService {
   async resolveByTenantId(tenantId: string): Promise<TenantOdooCompanyContext> {
     const tenant = await controlDataSource.getRepository(Tenant).findOneBy({ id: tenantId });
     if (!tenant?.odooDbName) {
-      throw new InternalServerErrorException('Tenant has no provisioned Odoo database');
+      throw new InternalServerErrorException('Workspace data is not ready');
     }
     const { login, password } = provisioningCredentials();
     const uid = await this.odoo.authenticate(tenant.odooDbName, login, password);

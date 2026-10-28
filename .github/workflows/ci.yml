@@ -248,6 +248,11 @@ jobs:
         env:
           US8_EVIDENCE_DIR: ${{ runner.temp }}/us8-evidence
         run: bash scripts/test-us8-owned-live.sh
+      - name: T109 full-surface Odoo exposure owned fixture
+        if: always()
+        env:
+          T109_EVIDENCE_DIR: ${{ runner.temp }}/t109-evidence
+        run: bash scripts/test_t109_odoo_exposure.sh all
       - name: Upload T112 evidence
         if: always()
         uses: actions/upload-artifact@v4
@@ -262,6 +267,26 @@ jobs:
         with:
           name: us8-evidence-${{ github.run_id }}-${{ github.run_attempt }}
           path: ${{ runner.temp }}/us8-evidence
+          if-no-files-found: error
+          retention-days: 14
+      - name: Validate T109 backend evidence independently
+        if: always()
+        shell: bash
+        env:
+          T109_EVIDENCE_DIR: ${{ runner.temp }}/t109-evidence
+        run: python3 scripts/fixtures/t109_validate_evidence.py backend "$T109_EVIDENCE_DIR/backend-jest.json"
+      - name: Validate T109 browser evidence independently
+        if: always()
+        shell: bash
+        env:
+          T109_EVIDENCE_DIR: ${{ runner.temp }}/t109-evidence
+        run: python3 scripts/fixtures/t109_validate_evidence.py browser "$T109_EVIDENCE_DIR/browser-summary.json"
+      - name: Upload T109 evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: t109-evidence-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/t109-evidence
           if-no-files-found: error
           retention-days: 14
 

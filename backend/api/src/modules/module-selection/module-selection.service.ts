@@ -183,7 +183,7 @@ export class ModuleSelectionService {
       .getRepository(Tenant)
       .findOneBy({ id: resolved.callerTenantId });
     if (!tenant?.odooDbName) {
-      throw new InternalServerErrorException('Tenant has no provisioned Odoo database');
+      throw new InternalServerErrorException('Workspace data is not ready');
     }
     return {
       accountId: resolved.accountId,
@@ -223,6 +223,18 @@ export class ModuleSelectionService {
     receipt: OdooSelectionReceipt,
   ): Promise<void> {
     if (!this.isReceipt(receipt)) {
+      throw new InternalServerErrorException('Module selection persistence returned invalid data');
+    }
+    const receiptFeatureKeys = [
+      ...new Set([...receipt.featureKeys, ...receipt.added, ...receipt.removed]),
+    ];
+    const receiptFeatures = receiptFeatureKeys.length
+      ? await controlDataSource.getRepository(Feature).find({
+          where: { key: In(receiptFeatureKeys), kind: FeatureKind.MODULE },
+        })
+      : [];
+    const validatedReceiptKeys = new Set(receiptFeatures.map((feature) => feature.key));
+    if (receiptFeatureKeys.some((key) => !validatedReceiptKeys.has(key))) {
       throw new InternalServerErrorException('Module selection persistence returned invalid data');
     }
     const tenant = await controlDataSource
