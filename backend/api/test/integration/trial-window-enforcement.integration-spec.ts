@@ -212,12 +212,11 @@ describe('FR-030a trial-window enforcement across every onboarding path (T111)',
       .useValue(syntheticOdoo)
       .compile();
     app = moduleRef.createNestApplication();
-    await app.listen(0, '127.0.0.1');
-    // QueueSchedulingService is exercised during the real AppModule init above. Pause only this
-    // fixture's fresh Redis queue before arranging expired tenants so its 30-second background
-    // timer cannot race the deterministic direct processor assertions later in the same file.
-    // The production processor itself is not replaced and is run explicitly below.
+    // Pause this isolated fixture's queue before Nest lifecycle hooks run. Pausing after listen()
+    // left a real scheduler tick racing the first HTTP precondition on slower fresh databases.
+    // The production processor remains real and is invoked explicitly by the sweep assertions.
     await moduleRef.get<Queue>(getQueueToken(QUEUE_TRIAL_EXPIRY_SWEEP)).pause();
+    await app.listen(0, '127.0.0.1');
 
     ownerToken = await keycloak.signAccessToken({
       sub: primary.keycloakUserId,
@@ -239,7 +238,7 @@ describe('FR-030a trial-window enforcement across every onboarding path (T111)',
     expect(setupScope).toBe(
       computeCompanySetupScope(primary.tenantId, primary.accountId, companyIdFor('primary')),
     );
-  }, 60_000);
+  }, 120_000);
 
   beforeEach(async () => {
     authenticate.mockClear();

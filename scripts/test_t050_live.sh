@@ -209,7 +209,7 @@ target='test/integration/company-setup-validation.integration-spec.ts'
 red_log="$artifacts_dir/red-proof.log"
 set +e
 KEMFAI_T050_RED_MUTATION=seed-missing-rule \
-  npm run test:integration -- --runInBand "$target" > "$red_log" 2>&1
+  ./node_modules/.bin/jest --config test/jest-owned-integration.json --runInBand --runTestsByPath "$target" > "$red_log" 2>&1
 red_status=$?
 set -e
 if [ "$red_status" -eq 0 ]; then
@@ -225,7 +225,7 @@ echo "PASS: bounded fixture mutation filled the omitted rule and made the 409 as
   | tee -a "$evidence_file"
 
 green_log="$artifacts_dir/green.log"
-npm run test:integration -- --runInBand "$target" > "$green_log" 2>&1 || {
+./node_modules/.bin/jest --config test/jest-owned-integration.json --runInBand --runTestsByPath "$target" > "$green_log" 2>&1 || {
   sed -n '1,320p' "$green_log"
   fail "T050 targeted green integration run failed"
 }

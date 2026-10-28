@@ -305,7 +305,7 @@ export KEMFAI_T054_DB_PREINITIALIZED=1
 
 set +e
 log_file="$artifacts_dir/http-harness.log"
-npx jest --config test/jest-integration.json --runInBand company-setup-live.integration-spec.ts --testTimeout=180000 > "$log_file" 2>&1
+./node_modules/.bin/jest --config test/jest-owned-integration.json --runInBand --runTestsByPath test/integration/company-setup-live.integration-spec.ts --testTimeout=180000 > "$log_file" 2>&1
 status=$?
 set -e
 cat "$log_file"

@@ -114,7 +114,9 @@ test.describe.serial('US8 genuine owner/support journey', () => {
     ).toBe(403);
     await page.reload();
     await expect(page.getByText('Allowed', { exact: true })).toBeVisible();
-    await expect(page.getByText('Denied: wrong_tenant', { exact: true })).toBeVisible();
+    await expect(
+      page.getByText('Denied: the request targeted a different workspace.', { exact: true }),
+    ).toBeVisible();
     expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
     await screenshot(page, (name) => info.outputPath(name), 'active-en');
     await page.getByRole('button', { name: 'العربية' }).click();

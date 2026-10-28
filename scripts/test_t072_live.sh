@@ -174,5 +174,5 @@ export REDIS_URL="redis://127.0.0.1:${redis_port}/14" KEMFAI_ODOO_URL="http://12
 export KEMFAI_ODOO_MASTER_PASSWORD="$odoo_master" KEMFAI_TENANT_ADMIN_LOGIN="$odoo_login" KEMFAI_TENANT_ADMIN_PASSWORD="$odoo_password"
 export KEMFAI_LIVE_T072=1 KEMFAI_T072_STACK_OWNED=1 KEMFAI_T072_TENANT_A_DB="$tenant_a" KEMFAI_T072_TENANT_B_DB="$tenant_b"
 (cd "$api_dir" && npm run typeorm -- migration:run -d src/database/data-source.ts) 2>&1 | redact_stream >"$artifacts_dir/migrations.log" || fail 'control migrations failed'
-(cd "$api_dir" && npm run test:integration -- --runInBand test/integration/module-selection-live.integration-spec.ts) 2>&1 | redact_stream | tee "$artifacts_dir/module-selection-live.log"
+(cd "$api_dir" && ./node_modules/.bin/jest --config test/jest-owned-integration.json --runInBand --runTestsByPath test/integration/module-selection-live.integration-spec.ts) 2>&1 | redact_stream | tee "$artifacts_dir/module-selection-live.log"
 echo "PASS T072 owned live acceptance; evidence=$artifacts_dir"

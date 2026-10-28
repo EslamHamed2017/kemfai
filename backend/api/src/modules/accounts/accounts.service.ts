@@ -313,21 +313,35 @@ export class AccountsService {
     }
 
     // Step 3 — atomic decide+consume (guards every step-1 condition again under race).
-    const consumed = await controlDataSource.query(
-      `UPDATE email_verification_token AS t
-         SET consumed_at = now()
-       WHERE t.token_hash = $1
-         AND t.consumed_at IS NULL
-         AND t.expires_at > now()
-         AND NOT EXISTS (
-           SELECT 1 FROM email_verification_token AS newer
-           WHERE newer.account_id = t.account_id
-             AND newer.issuance_sequence > t.issuance_sequence
-         )
-       RETURNING t.account_id`,
-      [tokenHash],
-    );
-    if (consumed.length === 0) {
+    // Serialize contenders on the token row before the guarded transition. The prior bare
+    // UPDATE was intended to rely on PostgreSQL's concurrent-update recheck, but the HTTP
+    // acceptance gate demonstrated two successful responses on a same-token race. An explicit
+    // row lock makes the single winner part of the product contract rather than driver timing.
+    const claimed = await controlDataSource.transaction(async (manager) => {
+      await manager.query(
+        'SELECT id FROM email_verification_token WHERE token_hash = $1 FOR UPDATE',
+        [tokenHash],
+      );
+      const result = await manager
+        .createQueryBuilder()
+        .update(EmailVerificationToken)
+        .set({ consumedAt: () => 'now()' })
+        .where('token_hash = :tokenHash', { tokenHash })
+        .andWhere('account_id = :accountId', { accountId: row.accountId })
+        .andWhere('consumed_at IS NULL')
+        .andWhere('expires_at > now()')
+        .andWhere(
+          `NOT EXISTS (
+             SELECT 1 FROM email_verification_token AS newer
+             WHERE newer.account_id = :accountId
+               AND newer.issuance_sequence > :issuanceSequence
+           )`,
+          { issuanceSequence: row.issuanceSequence },
+        )
+        .execute();
+      return result.affected === 1;
+    });
+    if (!claimed) {
       // Lost the race: another request consumed this link, or a newer link appeared.
       throw verificationGoneException('used');
     }

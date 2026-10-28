@@ -2,83 +2,281 @@ name: KEMFAI CI
 
 on:
   push:
-    branches: [ main, develop, 'feature/**' ]
+    branches: [main, develop, "feature/**"]
   pull_request:
-    branches: [ main, develop ]
+    branches: [main, develop]
   workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  NODE_VERSION: 22.22.0
 
 jobs:
   governance-cleanup-regression:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
       - run: bash scripts/tests/run_all.sh
 
-  lint-frontend:
-    runs-on: ubuntu-latest
+  frontend-static:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 22
-      - run: |
-          cd frontend
-          npm ci
-          npm run lint --if-present
-          npm run typecheck --if-present
-          npm test --if-present -- --ci
-          npm run build --if-present
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - working-directory: frontend
+        run: npm ci --ignore-scripts
+      - working-directory: frontend
+        run: |
+          npm run lint
+          npm run typecheck
+          npm test -- --ci --runInBand
+          npm run build
 
-  test-backend:
-    runs-on: ubuntu-latest
+  backend-contract-integration:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
     services:
       redis:
-        image: redis:7-alpine
-        ports:
-          - 6379:6379
+        image: redis:7.4.7-alpine
+        ports: ["6379:6379"]
         options: >-
           --health-cmd "redis-cli ping"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 12
       postgres:
-        image: postgres:16-alpine
+        image: postgres:16.10-alpine
         env:
           POSTGRES_USER: kemfai_ci
-          POSTGRES_PASSWORD: ${{ secrets.CI_POSTGRES_PASSWORD }}
+          POSTGRES_PASSWORD: kemfai_ci_test_only
           POSTGRES_DB: kemfai_ci
-        ports:
-          - 5432:5432
+        ports: ["5432:5432"]
         options: >-
-          --health-cmd "pg_isready -U kemfai_ci"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
+          --health-cmd "pg_isready -U kemfai_ci -d kemfai_ci"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 12
     env:
-      CONTROL_DB_HOST: localhost
+      CONTROL_DB_HOST: 127.0.0.1
       CONTROL_DB_PORT: 5432
       CONTROL_DB_USER: kemfai_ci
-      CONTROL_DB_PASSWORD: ${{ secrets.CI_POSTGRES_PASSWORD }}
+      CONTROL_DB_PASSWORD: kemfai_ci_test_only
       CONTROL_DB_NAME: kemfai_ci
+      REDIS_URL: redis://127.0.0.1:6379
+      OPENAPI_CONTRACT_PATH: ${{ github.workspace }}/specs/001-saas-onboarding-shell/contracts/openapi.yaml
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 22
-      - run: |
-          cd backend/api
-          npm ci
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: backend/api/package-lock.json
+      - working-directory: backend/api
+        run: npm ci --ignore-scripts
+      - working-directory: backend/api
+        run: |
           npm run lint
           npm run build
           npm test -- --runInBand
           npm run test:contract -- --runInBand
+          npm run test:integration -- --runInBand
 
-  durable-handoff-audit:
-    runs-on: ubuntu-latest
+  frontend-playwright:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    services:
+      redis:
+        image: redis:7.4.7-alpine
+        ports: ["6379:6379"]
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 12
+    env:
+      CI: "true"
+      REDIS_URL: redis://127.0.0.1:6379
+      KEMFAI_E2E_REDIS_URL: redis://127.0.0.1:6379/13
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 22
-      - run: cd backend/api && npm ci
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - working-directory: frontend
+        run: npm ci --ignore-scripts
+      - working-directory: frontend
+        run: npx playwright install --with-deps chromium
+      - working-directory: frontend
+        run: npx playwright test
+
+  accounting-invariants:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    services:
+      postgres:
+        image: postgres:16.10-alpine
+        env:
+          POSTGRES_USER: odoo_ci
+          POSTGRES_PASSWORD: odoo_ci_test_only
+          POSTGRES_DB: postgres
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U odoo_ci -d postgres"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 12
+    env:
+      KEMFAI_CI_ODOO_IMAGE: odoo:18.0
+      KEMFAI_CI_DB_HOST: 127.0.0.1
+      KEMFAI_CI_DB_PORT: 5432
+      KEMFAI_CI_DB_USER: odoo_ci
+      KEMFAI_CI_DB_PASSWORD: odoo_ci_test_only
+    steps:
+      - uses: actions/checkout@v4
+      - run: bash scripts/ci/test_odoo_addons.sh
+
+  durable-handoff-audit:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: backend/api/package-lock.json
+      - working-directory: backend/api
+        run: npm ci --ignore-scripts
       - run: bash scripts/test_t055_durable_handoff.sh
+
+
+  owned-backend-live:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: |
+            backend/api/package-lock.json
+            frontend/package-lock.json
+      - working-directory: backend/api
+        run: npm ci --ignore-scripts
+      - working-directory: frontend
+        run: npm ci --ignore-scripts
+      - working-directory: frontend
+        run: npx playwright install --with-deps chromium
+      - name: Pull pinned owned-stack images
+        run: |
+          docker pull postgres:16
+          docker pull postgres:16.10-alpine
+          docker pull redis:7-alpine
+          docker pull redis:7.4.7-alpine
+          docker pull odoo:18
+          docker pull bitnamilegacy/minio@sha256:6dabb4a2088c9a79908de3bc05f4586c23ad2182c8908e7e3acbf61c1467fb20
+          docker pull quay.io/keycloak/keycloak:26.0
+      - name: T050 company validation owned stack
+        run: bash scripts/test_t050_live.sh
+      - name: T054 company setup owned stack
+        run: bash scripts/test_t054_live.sh
+      - name: T072 module selection owned stack
+        run: bash scripts/test_t072_live.sh
+      - name: T079 checklist liveness owned stack
+        env:
+          KEMFAI_LIVE_MODE: t080
+        run: bash scripts/test_t074_live_browser.sh
+      - name: T041 and T044 provisioning isolation owned stack
+        run: bash scripts/test_t041_t044_owned_live.sh
+
+  owned-frontend-live:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: |
+            backend/api/package-lock.json
+            frontend/package-lock.json
+      - working-directory: backend/api
+        run: npm ci --ignore-scripts
+      - working-directory: frontend
+        run: npm ci --ignore-scripts
+      - working-directory: frontend
+        run: npx playwright install --with-deps chromium
+      - name: Pull pinned owned-stack images
+        run: |
+          docker pull postgres:16-alpine
+          docker pull redis:7-alpine
+      - name: T112 feature flag UI owned fixture
+        env:
+          T112_FIXTURE_LABEL: kemfai.phase12.operation=t112-feature-gating-repair-20261025T113424Z
+          T112_EVIDENCE_DIR: ${{ runner.temp }}/t112-evidence
+        run: bash scripts/test_t112_owned_fixture.sh ui
+      - name: US8 support access owned live fixture
+        env:
+          US8_EVIDENCE_DIR: ${{ runner.temp }}/us8-evidence
+        run: bash scripts/test-us8-owned-live.sh
+      - name: Upload T112 evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: t112-evidence-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/t112-evidence
+          if-no-files-found: error
+          retention-days: 14
+      - name: Upload US8 evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: us8-evidence-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/us8-evidence
+          if-no-files-found: error
+          retention-days: 14
+
+  audit-source-linkage-owned:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: backend/api/package-lock.json
+      - working-directory: backend/api
+        run: npm ci --ignore-scripts
+      - name: Pull exact T093 fixture images
+        run: |
+          docker pull postgres:16
+          docker pull redis:7-alpine
+      - name: T093 audit source linkage owned fixture
+        env:
+          T093_EVIDENCE_DIR: ${{ runner.temp }}/t093-evidence
+        run: bash scripts/test_t093_owned_fixture.sh
+      - name: Upload T093 evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: t093-evidence-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/t093-evidence
+          if-no-files-found: error
+          retention-days: 14

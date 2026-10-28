@@ -8,6 +8,24 @@ REPO="$(cd "$HERE/../.." && pwd)"
 
 FAIL=0
 
+echo "########## test_t108_ci_wiring.py ##########"
+python3 "$HERE/test_t108_ci_wiring.py"
+[ $? -eq 0 ] || FAIL=1
+
+echo ""
+
+echo "########## test_t108_integration_runner.js ##########"
+node "$HERE/test_t108_integration_runner.js"
+[ $? -eq 0 ] || FAIL=1
+
+echo ""
+
+echo "########## test_t108_odoo_cleanup.sh ##########"
+bash "$HERE/test_t108_odoo_cleanup.sh"
+[ $? -eq 0 ] || FAIL=1
+
+echo ""
+
 echo "########## repository Docker cleanup static gate ##########"
 (
   cd "$REPO"

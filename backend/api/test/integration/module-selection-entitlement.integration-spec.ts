@@ -40,7 +40,12 @@ describe('PUT /modules/selection entitlement enforcement (T073)', () => {
     authenticate: jest.fn(),
     executeKw: jest.fn(),
   };
-  const audit = { recordModulesSelectionChanged: jest.fn() };
+  const audit: jest.Mocked<
+    Pick<AuditService, 'recordModulesSelectionChanged' | 'recordTenantTrialRestricted'>
+  > = {
+    recordModulesSelectionChanged: jest.fn(),
+    recordTenantTrialRestricted: jest.fn().mockResolvedValue(undefined),
+  };
   let subscriptionStatus = SubscriptionStatus.ACTIVE;
   let callerRoles = ['WorkspaceOwner'];
   const contract = new OpenApiContractValidator();
@@ -65,7 +70,11 @@ describe('PUT /modules/selection entitlement enforcement (T073)', () => {
   beforeAll(async () => {
     jest.spyOn(controlDataSource, 'getRepository').mockImplementation((target: unknown) => {
       if (target === Account) {
-        return repository({ id: ACCOUNT_ID, keycloakUserId: SUBJECT_ID }) as never;
+        return repository({
+          id: ACCOUNT_ID,
+          keycloakUserId: SUBJECT_ID,
+          emailVerified: true,
+        }) as never;
       }
       if (target === Tenant) {
         return repository({
@@ -111,17 +120,22 @@ describe('PUT /modules/selection entitlement enforcement (T073)', () => {
     const moduleRef = await Test.createTestingModule({
       imports: [TenantContextModule, EntitlementsModule, ModuleSelectionModule],
       providers: [
+        // Root-level TrialWindowGuard needs the token here; the builder override below
+        // also replaces AuditModule's imported provider used by ModuleSelectionService.
+        { provide: AuditService, useValue: audit },
         { provide: APP_GUARD, useClass: RoleGuard },
         { provide: APP_GUARD, useClass: FeatureFlagGuard },
         { provide: APP_GUARD, useClass: TrialWindowGuard },
       ],
     })
+      // TrialWindowGuard and module selection stay real. Override only the imported
+      // AuditModule provider so this synthetic-repository suite cannot hit AuditEvent.
+      .overrideProvider(AuditService)
+      .useValue(audit)
       .overrideProvider(EntitlementsService)
       .useValue(entitlements)
       .overrideProvider(OdooRpcService)
       .useValue(odoo)
-      .overrideProvider(AuditService)
-      .useValue(audit)
       .compile();
 
     app = moduleRef.createNestApplication();

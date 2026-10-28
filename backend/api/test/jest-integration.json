@@ -2,6 +2,16 @@
   "moduleFileExtensions": ["js", "json", "ts"],
   "rootDir": "..",
   "testRegex": ".*\\.integration-spec\\.ts$",
+  "testPathIgnorePatterns": [
+    "/test/integration/checklist-liveness.integration-spec.ts$",
+    "/test/integration/audit-source-linkage.integration-spec.ts$",
+    "/test/integration/company-mutation-handoff.integration-spec.ts$",
+    "/test/integration/company-setup-live.integration-spec.ts$",
+    "/test/integration/company-setup-validation.integration-spec.ts$",
+    "/test/integration/module-selection-live.integration-spec.ts$",
+    "/test/integration/tenant-isolation.integration-spec.ts$",
+    "/test/integration/tenant-provisioning-live.integration-spec.ts$"
+  ],
   "transform": {
     "^.+\\.ts$": "ts-jest"
   },

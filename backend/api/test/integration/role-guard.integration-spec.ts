@@ -11,6 +11,17 @@ import {
 } from '../../src/modules/support-access/entities/support-access-grant.entity';
 import { SupportAccessUsage } from '../../src/modules/support-access/entities/support-access-usage.entity';
 import { Roles } from '../../src/common/decorators/roles.decorator';
+import { RequireFeatureFlag } from '../../src/common/decorators/feature-flag.decorator';
+import { RequireSupportAccess } from '../../src/common/decorators/support-access.decorator';
+import { EnforceTrialWindow } from '../../src/common/decorators/trial-window.decorator';
+import {
+  Subscription,
+  SubscriptionBillingCycle,
+  SubscriptionStatus,
+} from '../../src/modules/billing-customer/entities/subscription.entity';
+import { Feature, FeatureKind } from '../../src/modules/entitlements/entities/feature.entity';
+import { Plan } from '../../src/modules/entitlements/entities/plan.entity';
+import { PlanSetting } from '../../src/modules/entitlements/entities/plan-setting.entity';
 import { FakeKeycloak, startFakeKeycloak } from '../support/fake-keycloak';
 
 /**
@@ -32,6 +43,9 @@ class ProbeController {
 
   @Get('support-only/tenants/:tenantId')
   @Roles('Support')
+  @RequireFeatureFlag('module.support_access')
+  @RequireSupportAccess('workspace.summary.read')
+  @EnforceTrialWindow()
   supportOnly(@Param('tenantId') tenantId: string): { tenantId: string } {
     return { tenantId };
   }
@@ -56,6 +70,7 @@ describe('RoleGuard (T018, integration)', () => {
   let app: INestApplication;
   let tenantId: string;
   let ownerAccountId: string;
+  let planId: string;
   let tokenSupport: string;
   let tokenBillingAdmin: string;
   let tokenNoRole: string;
@@ -70,6 +85,37 @@ describe('RoleGuard (T018, integration)', () => {
       await controlDataSource.initialize();
     }
     await controlDataSource.runMigrations();
+
+    // Match the current T111/T112 production guard chain. These are real persisted
+    // feature/trial/subscription fixtures: no guard is overridden or bypassed.
+    await controlDataSource.getRepository(Feature).upsert(
+      {
+        key: 'module.support_access',
+        displayName: 'Temporary support access (US8)',
+        displayNameEn: 'Temporary support access',
+        displayNameAr: null,
+        kind: FeatureKind.MODULE,
+      },
+      ['key'],
+    );
+    await controlDataSource.query('UPDATE feature_flag SET enabled = true WHERE feature_key = $1', [
+      'module.support_access',
+    ]);
+    const plan = await controlDataSource.getRepository(Plan).save({
+      name: `T018 guard plan ${Date.now()}`,
+      nameEn: 'T018 guard plan',
+      nameAr: null,
+      published: false,
+      monthlyPrice: '0.00',
+      annualPrice: '0.00',
+      currency: 'USD',
+    });
+    planId = plan.id;
+    await controlDataSource.getRepository(PlanSetting).save({
+      planId,
+      trialWindowDays: 14,
+      autoRestrictUnpaid: true,
+    });
 
     const moduleRef = await Test.createTestingModule({
       imports: [AppModule, ProbeModule],
@@ -98,11 +144,23 @@ describe('RoleGuard (T018, integration)', () => {
     const tenantRepo = controlDataSource.getRepository(Tenant);
     const tenant = await tenantRepo.save(tenantRepo.create({ accountId: owner.id }));
     tenantId = tenant.id;
+    await controlDataSource.getRepository(Subscription).save({
+      tenantId,
+      planId,
+      billingCycle: SubscriptionBillingCycle.MONTHLY,
+      status: SubscriptionStatus.ACTIVE,
+      currentPeriodStart: '2026-10-01',
+      currentPeriodEnd: '2026-10-31',
+      activatedAt: new Date(),
+      activatedBy: owner.id,
+    });
   });
 
   afterEach(async () => {
+    await controlDataSource.query('DELETE FROM "audit_event"');
     await controlDataSource.query('DELETE FROM "support_access_usage"');
     await controlDataSource.query('DELETE FROM "support_access_grant"');
+    await controlDataSource.query('DELETE FROM "subscription"');
     await controlDataSource.query('DELETE FROM "tenant"');
     await controlDataSource.query('DELETE FROM "account"');
   });
@@ -111,6 +169,11 @@ describe('RoleGuard (T018, integration)', () => {
     await app.close();
     await keycloak.close();
     if (controlDataSource.isInitialized) {
+      await controlDataSource.query('DELETE FROM "plan" WHERE "id" = $1', [planId]);
+      await controlDataSource.query(
+        'UPDATE "feature_flag" SET "enabled" = false WHERE "feature_key" = $1',
+        ['module.support_access'],
+      );
       await controlDataSource.destroy();
     }
     delete process.env.KEYCLOAK_ISSUER;
@@ -127,6 +190,7 @@ describe('RoleGuard (T018, integration)', () => {
         granteeRole: SupportAccessGranteeRole.SUPPORT,
         expiresAt: new Date(Date.now() + 60_000),
         revokedAt: null,
+        permittedActions: ['workspace.summary.read'],
         ...overrides,
       }),
     );
@@ -158,8 +222,9 @@ describe('RoleGuard (T018, integration)', () => {
   });
 
   it('denies Support access to a tenant with no grant at all, and writes no usage row', async () => {
+    const unknownGrantId = '99999999-9999-4999-8999-999999999999';
     await request(app.getHttpServer())
-      .get(`/test-role/support-only/tenants/${tenantId}`)
+      .get(`/test-role/support-only/tenants/${tenantId}?grantId=${unknownGrantId}`)
       .set('Authorization', `Bearer ${tokenSupport}`)
       .expect(403);
 
@@ -170,7 +235,7 @@ describe('RoleGuard (T018, integration)', () => {
     const grant = await grantSupportAccess();
 
     await request(app.getHttpServer())
-      .get(`/test-role/support-only/tenants/${tenantId}`)
+      .get(`/test-role/support-only/tenants/${tenantId}?grantId=${grant.id}`)
       .set('Authorization', `Bearer ${tokenSupport}`)
       .expect(200);
 
@@ -188,7 +253,7 @@ describe('RoleGuard (T018, integration)', () => {
     const grant = await grantSupportAccess({ expiresAt: new Date(Date.now() - 60_000) });
 
     await request(app.getHttpServer())
-      .get(`/test-role/support-only/tenants/${tenantId}`)
+      .get(`/test-role/support-only/tenants/${tenantId}?grantId=${grant.id}`)
       .set('Authorization', `Bearer ${tokenSupport}`)
       .expect(403);
 
@@ -201,7 +266,7 @@ describe('RoleGuard (T018, integration)', () => {
     const grant = await grantSupportAccess({ revokedAt: new Date() });
 
     await request(app.getHttpServer())
-      .get(`/test-role/support-only/tenants/${tenantId}`)
+      .get(`/test-role/support-only/tenants/${tenantId}?grantId=${grant.id}`)
       .set('Authorization', `Bearer ${tokenSupport}`)
       .expect(403);
 
@@ -225,20 +290,21 @@ describe('RoleGuard (T018, integration)', () => {
       otherTenantRepo.create({ accountId: otherOwner.id }),
     );
     const grantRepo = controlDataSource.getRepository(SupportAccessGrant);
-    await grantRepo.save(
+    const otherGrant = await grantRepo.save(
       grantRepo.create({
         tenantId: otherTenant.id,
         grantedBy: otherOwner.id,
         granteeRole: SupportAccessGranteeRole.SUPPORT,
         expiresAt: new Date(Date.now() + 60_000),
+        permittedActions: ['workspace.summary.read'],
       }),
     );
 
     await request(app.getHttpServer())
-      .get(`/test-role/support-only/tenants/${tenantId}`)
+      .get(`/test-role/support-only/tenants/${tenantId}?grantId=${otherGrant.id}`)
       .set('Authorization', `Bearer ${tokenSupport}`)
       .expect(403);
 
-    expect(await usageRows()).toHaveLength(0);
+    expect(await usageRows()).toMatchObject([{ wasDenied: true, denialReason: 'wrong_tenant' }]);
   });
 });
