@@ -334,6 +334,14 @@ class TestT108CiWiring(unittest.TestCase):
             r"node_modules/\.bin/next start --hostname :: --port \${PORT}`",
         )
         self.assertRegex(active_config, r"const baseURL = `http://localhost:\${PORT}`;")
+        self.assertIn(
+            "KEYCLOAK_ISSUER=http://127.0.0.1:4100/realms/kemfai-customers",
+            active_config,
+        )
+        self.assertIn(
+            "KEYCLOAK_BACKCHANNEL_URL=http://127.0.0.1:4100/realms/kemfai-customers",
+            active_config,
+        )
 
     def test_generic_playwright_excludes_only_the_owned_live_fixture(self) -> None:
         config = (ROOT / "frontend/playwright.config.ts").read_text(encoding="utf-8")
