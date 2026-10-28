@@ -103,7 +103,7 @@ echo "== Running the durable-handoff application-level regression suite =="
 export KEMFAI_LIVE_T055_HANDOFF=1
 log_file="$artifacts_dir/handoff-suite.log"
 set +e
-npx jest --config test/jest-integration.json --runInBand company-mutation-handoff.integration-spec.ts --testTimeout=60000 > "$log_file" 2>&1
+./node_modules/.bin/jest --config test/jest-owned-integration.json --runInBand --runTestsByPath test/integration/company-mutation-handoff.integration-spec.ts --testTimeout=60000 > "$log_file" 2>&1
 status=$?
 set -e
 cat "$log_file"

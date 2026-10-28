@@ -323,6 +323,7 @@ describe('AccountsService.verifyEmail (T033, unit)', () => {
   let recordAccountEmailVerified: jest.Mock;
   let tenantQueueAdd: jest.Mock;
   let query: jest.Mock;
+  let executeClaim: jest.Mock;
 
   let tokenRow: EmailVerificationToken;
   let latestRow: EmailVerificationToken | null;
@@ -367,7 +368,8 @@ describe('AccountsService.verifyEmail (T033, unit)', () => {
     markEmailVerified = jest.fn().mockResolvedValue(undefined);
     recordAccountEmailVerified = jest.fn().mockResolvedValue(undefined);
     tenantQueueAdd = jest.fn().mockResolvedValue(undefined);
-    query = jest.fn().mockResolvedValue([{ account_id: 'existing-account-id' }]);
+    query = jest.fn().mockResolvedValue([{ id: 'token-row-id' }]);
+    executeClaim = jest.fn().mockResolvedValue({ affected: 1, raw: [] });
 
     planRepo = { findOne: jest.fn() };
     accountRepo = {
@@ -399,6 +401,19 @@ describe('AccountsService.verifyEmail (T033, unit)', () => {
       throw new Error(`Unexpected repository requested for ${String(target)}`);
     });
     jest.spyOn(controlDataSource, 'query').mockImplementation(query as any);
+    jest.spyOn(controlDataSource, 'transaction').mockImplementation(async (work: any) =>
+      work({
+        query,
+        createQueryBuilder: () => {
+          const builder: Record<string, jest.Mock> = {};
+          for (const method of ['update', 'set', 'where', 'andWhere']) {
+            builder[method] = jest.fn().mockReturnValue(builder);
+          }
+          builder.execute = executeClaim;
+          return builder;
+        },
+      }),
+    );
   });
 
   afterEach(() => {
@@ -432,7 +447,8 @@ describe('AccountsService.verifyEmail (T033, unit)', () => {
 
     expect(result).toEqual({ accountId: 'existing-account-id' });
     expect(markEmailVerified).toHaveBeenCalledWith('existing-kc-user-id');
-    expect(query).toHaveBeenCalledTimes(1); // the atomic decide+consume UPDATE
+    expect(query).toHaveBeenCalledTimes(1); // token row lock; claim uses typed UpdateResult.affected
+    expect(executeClaim).toHaveBeenCalledTimes(1);
     expect(accountRepo.update).toHaveBeenCalledWith(
       { id: 'existing-account-id', emailVerified: false },
       { emailVerified: true },
@@ -493,7 +509,7 @@ describe('AccountsService.verifyEmail (T033, unit)', () => {
   });
 
   it('atomic consume loses the race → 410 used, no flag/audit/job work', async () => {
-    query.mockResolvedValue([]);
+    executeClaim.mockResolvedValue({ affected: 0, raw: [[], 2] });
     await expectGone('used')(makeService());
     expect(accountRepo.update).not.toHaveBeenCalled();
     expect(recordAccountEmailVerified).not.toHaveBeenCalled();
@@ -514,7 +530,8 @@ describe('AccountsService.verifyEmail (T033, unit)', () => {
       { id: 'existing-account-id', emailVerified: true },
       { emailVerified: false },
     );
-    expect(query).toHaveBeenCalledTimes(2); // consume + compensation un-consume
+    expect(query).toHaveBeenCalledTimes(2); // lock + compensation un-consume
+    expect(executeClaim).toHaveBeenCalledTimes(1);
     expect(tenantQueueAdd).not.toHaveBeenCalled();
   });
 

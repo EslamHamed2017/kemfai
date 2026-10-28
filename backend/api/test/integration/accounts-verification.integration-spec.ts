@@ -423,19 +423,26 @@ describe('POST /accounts/verify-email (T033 implementation + T029 acceptance, HT
   });
 
   describe('idempotency under concurrency (Constitution Principle VII)', () => {
-    it('two concurrent verifications of the SAME link → exactly one 200, one 410, one audit event, one job', async () => {
+    it('two concurrent verifications of the SAME link repeatedly yield exactly one 200, one 410, one audit event, one job', async () => {
       const plan = await createPlan();
-      const accountId = await signupFor(suiteEmail('concurrent'), plan.id);
-      const [token] = await issuedTokens(accountId);
 
-      const [first, second] = await Promise.all([verify(token), verify(token)]);
-      expect([first.status, second.status].sort()).toEqual([200, 410]);
+      // A handful of fresh-token races catches driver-result-shape regressions without
+      // turning this focused gate into a long-running stress test.
+      for (let attempt = 0; attempt < 5; attempt += 1) {
+        const accountId = await signupFor(suiteEmail(`concurrent-${attempt}`), plan.id);
+        const [token] = await issuedTokens(accountId);
 
-      expect((await accountRow(accountId))?.emailVerified).toBe(true);
-      expect(
-        (await auditActionsFor(accountId)).filter((action) => action === 'account.email_verified'),
-      ).toHaveLength(1);
-      expect(await provisionJob(accountId)).toBeDefined();
+        const [first, second] = await Promise.all([verify(token), verify(token)]);
+        expect([first.status, second.status].sort()).toEqual([200, 410]);
+
+        expect((await accountRow(accountId))?.emailVerified).toBe(true);
+        expect(
+          (await auditActionsFor(accountId)).filter(
+            (action) => action === 'account.email_verified',
+          ),
+        ).toHaveLength(1);
+        expect(await provisionJob(accountId)).toBeDefined();
+      }
     });
   });
 

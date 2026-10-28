@@ -1,4 +1,4 @@
-import { test, expect, type Page } from '@playwright/test';
+import { test, expect, type Page, type TestInfo } from '@playwright/test';
 
 /**
  * T103 — a locale choice persists across a FRESH login session (FR-024), explicitly
@@ -13,7 +13,6 @@ import { test, expect, type Page } from '@playwright/test';
  * /accounts/me/locale is a stateful in-memory stub so the BFF's real fetch path runs.
  */
 
-const API_BASE = 'http://127.0.0.1:4000';
 const APP = 'http://localhost:3411';
 
 /**
@@ -26,12 +25,16 @@ const APP = 'http://localhost:3411';
  */
 let sessionCounter = 0;
 
-async function freshLogin(page: Page, startLocale?: 'ar' | 'en'): Promise<void> {
+async function freshLogin(
+  page: Page,
+  accountKey: string,
+  startLocale?: 'ar' | 'en',
+): Promise<void> {
   sessionCounter += 1;
   const id = `e2e-session-${Date.now()}-${sessionCounter}`;
   const token = `e2e-token-${id}`;
   await page.request.post('http://127.0.0.1:4100/__e2e/seed', {
-    data: { sessionId: id, token, locale: startLocale ?? null, accountKey: 't103-account' },
+    data: { sessionId: id, token, locale: startLocale ?? null, accountKey },
   });
   await page.route(/\/auth\/login/, (route) =>
     route.fulfill({
@@ -44,36 +47,51 @@ async function freshLogin(page: Page, startLocale?: 'ar' | 'en'): Promise<void> 
   );
 }
 
-test.beforeEach(async () => {
-  await fetch('http://127.0.0.1:4100/__e2e/reset?accountKey=t103-account', { method: 'POST' });
-});
+function accountKeyFor(testInfo: TestInfo): string {
+  return `t103-${testInfo.testId}-${testInfo.repeatEachIndex}-${testInfo.retry}`.replace(
+    /[^a-zA-Z0-9-]/g,
+    '-',
+  );
+}
 
 test.describe('T103 — locale persists across fresh login sessions', () => {
   test.describe.configure({ mode: 'serial' });
-  test('ar choice survives logout → fresh login in a new context', async ({ browser }) => {
+  test('ar choice survives logout → fresh login in a new context', async ({
+    browser,
+  }, testInfo) => {
     test.setTimeout(120_000);
+
+    const accountKey = accountKeyFor(testInfo);
+    await fetch(`http://127.0.0.1:4100/__e2e/reset?accountKey=${accountKey}`, { method: 'POST' });
 
     // Session 1 — login through the real UI, switch to Arabic by clicking the switcher.
     const ctx1 = await browser.newContext();
     const page1 = await ctx1.newPage();
-    await freshLogin(page1);
+    await freshLogin(page1, accountKey);
 
     await page1.goto('/auth/login', { timeout: 90_000, waitUntil: 'domcontentloaded' });
     await page1.waitForURL(/\/(plans|$)/);
     await expect(page1.getByTestId('locale-switcher')).toBeVisible();
 
-    const patch = page1.waitForRequest(
-      (request) =>
-        request.url().includes('/api/accounts/me/locale') && request.method() === 'PATCH',
+    const patch = page1.waitForResponse(
+      (response) =>
+        response.url().includes('/api/accounts/me/locale') &&
+        response.request().method() === 'PATCH',
     );
     await page1.getByTestId('locale-switcher').click();
-    await patch;
+    expect((await patch).ok()).toBe(true);
     await page1.waitForFunction(() => document.documentElement.lang === 'ar');
 
     // The persistence MUST have landed server-side before we log out — assert it
     // directly so a silent BFF/upstream failure fails HERE, loudly, not downstream.
     await expect
-      .poll(() => page1.request.get('http://127.0.0.1:4100/__e2e/state?accountKey=t103-account').then((r) => r.json()), { timeout: 5_000 })
+      .poll(
+        () =>
+          page1.request
+            .get(`http://127.0.0.1:4100/__e2e/state?accountKey=${accountKey}`)
+            .then((r) => r.json()),
+        { timeout: 5_000 },
+      )
       .toEqual({ locale: 'ar' });
 
     await ctx1.close(); // logout: every cookie of session 1 is gone.
@@ -81,7 +99,7 @@ test.describe('T103 — locale persists across fresh login sessions', () => {
     // Session 2 — FRESH context + fresh login; browser default is en.
     const ctx2 = await browser.newContext();
     const page2 = await ctx2.newPage();
-    await freshLogin(page2);
+    await freshLogin(page2, accountKey);
 
     await page2.goto('/auth/login', { timeout: 90_000, waitUntil: 'domcontentloaded' });
     await page2.waitForURL(/\/(plans|$)/);
@@ -91,25 +109,34 @@ test.describe('T103 — locale persists across fresh login sessions', () => {
     await ctx2.close();
   });
 
-  test('en choice equally persists (reverse direction)', async ({ browser }) => {
+  test('en choice equally persists (reverse direction)', async ({ browser }, testInfo) => {
     test.setTimeout(120_000);
+
+    const accountKey = accountKeyFor(testInfo);
+    await fetch(`http://127.0.0.1:4100/__e2e/reset?accountKey=${accountKey}`, { method: 'POST' });
 
     // Prior account state: Arabic had been chosen.
     const ctx = await browser.newContext();
     const page = await ctx.newPage();
-    await freshLogin(page, 'ar');
+    await freshLogin(page, accountKey, 'ar');
 
     await page.goto('/auth/login', { timeout: 90_000, waitUntil: 'domcontentloaded' });
     await page.waitForURL(/\/(plans|$)/);
     await expect(page.getByTestId('locale-switcher')).toBeVisible();
 
+    const patch = page.waitForResponse(
+      (response) =>
+        response.url().includes('/api/accounts/me/locale') &&
+        response.request().method() === 'PATCH',
+    );
     await page.getByTestId('locale-switcher').click(); // ar → en
+    expect((await patch).ok()).toBe(true);
     await page.waitForFunction(() => document.documentElement.lang === 'en');
     await ctx.close();
 
     const ctx2 = await browser.newContext();
     const page2 = await ctx2.newPage();
-    await freshLogin(page2);
+    await freshLogin(page2, accountKey);
 
     await page2.goto('/auth/login', { timeout: 90_000, waitUntil: 'domcontentloaded' });
     await page2.waitForURL(/\/(plans|$)/);

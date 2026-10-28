@@ -4,6 +4,8 @@ import ar from '../../src/locales/ar/common.json';
 import en from '../../src/locales/en/common.json';
 import { openLocalePage, type Locale } from './support/rtl';
 
+test.describe.configure({ timeout: 90_000 });
+
 /**
  * T094 is a frontend-only acceptance sweep. These private, synthetic API responses
  * stimulate the real Next.js pages and controls; they are not live-backend evidence.

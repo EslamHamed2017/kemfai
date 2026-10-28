@@ -971,7 +971,13 @@ test('onboarding checklist — EN/AR live items, mirrored cards, keyboard links,
             : en.onboardingChecklist.items.customer.action,
       });
       await link.focus();
-      await page.keyboard.press('Enter');
+      await Promise.all([
+        page.waitForResponse(
+          (response) =>
+            response.url().includes('/api/modules') && response.request().method() === 'GET',
+        ),
+        page.keyboard.press('Enter'),
+      ]);
       await expect(page).toHaveURL(/\/modules#module\.sales$/);
       await expect(page.locator('[id="module.sales"]')).toHaveAttribute('data-targeted', 'true');
     }
