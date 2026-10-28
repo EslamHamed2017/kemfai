@@ -43,10 +43,7 @@ export class TenantsService {
       // boundary exposes only the actionable, stable product message so an upstream URL,
       // model name, database identifier, or stack detail can never be persisted into this
       // DTO accidentally.
-      failureReason:
-        tenant?.status === TenantStatus.FAILED
-          ? 'Retry or contact support'
-          : null,
+      failureReason: tenant?.status === TenantStatus.FAILED ? 'Retry or contact support' : null,
     };
   }
 

@@ -73,7 +73,9 @@
     {
       "path": "test/integration/company-mutation-handoff.integration-spec.ts",
       "run": true,
-      "env": { "KEMFAI_LIVE_T055_HANDOFF": "1" },
+      "env": {
+        "KEMFAI_LIVE_T055_HANDOFF": "1"
+      },
       "rationale": "real handoff service appends company audit events with Odoo stubbed; its PostgreSQL-only gate is enabled explicitly"
     },
     {
@@ -111,7 +113,6 @@
       "run": true,
       "rationale": "the wrapper runs the real tenants HTTP suite, whose cross-tenant retry denial reaches TenantScopeGuard and persists tenant_access.denied_cross_tenant through AuditService"
     },
-
     {
       "path": "test/integration/account-migration.integration-spec.ts",
       "run": false,
@@ -246,6 +247,11 @@
       "path": "test/integration/tenant-provisioning-live.integration-spec.ts",
       "run": false,
       "rationale": "external-service-only MinIO and Odoo provisioning suite is skipped unless KEMFAI_LIVE_PROVISION is set; this owned PostgreSQL/Redis harness cannot execute its audit-writing path"
+    },
+    {
+      "path": "test/integration/no-odoo-exposure.integration-spec.ts",
+      "run": false,
+      "rationale": "T109 owns this AppModule exposure sweep with its exact PostgreSQL/Redis fixture, identity label, frontend runtime, and evidence validators; T093 must classify but not duplicate it"
     }
   ]
 }

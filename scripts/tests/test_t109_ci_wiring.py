@@ -14,6 +14,21 @@ class T109CiWiringTests(unittest.TestCase):
         cls.steps = cls.workflow["jobs"]["owned-frontend-live"]["steps"]
         cls.names = [step.get("name", "") for step in cls.steps]
 
+
+    def test_t093_manifest_classifies_t109_as_exact_owned(self):
+        manifest = __import__("json").loads(
+            (ROOT / "scripts/t093-suite-manifest.json").read_text()
+        )
+        entries = [
+            entry
+            for entry in manifest["suites"]
+            if entry.get("path")
+            == "test/integration/no-odoo-exposure.integration-spec.ts"
+        ]
+        self.assertEqual(len(entries), 1)
+        self.assertIs(entries[0].get("run"), False)
+        self.assertIn("T109 owns", entries[0].get("rationale", ""))
+
     def test_generic_playwright_excludes_owned_t109_suite(self):
         config = (ROOT / "frontend/playwright.config.ts").read_text()
         self.assertIn("'**/full-surface-odoo-exposure-sweep.spec.ts'", config)
