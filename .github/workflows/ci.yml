@@ -23,7 +23,17 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
-      - run: bash scripts/tests/run_all.sh
+      - name: Set up Node for governance
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: backend/api/package-lock.json
+      - name: Install backend dependencies for governance
+        working-directory: backend/api
+        run: npm ci --ignore-scripts
+      - name: Run T108 governance regressions
+        run: bash scripts/tests/run_all.sh
 
   frontend-static:
     runs-on: ubuntu-24.04
@@ -222,8 +232,9 @@ jobs:
         run: npm ci --ignore-scripts
       - working-directory: frontend
         run: npx playwright install --with-deps chromium
-      - name: Pull pinned owned-stack images
+      - name: Pull T112 and US8 fixture images
         run: |
+          docker pull postgres:16
           docker pull postgres:16-alpine
           docker pull redis:7-alpine
       - name: T112 feature flag UI owned fixture
@@ -232,6 +243,7 @@ jobs:
           T112_EVIDENCE_DIR: ${{ runner.temp }}/t112-evidence
         run: bash scripts/test_t112_owned_fixture.sh ui
       - name: US8 support access owned live fixture
+        if: always()
         env:
           US8_EVIDENCE_DIR: ${{ runner.temp }}/us8-evidence
         run: bash scripts/test-us8-owned-live.sh

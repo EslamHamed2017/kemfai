@@ -14,6 +14,74 @@ INTEGRATION_CONFIG = json.loads(
 API_PACKAGE = json.loads((ROOT / "backend/api/package.json").read_text(encoding="utf-8"))
 
 
+def strip_javascript_comments(source: str) -> str:
+    """Remove // and /* */ comments while preserving comment tokens inside strings."""
+    output = []
+    index = 0
+    quote = None
+    escaped = False
+    block_comment = False
+    while index < len(source):
+        char = source[index]
+        following = source[index + 1] if index + 1 < len(source) else ""
+        if block_comment:
+            if char == "*" and following == "/":
+                block_comment = False
+                index += 2
+            else:
+                if char == "\n":
+                    output.append(char)
+                index += 1
+            continue
+        if quote:
+            output.append(char)
+            if escaped:
+                escaped = False
+            elif char == "\\":
+                escaped = True
+            elif char == quote:
+                quote = None
+            index += 1
+            continue
+        if char in ("'", '"', "`"):
+            quote = char
+            output.append(char)
+            index += 1
+            continue
+        if char == "/" and following == "*":
+            block_comment = True
+            index += 2
+            continue
+        if char == "/" and following == "/":
+            while index < len(source) and source[index] != "\n":
+                index += 1
+            continue
+        output.append(char)
+        index += 1
+    if block_comment:
+        raise AssertionError("unterminated JavaScript block comment")
+    return "".join(output)
+
+
+def workflow_job(workflow: str, name: str) -> str:
+    """Return one active top-level job block, excluding sibling jobs and comments."""
+    lines = workflow.splitlines()
+    marker = f"  {name}:"
+    matches = [index for index, line in enumerate(lines) if line == marker]
+    if len(matches) != 1:
+        raise AssertionError(f"expected exactly one active workflow job {name!r}, got {len(matches)}")
+    start = matches[0]
+    end = len(lines)
+    for index in range(start + 1, len(lines)):
+        line = lines[index]
+        if re.match(r"^  [A-Za-z0-9_-]+:$", line):
+            end = index
+            break
+    return "\n".join(
+        line for line in lines[start:end] if not line.lstrip().startswith("#")
+    )
+
+
 def workflow_named_step(workflow: str, name: str) -> str:
     """Return one active named step; YAML comments cannot satisfy semantic assertions."""
     lines = workflow.splitlines()
@@ -46,6 +114,101 @@ class TestT108CiWiring(unittest.TestCase):
         self.assertNotIn("continue-on-error", WORKFLOW)
         self.assertNotIn("|| true", WORKFLOW)
         self.assertNotRegex(WORKFLOW, r"echo .*accounting")
+
+    def test_github_owned_prerequisites_match_exact_runner_dependencies(self) -> None:
+        governance_job = workflow_job(WORKFLOW, "governance-cleanup-regression")
+        setup = workflow_named_step(governance_job, "Set up Node for governance")
+        self.assertRegex(setup, r"(?m)^        uses: actions/setup-node@v4$")
+        self.assertRegex(setup, r"(?m)^          node-version: \$\{\{ env\.NODE_VERSION \}\}$")
+        self.assertRegex(setup, r"(?m)^          cache: npm$")
+        self.assertRegex(
+            setup, r"(?m)^          cache-dependency-path: backend/api/package-lock.json$"
+        )
+        install = workflow_named_step(
+            governance_job, "Install backend dependencies for governance"
+        )
+        self.assertRegex(install, r"(?m)^        working-directory: backend/api$")
+        self.assertRegex(install, r"(?m)^        run: npm ci --ignore-scripts$")
+        governance = workflow_named_step(governance_job, "Run T108 governance regressions")
+        self.assertRegex(governance, r"(?m)^        run: bash scripts/tests/run_all.sh$")
+        self.assertLess(governance_job.index("Set up Node for governance"), governance_job.index("Install backend dependencies for governance"))
+        self.assertLess(governance_job.index("Install backend dependencies for governance"), governance_job.index("Run T108 governance regressions"))
+
+        frontend_job = workflow_job(WORKFLOW, "owned-frontend-live")
+        images = workflow_named_step(frontend_job, "Pull T112 and US8 fixture images")
+        pulls = set(re.findall(r"(?m)^          docker pull (\S+)$", images))
+        self.assertEqual({"postgres:16", "postgres:16-alpine", "redis:7-alpine"}, pulls)
+        us8 = workflow_named_step(frontend_job, "US8 support access owned live fixture")
+        self.assertRegex(us8, r"(?m)^        if: always\(\)$")
+        self.assertLess(frontend_job.index("Pull T112 and US8 fixture images"), frontend_job.index("T112 feature flag UI owned fixture"))
+        self.assertLess(frontend_job.index("T112 feature flag UI owned fixture"), frontend_job.index("US8 support access owned live fixture"))
+
+    def _assert_t093_owned_redis(self, suite: str, harness: str) -> None:
+        active_suite = strip_javascript_comments(suite)
+        active_harness = "\n".join(
+            line for line in harness.splitlines() if not line.lstrip().startswith("#")
+        )
+        self.assertRegex(
+            active_suite,
+            r"(?m)^const HEALTHY_REDIS_URL = process\.env\.REDIS_URL \?\? 'redis://127\.0\.0\.1:6379/14';$",
+        )
+        self.assertRegex(
+            active_suite,
+            r"(?m)^    process\.env\.REDIS_URL = HEALTHY_REDIS_URL;$",
+        )
+        self.assertRegex(
+            active_harness,
+            r'(?m)^export REDIS_URL="redis://127\.0\.0\.1:\$redis_port/14"$',
+        )
+        self.assertRegex(
+            active_harness,
+            r'(?m)^    \.\/node_modules\/\.bin\/jest --config test/jest-t093\.json --runInBand \\',
+        )
+
+    def test_t093_selected_suite_consumes_exact_owned_redis_url(self) -> None:
+        suite = (ROOT / "backend/api/test/integration/billing-decision-notification-delivery.integration-spec.ts").read_text()
+        harness = (ROOT / "scripts/test_t093_owned_fixture.sh").read_text()
+        self._assert_t093_owned_redis(suite, harness)
+
+        hardcoded = suite.replace(
+            "const HEALTHY_REDIS_URL = process.env.REDIS_URL ?? 'redis://127.0.0.1:6379/14';",
+            "const HEALTHY_REDIS_URL = 'redis://127.0.0.1:6379/14';\n// process.env.REDIS_URL ??",
+            1,
+        )
+        with self.assertRaises(AssertionError):
+            self._assert_t093_owned_redis(hardcoded, harness)
+
+        block_hidden_declaration = suite.replace(
+            "const HEALTHY_REDIS_URL = process.env.REDIS_URL ?? 'redis://127.0.0.1:6379/14';",
+            "const HEALTHY_REDIS_URL = 'redis://127.0.0.1:6379/14';\n/* const HEALTHY_REDIS_URL = process.env.REDIS_URL ?? 'redis://127.0.0.1:6379/14'; */",
+            1,
+        )
+        with self.assertRaises(AssertionError):
+            self._assert_t093_owned_redis(block_hidden_declaration, harness)
+
+        hardcoded_assignment = suite.replace(
+            "    process.env.REDIS_URL = HEALTHY_REDIS_URL;",
+            "    process.env.REDIS_URL = 'redis://127.0.0.1:6379/14';\n    // process.env.REDIS_URL = HEALTHY_REDIS_URL;",
+            1,
+        )
+        with self.assertRaises(AssertionError):
+            self._assert_t093_owned_redis(hardcoded_assignment, harness)
+
+        block_hidden_assignment = suite.replace(
+            "    process.env.REDIS_URL = HEALTHY_REDIS_URL;",
+            "    process.env.REDIS_URL = 'redis://127.0.0.1:6379/14';\n    /* process.env.REDIS_URL = HEALTHY_REDIS_URL; */",
+            1,
+        )
+        with self.assertRaises(AssertionError):
+            self._assert_t093_owned_redis(block_hidden_assignment, harness)
+
+        static_export = harness.replace(
+            'export REDIS_URL="redis://127.0.0.1:$redis_port/14"',
+            'export REDIS_URL="redis://127.0.0.1:6379/14"\n# export REDIS_URL="redis://127.0.0.1:$redis_port/14"',
+            1,
+        )
+        with self.assertRaises(AssertionError):
+            self._assert_t093_owned_redis(suite, static_export)
 
     def test_ci_has_safety_and_determinism_guards(self) -> None:
         for required in (
@@ -99,6 +262,8 @@ class TestT108CiWiring(unittest.TestCase):
         config = (ROOT / "frontend/playwright.config.ts").read_text(encoding="utf-8")
         for fixture in ("feature-flag-ui-gating.spec.ts", "us8-support-access.spec.ts"):
             self.assertIn(f"'**/{fixture}'", config)
+        self.assertIn("workers: 1", config)
+        self.assertIn("retries: 0", config)
         owned = (ROOT / "frontend/tests/e2e-live/playwright.t112-live.config.ts").read_text(
             encoding="utf-8"
         )

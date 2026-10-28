@@ -23,6 +23,8 @@ export default defineConfig({
     '**/us8-support-access.spec.ts',
   ],
   fullyParallel: true,
+  // The stub API owns process-global fixture state; one worker prevents cross-suite contamination.
+  workers: 1,
   forbidOnly: !!process.env.CI,
   retries: 0,
   reporter: [['list']],

@@ -141,6 +141,7 @@ test('loading, empty, error/retry, and saving states remain explicit', async ({ 
 });
 
 test('unauthenticated route enters the configured identity-provider flow', async ({ page }) => {
-  await page.goto('/modules');
+  // This path has no session cookie; pin IPv4 so resolver-family changes cannot race Next readiness.
+  await page.goto('http://127.0.0.1:3411/modules');
   await expect(page).toHaveURL(/\/protocol\/openid-connect\/auth\?/);
 });

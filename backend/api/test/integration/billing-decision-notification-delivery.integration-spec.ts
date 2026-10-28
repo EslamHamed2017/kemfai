@@ -43,7 +43,7 @@ const AR_MORE_INFO_DETAILS = 'يرجى توفير رقم تأكيد التحوي
 const FIRST_CYCLE_REQUEST = 'Please provide the transfer receipt.';
 const LATEST_CYCLE_REQUEST = 'Please also provide the bank statement for the period.';
 const OUTBOX_TABLE = 'billing_decision_notification_outbox';
-const HEALTHY_REDIS_URL = 'redis://localhost:6379/14';
+const HEALTHY_REDIS_URL = process.env.REDIS_URL ?? 'redis://127.0.0.1:6379/14';
 const RESEND_FROM = 'T070 Billing <t070-billing@example.invalid>';
 
 /**
