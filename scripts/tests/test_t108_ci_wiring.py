@@ -305,6 +305,15 @@ class TestT108CiWiring(unittest.TestCase):
             self.assertIn(required, runner)
         self.assertNotIn("|| true", runner)
 
+    def test_playwright_web_server_accepts_both_loopback_families(self) -> None:
+        config = (ROOT / "frontend/playwright.config.ts").read_text()
+        active_config = strip_javascript_comments(config)
+        self.assertRegex(
+            active_config,
+            r"node_modules/\.bin/next start --hostname :: --port \${PORT}`",
+        )
+        self.assertRegex(active_config, r"const baseURL = `http://localhost:\${PORT}`;")
+
     def test_generic_playwright_excludes_only_the_owned_live_fixture(self) -> None:
         config = (ROOT / "frontend/playwright.config.ts").read_text(encoding="utf-8")
         for fixture in ("feature-flag-ui-gating.spec.ts", "us8-support-access.spec.ts"):
