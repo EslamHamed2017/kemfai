@@ -276,6 +276,32 @@ describe('ModuleSelectionService (T076)', () => {
       ]),
     );
   });
+
+  it('rejects native model identifiers injected into a persistence receipt', async () => {
+    jest
+      .mocked(entitlements.getEntitlementSetForAccount)
+      .mockResolvedValue(entitlementSet(PLAN_ID, ['module.accounting']));
+    jest.mocked(odoo.authenticate).mockResolvedValue(9);
+    jest.mocked(odoo.executeKw).mockImplementation(async (...args: unknown[]) => {
+      if (args[4] === 'kemfai_ack_selection_event') return true;
+      const rpcArgs = args[5] as unknown[];
+      return {
+        operationUuid: rpcArgs[1],
+        tenantId: TENANT_ID,
+        accountId: ACCOUNT_ID,
+        actorKeycloakUserId: SUBJECT_ID,
+        occurredAt: '2026-10-17 08:00:00',
+        featureKeys: ['module.accounting', 'res.company'],
+        added: ['res.company'],
+        removed: [],
+      };
+    });
+
+    await expect(service.replace(req, ['module.accounting'])).rejects.toThrow(
+      'Module selection persistence returned invalid data',
+    );
+    expect(audit.recordModulesSelectionChanged).not.toHaveBeenCalled();
+  });
 });
 
 function entitlementSet(planId: string, enabledKeys: string[]) {

@@ -18,6 +18,7 @@ import {
 } from './company-mutation-handoff.service';
 import { CompanyMutationHandoffState } from './entities/company-mutation-handoff.entity';
 import { computeCompanySetupScope } from './company-setup-scope.util';
+import { isPublicCompanyValues } from './company-public-values';
 import { stripKemfaiPrefix } from './kemfai-error.util';
 import {
   CompanySetupStateDto,
@@ -406,6 +407,7 @@ export class CompanySetupService {
       typeof state.values === 'object' &&
       state.values !== null &&
       !Array.isArray(state.values) &&
+      isPublicCompanyValues(state.values) &&
       typeof state.version === 'number' &&
       Number.isInteger(state.version) &&
       state.version >= 0 &&
