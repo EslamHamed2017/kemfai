@@ -1,14 +1,4 @@
-import {
-  Body,
-  Controller,
-  Get,
-  HttpCode,
-  HttpStatus,
-  Patch,
-  Post,
-  Req,
-  UseGuards,
-} from '@nestjs/common';
+import { Body, Controller, Get, HttpCode, HttpStatus, Patch, Post, Req } from '@nestjs/common';
 import { Public } from '../../common/decorators/public.decorator';
 import { RequireFeatureFlag } from '../../common/decorators/feature-flag.decorator';
 import { AuthenticatedRequest } from '../../common/guards/bearer-auth.guard';
@@ -23,7 +13,7 @@ import { LocaleUpdateRequestDto } from './dto/locale-update.request.dto';
 import { SignupRequestDto } from './dto/signup.request.dto';
 import { VerifyEmailRequestDto } from './dto/verify-email.request.dto';
 import { ResendVerificationRequestDto } from './dto/resend-verification.request.dto';
-import { PublicAccountRateLimit, PublicAccountsRateLimitGuard } from './public-accounts-rate-limit';
+import { PublicAccountRateLimit } from './public-accounts-rate-limit';
 
 /**
  * The accounts surface of the onboarding shell (T032+). `module.accounts` is the
@@ -47,7 +37,6 @@ export class AccountsController {
   @Public()
   @Post('signup')
   @PublicAccountRateLimit('signup')
-  @UseGuards(PublicAccountsRateLimitGuard)
   @HttpCode(HttpStatus.CREATED)
   signup(@Body() dto: SignupRequestDto): Promise<SignupResult> {
     return this.accounts.signup(dto);
@@ -62,7 +51,6 @@ export class AccountsController {
   @Public()
   @Post('verify-email')
   @PublicAccountRateLimit('verify-email')
-  @UseGuards(PublicAccountsRateLimitGuard)
   @HttpCode(HttpStatus.OK)
   verifyEmail(@Body() dto: VerifyEmailRequestDto): Promise<VerifyEmailResult> {
     return this.accounts.verifyEmail(dto.token);

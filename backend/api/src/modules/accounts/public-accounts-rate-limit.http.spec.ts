@@ -1,5 +1,5 @@
 import { INestApplication } from '@nestjs/common';
-import { Reflector } from '@nestjs/core';
+import { APP_GUARD, Reflector } from '@nestjs/core';
 import { Test } from '@nestjs/testing';
 import request = require('supertest');
 import { AccountsController } from './accounts.controller';
@@ -54,7 +54,7 @@ describe('T096 public account HTTP rate limits', () => {
       providers: [
         Reflector,
         PublicAccountsRateLimiter,
-        PublicAccountsRateLimitGuard,
+        { provide: APP_GUARD, useClass: PublicAccountsRateLimitGuard },
         { provide: AccountsService, useValue: accounts },
       ],
     }).compile();

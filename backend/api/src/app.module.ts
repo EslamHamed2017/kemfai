@@ -27,6 +27,10 @@ import { ModuleSelectionModule } from './modules/module-selection/module-selecti
 import { ChecklistModule } from './modules/checklist/checklist.module';
 import { SupportAccessModule } from './modules/support-access/support-access.module';
 import { SupportAccessSweepModule } from './integrations/provisioning/support-access-sweep.module';
+import {
+  PublicAccountsRateLimiter,
+  PublicAccountsRateLimitGuard,
+} from './modules/accounts/public-accounts-rate-limit';
 
 @Module({
   imports: [
@@ -51,6 +55,11 @@ import { SupportAccessSweepModule } from './integrations/provisioning/support-ac
   controllers: [AppController],
   providers: [
     AppService,
+    PublicAccountsRateLimiter,
+    // T096: reject public account bursts before authentication, feature-flag DB reads, or
+    // any account service side effect. The guard is inert unless the handler declares
+    // @PublicAccountRateLimit metadata.
+    { provide: APP_GUARD, useClass: PublicAccountsRateLimitGuard },
     // Runtime DTO validation for every @Body() DTO — 422 (Unprocessable Entity) is the
     // contract's documented code for malformed input (e.g. SignupRequest 422 "Malformed
     // email or weak password"), NOT Nest's default 400 and never an uncontrolled 500
@@ -60,7 +69,7 @@ import { SupportAccessSweepModule } from './integrations/provisioning/support-ac
       provide: APP_PIPE,
       useValue: new ValidationPipe({ errorHttpStatusCode: 422, whitelist: true }),
     },
-    // Global guard chain: authentication (T017), then tenant scoping (T017), then role
+    // Remaining global guard chain: authentication (T017), then tenant scoping (T017), then role
     // enforcement (T018), then module-completeness gating (T100), then trial-window
     // enforcement (T101) — all APP_GUARD so no route can forget them (registration order =
     // execution order). Public surfaces opt out of AUTH explicitly via @Public();
