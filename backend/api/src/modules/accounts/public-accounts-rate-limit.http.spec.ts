@@ -17,6 +17,21 @@ const validSignup = {
   acceptedTerms: true,
 };
 
+describe('PublicAccountsRateLimiter fixed-window isolation', () => {
+  it('isolates client keys and scopes, then resets exactly at the 60-second boundary', () => {
+    const limiter = new PublicAccountsRateLimiter();
+    const start = 10_000;
+
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+      expect(limiter.check('signup', 'client-a', start).allowed).toBe(true);
+    }
+    expect(limiter.check('signup', 'client-a', start + 59_999).allowed).toBe(false);
+    expect(limiter.check('signup', 'client-b', start + 59_999).allowed).toBe(true);
+    expect(limiter.check('verify-email', 'client-a', start + 59_999).allowed).toBe(true);
+    expect(limiter.check('signup', 'client-a', start + 60_000).allowed).toBe(true);
+  });
+});
+
 describe('PublicAccountsRateLimiter bounded overflow behavior', () => {
   it('reserves one fail-closed overflow bucket per scope without exceeding 10,000 buckets', () => {
     const limiter = new PublicAccountsRateLimiter();
@@ -86,6 +101,29 @@ describe('T096 public account HTTP rate limits', () => {
     expect(accounts.signup).toHaveBeenCalledTimes(5);
   });
 
+  it('uses the nearest trusted proxy address and ignores a spoofed leftmost X-Forwarded-For hop', async () => {
+    app.getHttpAdapter().getInstance().set('trust proxy', 1);
+
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+      await request(app.getHttpServer())
+        .post('/accounts/signup')
+        .set('X-Forwarded-For', `198.51.100.${attempt + 1}, 203.0.113.10`)
+        .send(validSignup)
+        .expect(201);
+    }
+    await request(app.getHttpServer())
+      .post('/accounts/signup')
+      .set('X-Forwarded-For', '198.51.100.250, 203.0.113.10')
+      .send(validSignup)
+      .expect(429);
+
+    await request(app.getHttpServer())
+      .post('/accounts/signup')
+      .set('X-Forwarded-For', '198.51.100.250, 203.0.113.11')
+      .send(validSignup)
+      .expect(201);
+  });
+
   it('uses a separate ten-attempt verification bucket and returns an Arabic 429', async () => {
     for (let attempt = 0; attempt < 10; attempt += 1) {
       await request(app.getHttpServer())
@@ -96,7 +134,7 @@ describe('T096 public account HTTP rate limits', () => {
 
     const denied = await request(app.getHttpServer())
       .post('/accounts/verify-email')
-      .set('Accept-Language', 'en;q=0.2, ar-AE;q=0.9')
+      .set('Accept-Language', 'en;Q=0.2, ar-AE;Q=0.9')
       .send({ token: 'token-denied' })
       .expect(429);
 

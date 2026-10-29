@@ -108,7 +108,10 @@ function preferredLocale(header: string | string[] | undefined): SupportedLocale
     .split(',')
     .map((part) => {
       const [tag, ...params] = part.trim().split(';');
-      const q = Number(params.find((item) => item.trim().startsWith('q='))?.split('=')[1] ?? '1');
+      const quality = params
+        .map((item) => item.trim().split('='))
+        .find(([name]) => name.toLowerCase() === 'q');
+      const q = Number(quality?.[1] ?? '1');
       return { tag: tag.toLowerCase(), q: Number.isFinite(q) ? q : 0 };
     })
     .sort((a, b) => b.q - a.q);

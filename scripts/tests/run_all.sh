@@ -14,6 +14,12 @@ python3 "$HERE/test_t108_ci_wiring.py"
 
 echo ""
 
+echo "########## test_t096_ci_wiring.py ##########"
+python3 "$HERE/test_t096_ci_wiring.py"
+[ $? -eq 0 ] || FAIL=1
+
+echo ""
+
 echo "########## test_t108_integration_runner.js ##########"
 node "$HERE/test_t108_integration_runner.js"
 [ $? -eq 0 ] || FAIL=1
