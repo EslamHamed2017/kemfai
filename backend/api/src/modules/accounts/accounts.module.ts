@@ -6,10 +6,14 @@ import { MfaService } from './mfa.service';
 import { AuditModule } from '../audit/audit.module';
 import { KeycloakModule } from '../../integrations/keycloak/keycloak.module';
 import { QueuesModule } from '../../common/queues/queues.module';
+import {
+  PublicAccountsRateLimiter,
+  PublicAccountsRateLimitGuard,
+} from './public-accounts-rate-limit';
 
 @Module({
   imports: [AuditModule, KeycloakModule, QueuesModule],
   controllers: [AccountsController, MfaController],
-  providers: [AccountsService, MfaService],
+  providers: [AccountsService, MfaService, PublicAccountsRateLimiter, PublicAccountsRateLimitGuard],
 })
 export class AccountsModule {}

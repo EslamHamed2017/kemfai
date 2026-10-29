@@ -74,6 +74,8 @@ services:
     environment:
       KEYCLOAK_ADMIN: admin
       KEYCLOAK_ADMIN_PASSWORD: kemfai_dev_admin
+      # T096: realm import resolves the confidential service-client secret from this env.
+      KEYCLOAK_USERS_CLIENT_SECRET: ${KEYCLOAK_USERS_CLIENT_SECRET:?set KEYCLOAK_USERS_CLIENT_SECRET}
       KC_HOSTNAME: ${KEYCLOAK_PUBLIC_ORIGIN:-http://localhost:8080}
       KC_HOSTNAME_BACKCHANNEL_DYNAMIC: "true"
       KC_HTTP_ENABLED: "true"
@@ -103,6 +105,8 @@ services:
       PORT: 4000
       HOST: 0.0.0.0
       NODE_ENV: development
+      # T096: exactly one trusted reverse-proxy hop (Traefik) before the API.
+      KEMFAI_TRUST_PROXY_HOPS: 1
       REDIS_URL: redis://redis:6379
       KEMFAI_ODOO_URL: http://kemfai-odoo:8069
       KEMFAI_ODOO_MASTER_PASSWORD: ${KEMFAI_ODOO_MASTER_PASSWORD:?Set Odoo master password}
@@ -114,6 +118,9 @@ services:
       # positive ceiling; empty/unset is passed through so grant creation fails closed.
       SUPPORT_ACCESS_MAX_DURATION_HOURS: ${SUPPORT_ACCESS_MAX_DURATION_HOURS:-}
       KEYCLOAK_URL: http://keycloak:8080
+      # T096: scoped client_credentials; the API never receives bootstrap-admin credentials.
+      KEYCLOAK_USERS_CLIENT_ID: kemfai-users
+      KEYCLOAK_USERS_CLIENT_SECRET: ${KEYCLOAK_USERS_CLIENT_SECRET:?set KEYCLOAK_USERS_CLIENT_SECRET}
       # Tokens minted through either browser or backchannel carry this one canonical issuer.
       KEYCLOAK_ISSUER: ${KEYCLOAK_ISSUER:-http://localhost:8080/realms/kemfai-customers}
       KEYCLOAK_JWKS_URI: http://keycloak:8080/realms/kemfai-customers/protocol/openid-connect/certs

@@ -1083,7 +1083,7 @@ refusal after expiry, and confirm every action is audit-logged — independent o
     build, not just a warning.
   - **Roles**: Primary: Codex · Backup: Claude · Reviewer: Gemini
 
-- [ ] T096 Security hardening pass: presigned URL expiry tuning, Keycloak service-account credential scoping,
+- [x] T096 Security hardening pass: presigned URL expiry tuning, Keycloak service-account credential scoping,
   and rate limiting on `/accounts/signup` and `/accounts/verify-email`, in `backend/api/src/common/` and
   `backend/api/src/integrations/minio/`
   - **Dependencies**: T025, T032, T033
@@ -1117,7 +1117,7 @@ refusal after expiry, and confirm every action is audit-logged — independent o
     T001–T096 suite.
   - **Roles**: Primary: Gemini · Backup: Claude · Reviewer: Codex
 
-- [ ] T108 [P] Wire the NestJS Jest contract/integration suites (`npm run test:contract`,
+- [x] T108 [P] Wire the NestJS Jest contract/integration suites (`npm run test:contract`,
   `npm run test:integration` in `backend/api`), the Playwright e2e/a11y suites (`npx playwright test` in
   `frontend`), and the Odoo addon Python tests (`odoo-bin --test-enable` against each `kemfai_*` addon) into
   `.github/workflows/ci.yml`, replacing the `accounting-invariants` job's literal `echo` placeholder with real

@@ -1,13 +1,13 @@
 'use client';
 
 import { useEffect, useState, type FormEvent } from 'react';
-import { useTranslations } from 'next-intl';
+import { useLocale, useTranslations } from 'next-intl';
 
 import { getBrowserApiClient } from '@/lib/api-client';
 import { LocaleSwitcher } from '@/components/locale-switcher';
 
 type VerificationFailure = 'invalid' | 'expired' | 'used';
-type VerificationStatus = 'verifying' | 'success' | VerificationFailure;
+type VerificationStatus = 'verifying' | 'success' | 'rateLimited' | VerificationFailure;
 type ResendStatus = 'idle' | 'sending' | 'sent' | 'error';
 
 interface VerifyEmailScreenProps {
@@ -32,6 +32,7 @@ function verificationFailure(error: unknown): VerificationFailure {
  */
 export function VerifyEmailScreen({ token }: VerifyEmailScreenProps) {
   const t = useTranslations('verifyEmail');
+  const locale = useLocale() === 'ar' ? 'ar' : 'en';
   const [status, setStatus] = useState<VerificationStatus>(token ? 'verifying' : 'invalid');
   const [resendEmail, setResendEmail] = useState('');
   const [resendStatus, setResendStatus] = useState<ResendStatus>('idle');
@@ -43,10 +44,19 @@ export function VerifyEmailScreen({ token }: VerifyEmailScreenProps) {
 
     let cancelled = false;
     getBrowserApiClient()
-      .POST('/accounts/verify-email', { body: { token } })
-      .then(({ error }) => {
+      .POST('/accounts/verify-email', {
+        body: { token },
+        params: { header: { 'Accept-Language': locale } },
+      })
+      .then(({ error, response }) => {
         if (!cancelled) {
-          setStatus(error ? verificationFailure(error) : 'success');
+          setStatus(
+            error
+              ? response.status === 429
+                ? 'rateLimited'
+                : verificationFailure(error)
+              : 'success',
+          );
         }
       })
       .catch(() => {
@@ -58,7 +68,7 @@ export function VerifyEmailScreen({ token }: VerifyEmailScreenProps) {
     return () => {
       cancelled = true;
     };
-  }, [token]);
+  }, [locale, token]);
 
   async function handleResend(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -92,6 +102,18 @@ export function VerifyEmailScreen({ token }: VerifyEmailScreenProps) {
         <h1>{t('success.title')}</h1>
         <p>{t('success.body')}</p>
         <a href="/auth/login?returnTo=%2Fmfa">{t('success.continue')}</a>
+      </main>
+    );
+  }
+
+  if (status === 'rateLimited') {
+    return (
+      <main>
+        <LocaleSwitcher />
+        <div role="alert" data-testid="verify-rate-limit-message">
+          <h1>{t('rateLimited.title')}</h1>
+          <p>{t('rateLimited.body')}</p>
+        </div>
       </main>
     );
   }
