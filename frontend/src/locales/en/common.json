@@ -39,7 +39,8 @@
       "malformedEmail": "Enter a valid email address.",
       "weakPassword": "Your password must be 10–128 characters long.",
       "validation": "We couldn't create your account. Please check the form and try again.",
-      "unexpected": "Something went wrong. Please try again."
+      "unexpected": "Something went wrong. Please try again.",
+      "rateLimited": "Too many attempts. Please wait a minute and try again."
     },
     "planUnavailable": {
       "message": "The plan you selected is no longer available.",
@@ -77,6 +78,10 @@
       "sending": "Sending…",
       "confirmation": "If that email has a pending verification, a new link is on its way.",
       "error": "We couldn't send the email. Please try again."
+    },
+    "rateLimited": {
+      "title": "Too many verification attempts",
+      "body": "Please wait a minute before trying this verification link again."
     }
   },
   "mfa": {
@@ -493,6 +498,10 @@
       "action_not_permitted": "Review the permitted support scope.",
       "unknown": "Review the grant before trying again."
     },
-    "status": { "active": "Active", "expired": "Expired", "revoked": "Revoked" }
+    "status": {
+      "active": "Active",
+      "expired": "Expired",
+      "revoked": "Revoked"
+    }
   }
 }

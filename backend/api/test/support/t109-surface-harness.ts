@@ -4,6 +4,7 @@ import { randomUUID } from 'node:crypto';
 import { AppModule } from '../../src/app.module';
 import { Public } from '../../src/common/decorators/public.decorator';
 import controlDataSource from '../../src/database/data-source';
+import { PublicAccountsRateLimiter } from '../../src/modules/accounts/public-accounts-rate-limit';
 import type { KeycloakUserProvisioner } from '../../src/integrations/keycloak/keycloak-user-provisioner';
 import { KEYCLOAK_USER_PROVISIONER } from '../../src/integrations/keycloak/keycloak-user-provisioner';
 import type { MinioClientLike } from '../../src/integrations/minio/minio-client';
@@ -109,6 +110,11 @@ function assertOwnedFixtureEnvironment(): void {
 
 export class T109FixtureState {
   private readonly modes = new Map<T109Surface, T109FixtureMode>();
+  private rateLimiter: PublicAccountsRateLimiter | undefined;
+
+  attachRateLimiter(rateLimiter: PublicAccountsRateLimiter): void {
+    this.rateLimiter = rateLimiter;
+  }
 
   constructor(readonly tokens: T109Tokens) {}
 
@@ -146,6 +152,7 @@ export class T109FixtureState {
 
   async reset(): Promise<void> {
     assertOwnedFixtureEnvironment();
+    this.rateLimiter?.clear();
     this.modes.clear();
     const rows = (await controlDataSource.query(
       `SELECT tablename FROM pg_tables
@@ -605,6 +612,7 @@ export async function createT109SurfaceApp(
     app = moduleRef.createNestApplication();
     if (options.corsOrigin) app.enableCors({ origin: options.corsOrigin });
     await app.init();
+    state.attachRateLimiter(app.get(PublicAccountsRateLimiter));
     if (options.listen) await app.listen(options.port ?? 0, '127.0.0.1');
   } catch (error) {
     if (app) await app.close().catch(() => undefined);

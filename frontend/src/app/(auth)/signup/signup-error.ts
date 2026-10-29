@@ -10,6 +10,7 @@ export type SignupErrorKind =
   | 'malformedEmail'
   | 'weakPassword'
   | 'planUnavailable'
+  | 'rateLimited'
   | 'validation'
   | 'unexpected';
 
@@ -32,6 +33,9 @@ function normalizeMessage(message: unknown): string {
 export function classifySignupError(status: number, message: unknown): SignupErrorKind {
   if (status === 409) {
     return 'duplicateEmail';
+  }
+  if (status === 429) {
+    return 'rateLimited';
   }
   if (status !== 422) {
     return 'unexpected';

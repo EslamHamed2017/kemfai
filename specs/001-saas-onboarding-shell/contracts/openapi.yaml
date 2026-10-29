@@ -47,6 +47,14 @@ paths:
       tags: [accounts]
       summary: Create an unverified account with a selected plan/cycle carried over (FR-017, FR-018)
       security: []
+      parameters:
+        - name: Accept-Language
+          in: header
+          required: false
+          schema: { type: string }
+          description: >
+            Preferred language for a rate-limit response. Arabic language tags return an
+            Arabic 429 message; English, absent, and unsupported tags use English.
       requestBody:
         required: true
         content:
@@ -68,12 +76,32 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/NestErrorResponse" }
+        "429":
+          description: More than 5 signup attempts from one client IP within 60 seconds (T096)
+          headers:
+            Retry-After:
+              description: Whole seconds until this client's fixed window resets
+              schema: { type: integer, minimum: 1 }
+            Content-Language:
+              description: Language used by the response message
+              schema: { type: string, enum: [en, ar] }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/NestErrorResponse" }
 
   /accounts/verify-email:
     post:
       tags: [accounts]
       summary: Consume a verification token; only the most recently issued link is honored (FR-021, Edge Cases)
       security: []
+      parameters:
+        - name: Accept-Language
+          in: header
+          required: false
+          schema: { type: string }
+          description: >
+            Preferred language for a rate-limit response. Arabic language tags return an
+            Arabic 429 message; English, absent, and unsupported tags use English.
       requestBody:
         required: true
         content:
@@ -85,6 +113,18 @@ paths:
       responses:
         "200": { description: "Account verified; tenant provisioning enqueued (FR-022)" }
         "410": { description: "Expired, invalid, or superseded token (Edge Cases)" }
+        "429":
+          description: More than 10 verification attempts from one client IP within 60 seconds (T096)
+          headers:
+            Retry-After:
+              description: Whole seconds until this client's fixed window resets
+              schema: { type: integer, minimum: 1 }
+            Content-Language:
+              description: Language used by the response message
+              schema: { type: string, enum: [en, ar] }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/NestErrorResponse" }
   /accounts/resend-verification:
     post:
       tags: [accounts]

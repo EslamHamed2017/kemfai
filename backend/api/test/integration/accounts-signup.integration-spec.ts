@@ -11,6 +11,7 @@ import { AuditService } from '../../src/modules/audit/audit.service';
 import { Plan } from '../../src/modules/entitlements/entities/plan.entity';
 import { KEYCLOAK_USER_PROVISIONER } from '../../src/integrations/keycloak/keycloak-user-provisioner';
 import { ACCOUNTS_FEATURE_KEY } from '../../src/modules/accounts/accounts.controller';
+import { PublicAccountsRateLimiter } from '../../src/modules/accounts/public-accounts-rate-limit';
 import { FakeKeycloakUsers } from '../support/fake-keycloak-users';
 import {
   QUEUE_EMAIL_SEND_VERIFICATION,
@@ -73,6 +74,7 @@ async function setAccountsFlag(enabled: boolean): Promise<void> {
 
 describe('POST /accounts/signup (T032 implementation + T028 acceptance, HTTP integration)', () => {
   let app: INestApplication;
+  let rateLimiter: PublicAccountsRateLimiter;
   let fakeKeycloakUsers: FakeKeycloakUsers;
   let suiteEmailQueue: Queue;
   const createdPlanIds: string[] = [];
@@ -103,10 +105,15 @@ describe('POST /accounts/signup (T032 implementation + T028 acceptance, HTTP int
       .compile();
     app = moduleRef.createNestApplication();
     await app.init();
+    rateLimiter = app.get(PublicAccountsRateLimiter);
 
     suiteEmailQueue = new Queue(QUEUE_EMAIL_SEND_VERIFICATION, {
       connection: redisConnectionFromUrl(),
     });
+  });
+
+  beforeEach(() => {
+    rateLimiter.clear();
   });
 
   afterAll(async () => {

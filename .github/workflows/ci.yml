@@ -202,6 +202,8 @@ jobs:
           docker pull odoo:18.0
           docker pull bitnamilegacy/minio@sha256:6dabb4a2088c9a79908de3bc05f4586c23ad2182c8908e7e3acbf61c1467fb20
           docker pull quay.io/keycloak/keycloak:26.0
+      - name: T096 security hardening owned Keycloak
+        run: bash scripts/test_t096_security_hardening.sh
       - name: T050 company validation owned stack
         run: bash scripts/test_t050_live.sh
       - name: T054 company setup owned stack

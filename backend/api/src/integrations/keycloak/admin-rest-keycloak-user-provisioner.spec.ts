@@ -206,6 +206,8 @@ function envWith(overrides: Record<string, string | undefined>): () => void {
     'KEYCLOAK_USERS_CLIENT_SECRET',
     'KEYCLOAK_ADMIN',
     'KEYCLOAK_ADMIN_PASSWORD',
+    'KEYCLOAK_ALLOW_BOOTSTRAP_ADMIN_FALLBACK',
+    'NODE_ENV',
   ];
   for (const name of names) {
     saved[name] = process.env[name];
@@ -283,6 +285,8 @@ describe('AdminRestKeycloakUserProvisioner (T032, unit)', () => {
       KEYCLOAK_USERS_CLIENT_SECRET: undefined,
       KEYCLOAK_ADMIN: 'admin',
       KEYCLOAK_ADMIN_PASSWORD: 'kemfai_dev_admin',
+      KEYCLOAK_ALLOW_BOOTSTRAP_ADMIN_FALLBACK: 'true',
+      NODE_ENV: 'development',
     });
     try {
       const provisioner = new AdminRestKeycloakUserProvisioner();
@@ -294,6 +298,44 @@ describe('AdminRestKeycloakUserProvisioner (T032, unit)', () => {
       expect(tokenRequest?.body).toContain('grant_type=password');
       expect(tokenRequest?.body).toContain('client_id=admin-cli');
       expect(tokenRequest?.body).toContain('username=admin');
+    } finally {
+      restore();
+    }
+  });
+
+  it('rejects a partial service-client configuration instead of falling back to broader admin credentials', async () => {
+    const restore = envWith({
+      KEYCLOAK_URL: server.baseUrl,
+      KEYCLOAK_USERS_CLIENT_ID: 'kemfai-users',
+      KEYCLOAK_USERS_CLIENT_SECRET: undefined,
+      KEYCLOAK_ADMIN: 'admin',
+      KEYCLOAK_ADMIN_PASSWORD: 'bootstrap-secret',
+      KEYCLOAK_ALLOW_BOOTSTRAP_ADMIN_FALLBACK: 'true',
+      NODE_ENV: 'development',
+    });
+    try {
+      const provisioner = new AdminRestKeycloakUserProvisioner();
+      await expect(provisioner.createUser(USER_INPUT)).rejects.toThrow(KeycloakUnavailableError);
+      expect(server.requests).toHaveLength(0);
+    } finally {
+      restore();
+    }
+  });
+
+  it('never permits bootstrap-admin fallback in production, even when explicitly requested', async () => {
+    const restore = envWith({
+      KEYCLOAK_URL: server.baseUrl,
+      KEYCLOAK_USERS_CLIENT_ID: undefined,
+      KEYCLOAK_USERS_CLIENT_SECRET: undefined,
+      KEYCLOAK_ADMIN: 'admin',
+      KEYCLOAK_ADMIN_PASSWORD: 'bootstrap-secret',
+      KEYCLOAK_ALLOW_BOOTSTRAP_ADMIN_FALLBACK: 'true',
+      NODE_ENV: 'production',
+    });
+    try {
+      const provisioner = new AdminRestKeycloakUserProvisioner();
+      await expect(provisioner.createUser(USER_INPUT)).rejects.toThrow(KeycloakUnavailableError);
+      expect(server.requests).toHaveLength(0);
     } finally {
       restore();
     }

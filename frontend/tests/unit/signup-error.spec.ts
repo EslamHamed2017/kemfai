@@ -39,10 +39,17 @@ describe('classifySignupError (T037 — arbiter-resolved signup error classifica
   });
 
   it('classifies any unmatched 422 as the generic validation error, never planUnavailable', () => {
-    expect(classifySignupError(422, 'acceptedTerms must be true — the legal terms must be accepted to sign up')).toBe(
-      'validation',
-    );
+    expect(
+      classifySignupError(
+        422,
+        'acceptedTerms must be true — the legal terms must be accepted to sign up',
+      ),
+    ).toBe('validation');
     expect(classifySignupError(422, undefined)).toBe('validation');
+  });
+
+  it('classifies 429 as a dedicated rate-limit state', () => {
+    expect(classifySignupError(429, 'Too many attempts')).toBe('rateLimited');
   });
 
   it('classifies any other status as unexpected', () => {
