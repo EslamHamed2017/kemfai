@@ -56,10 +56,6 @@ import {
   providers: [
     AppService,
     PublicAccountsRateLimiter,
-    // T096: reject public account bursts before authentication, feature-flag DB reads, or
-    // any account service side effect. The guard is inert unless the handler declares
-    // @PublicAccountRateLimit metadata.
-    { provide: APP_GUARD, useClass: PublicAccountsRateLimitGuard },
     // Runtime DTO validation for every @Body() DTO — 422 (Unprocessable Entity) is the
     // contract's documented code for malformed input (e.g. SignupRequest 422 "Malformed
     // email or weak password"), NOT Nest's default 400 and never an uncontrolled 500
@@ -78,6 +74,10 @@ import {
     { provide: APP_GUARD, useClass: BearerAuthGuard },
     { provide: APP_GUARD, useClass: TenantScopeGuard },
     { provide: APP_GUARD, useClass: FeatureFlagGuard },
+    // T096: preserve the feature-hiding 404 before exposing rate-limit semantics, then reject
+    // public account bursts before the remaining authorization chain or account side effects.
+    // The guard is inert unless a handler declares @PublicAccountRateLimit metadata.
+    { provide: APP_GUARD, useClass: PublicAccountsRateLimitGuard },
     // Hide disabled surfaces before grant lookup/audit. Grant-scoped authorization then runs
     // before the general role gate so wrong internal roles are recorded as denied attempts.
     { provide: APP_GUARD, useClass: SupportAccessGuard },

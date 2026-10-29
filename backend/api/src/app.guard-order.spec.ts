@@ -15,10 +15,12 @@ describe('AppModule support-access guard ordering', () => {
     const guards = providers
       .filter((provider) => provider.provide === APP_GUARD)
       .map((provider) => provider.useClass);
-    expect(guards.indexOf(PublicAccountsRateLimitGuard)).toBeLessThan(
-      guards.indexOf(FeatureFlagGuard),
+    expect(guards.indexOf(FeatureFlagGuard)).toBeLessThan(
+      guards.indexOf(PublicAccountsRateLimitGuard),
     );
-    expect(guards.indexOf(FeatureFlagGuard)).toBeLessThan(guards.indexOf(SupportAccessGuard));
+    expect(guards.indexOf(PublicAccountsRateLimitGuard)).toBeLessThan(
+      guards.indexOf(SupportAccessGuard),
+    );
     expect(guards.indexOf(SupportAccessGuard)).toBeLessThan(guards.indexOf(RoleGuard));
   });
 });
