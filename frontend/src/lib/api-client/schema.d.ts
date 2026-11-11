@@ -53,7 +53,10 @@ export interface paths {
         post: {
             parameters: {
                 query?: never;
-                header?: never;
+                header?: {
+                    /** @description Preferred language for a rate-limit response. Arabic language tags return an Arabic 429 message; English, absent, and unsupported tags use English. */
+                    "Accept-Language"?: string;
+                };
                 path?: never;
                 cookie?: never;
             };
@@ -88,6 +91,19 @@ export interface paths {
                         "application/json": components["schemas"]["NestErrorResponse"];
                     };
                 };
+                /** @description More than 5 signup attempts from one client IP within 60 seconds (T096) */
+                429: {
+                    headers: {
+                        /** @description Whole seconds until this client's fixed window resets */
+                        "Retry-After"?: number;
+                        /** @description Language used by the response message */
+                        "Content-Language"?: "en" | "ar";
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["NestErrorResponse"];
+                    };
+                };
             };
         };
         delete?: never;
@@ -109,7 +125,10 @@ export interface paths {
         post: {
             parameters: {
                 query?: never;
-                header?: never;
+                header?: {
+                    /** @description Preferred language for a rate-limit response. Arabic language tags return an Arabic 429 message; English, absent, and unsupported tags use English. */
+                    "Accept-Language"?: string;
+                };
                 path?: never;
                 cookie?: never;
             };
@@ -134,6 +153,19 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content?: never;
+                };
+                /** @description More than 10 verification attempts from one client IP within 60 seconds (T096) */
+                429: {
+                    headers: {
+                        /** @description Whole seconds until this client's fixed window resets */
+                        "Retry-After"?: number;
+                        /** @description Language used by the response message */
+                        "Content-Language"?: "en" | "ar";
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["NestErrorResponse"];
+                    };
                 };
             };
         };

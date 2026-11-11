@@ -291,11 +291,12 @@ export function tenantsHttpSuite(contract = false): void {
       );
       try {
         await new Promise<void>((resolve) => worker.once('ready', resolve));
-        await queue.add('provision', { accountId: a.row.id }, { jobId: a.row.id });
-        await new Promise<void>((resolve, reject) => {
+        const failed = new Promise<void>((resolve, reject) => {
           worker.once('failed', () => resolve());
           worker.once('error', reject);
         });
+        await queue.add('provision', { accountId: a.row.id }, { jobId: a.row.id });
+        await failed;
       } finally {
         await worker.close();
       }

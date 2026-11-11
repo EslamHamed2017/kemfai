@@ -68,6 +68,7 @@ describe('SignupForm (T037)', () => {
         billingCycle: 'monthly',
         acceptedTerms: true,
       },
+      params: { header: { 'Accept-Language': 'en' } },
     });
   });
 

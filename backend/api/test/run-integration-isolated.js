@@ -13,6 +13,66 @@ const CONFIG = 'test/jest-integration.json';
 const JEST = require.resolve('jest/bin/jest');
 const SAFE_NAME = /^[a-z][a-z0-9_]{0,62}$/;
 
+const JEST_COUNT_FIELDS = [
+  'numFailedTestSuites',
+  'numFailedTests',
+  'numPassedTestSuites',
+  'numPassedTests',
+  'numPendingTestSuites',
+  'numPendingTests',
+  'numRuntimeErrorTestSuites',
+  'numTodoTests',
+  'numTotalTestSuites',
+  'numTotalTests',
+];
+
+function parseRunnerArgs(args) {
+  const passthrough = [];
+  let outputFile;
+  let jsonRequested = false;
+  for (let index = 0; index < args.length; index += 1) {
+    const arg = args[index];
+    if (arg === '--json') {
+      jsonRequested = true;
+      continue;
+    }
+    if (arg === '--outputFile') {
+      const value = args[index + 1];
+      if (!value || value.startsWith('-')) throw new Error('--outputFile requires a path');
+      if (outputFile && outputFile !== value) throw new Error('Multiple Jest output files are unsupported');
+      outputFile = value;
+      index += 1;
+      continue;
+    }
+    if (arg.startsWith('--outputFile=')) {
+      const value = arg.slice('--outputFile='.length);
+      if (!value) throw new Error('--outputFile requires a path');
+      if (outputFile && outputFile !== value) throw new Error('Multiple Jest output files are unsupported');
+      outputFile = value;
+      continue;
+    }
+    passthrough.push(arg);
+  }
+  if (jsonRequested && !outputFile)
+    throw new Error('--json requires --outputFile when using the isolated integration runner');
+  return { outputFile, passthrough };
+}
+
+function mergeJestResults(results) {
+  if (!Array.isArray(results) || results.length === 0)
+    throw new Error('Cannot aggregate zero Jest results');
+  const merged = {
+    success: results.every((result) => result.success === true),
+    wasInterrupted: results.some((result) => result.wasInterrupted === true),
+    startTime: Math.min(...results.map((result) => Number(result.startTime || Date.now()))),
+    testResults: results.flatMap((result) => result.testResults || []),
+  };
+  for (const field of JEST_COUNT_FIELDS) {
+    merged[field] = results.reduce((sum, result) => sum + Number(result[field] || 0), 0);
+  }
+  return merged;
+}
+
 function makeDatabaseName(suitePath, nonce = crypto.randomBytes(6).toString('hex'), index = 0) {
   const stem = path
     .basename(suitePath)
@@ -25,8 +85,46 @@ function makeDatabaseName(suitePath, nonce = crypto.randomBytes(6).toString('hex
   return name;
 }
 
+function childJestArgs(extraArgs, suites = [], cwd = process.cwd()) {
+  const parsed = parseRunnerArgs(extraArgs).passthrough;
+  const selectedSuites = new Set(suites.map((suite) => path.resolve(cwd, suite)));
+  const valueOptions = new Set([
+    '--testNamePattern',
+    '-t',
+    '--maxWorkers',
+    '-w',
+    '--testTimeout',
+    '--seed',
+  ]);
+  const result = [];
+  let droppingRunTestsByPathValues = false;
+  let preservingOptionValue = false;
+  for (const arg of parsed) {
+    if (preservingOptionValue) {
+      result.push(arg);
+      preservingOptionValue = false;
+      continue;
+    }
+    if (arg === '--runTestsByPath') {
+      droppingRunTestsByPathValues = true;
+      continue;
+    }
+    if (arg.startsWith('--runTestsByPath=')) continue;
+    if (droppingRunTestsByPathValues && !arg.startsWith('-')) continue;
+    if (arg.startsWith('-')) {
+      droppingRunTestsByPathValues = false;
+      result.push(arg);
+      preservingOptionValue = valueOptions.has(arg);
+      continue;
+    }
+    if (selectedSuites.has(path.resolve(cwd, arg))) continue;
+    result.push(arg);
+  }
+  return result;
+}
+
 function discoverSuites(extraArgs, cwd = process.cwd(), spawnImpl = spawnSync) {
-  const args = extraArgs.filter((arg) => arg !== '--runInBand');
+  const args = parseRunnerArgs(extraArgs).passthrough.filter((arg) => arg !== '--runInBand');
   const result = spawnImpl(
     process.execPath,
     [JEST, '--config', CONFIG, '--runInBand', '--listTests', '--json', ...args],
@@ -147,8 +245,8 @@ function assertNoIncompleteTests(results, suite) {
 }
 
 function runJestSuite(suite, database, extraArgs, cwd = process.cwd()) {
-  const passthrough = extraArgs.filter(
-    (arg) => arg.startsWith('-') && arg !== '--runInBand' && arg !== '--runTestsByPath',
+  const passthrough = parseRunnerArgs(extraArgs).passthrough.filter(
+    (arg) => arg !== '--runInBand',
   );
   const resultDir = fs.mkdtempSync(path.join(os.tmpdir(), 'kemfai-jest-result-'));
   const resultFile = path.join(resultDir, 'result.json');
@@ -179,8 +277,9 @@ function runJestSuite(suite, database, extraArgs, cwd = process.cwd()) {
       try {
         if (code !== 0) throw new Error(`Suite failed (${signal || code}): ${suite}`);
         if (!fs.existsSync(resultFile)) throw new Error(`Jest JSON result missing: ${suite}`);
-        assertNoIncompleteTests(JSON.parse(fs.readFileSync(resultFile, 'utf8')), suite);
-        resolve();
+        const results = JSON.parse(fs.readFileSync(resultFile, 'utf8'));
+        assertNoIncompleteTests(results, suite);
+        resolve(results);
       } catch (error) {
         reject(error);
       } finally {
@@ -196,10 +295,29 @@ let interrupted;
 async function run(options = {}) {
   const cwd = options.cwd || process.cwd();
   const extraArgs = options.args || process.argv.slice(2);
-  const suites = (options.discover || discoverSuites)(extraArgs, cwd);
+  const runnerArgs = parseRunnerArgs(extraArgs);
+  const outputPath = runnerArgs.outputFile ? path.resolve(cwd, runnerArgs.outputFile) : undefined;
+  let outputLock;
+  let outputLockPath;
+  if (outputPath) {
+    fs.mkdirSync(path.dirname(outputPath), { recursive: true });
+    outputLockPath = `${outputPath}.lock`;
+    try {
+      outputLock = fs.openSync(outputLockPath, 'wx', 0o600);
+    } catch (error) {
+      if (error && error.code === 'EEXIST')
+        throw new Error(`Jest output file is already in use: ${outputPath}`);
+      throw error;
+    }
+  }
+  try {
+    if (outputPath) fs.rmSync(outputPath, { force: true });
+    const suites = (options.discover || discoverSuites)(runnerArgs.passthrough, cwd);
+  const suiteArgs = childJestArgs(runnerArgs.passthrough, suites, cwd);
   const admin = options.admin || new Client(adminConfig(options.env || process.env));
   const nonce = (options.nonce || crypto.randomBytes(6).toString('hex')).toLowerCase();
   const created = new Set();
+  const suiteResults = [];
   let failures = 0;
 
   let connected = false;
@@ -216,7 +334,13 @@ async function run(options = {}) {
         await admin.query(`CREATE DATABASE "${database}"`);
         createdDatabase = true;
         await (options.flush || flushRedis)();
-        await (options.runSuite || runJestSuite)(suite, database, extraArgs, cwd);
+        const result = await (options.runSuite || runJestSuite)(
+          suite,
+          database,
+          suiteArgs,
+          cwd,
+        );
+        if (result) suiteResults.push(result);
       } catch (error) {
         failures += 1;
         console.error(error.message || error);
@@ -236,6 +360,28 @@ async function run(options = {}) {
   }
   if (failures !== 0)
     throw new Error(`${failures} integration suite or cleanup operation(s) failed`);
+  if (outputPath) {
+    if (suiteResults.length !== suites.length)
+      throw new Error('Cannot write aggregate Jest JSON: one or more suite results are missing');
+    fs.mkdirSync(path.dirname(outputPath), { recursive: true });
+    const temporaryDirectory = fs.mkdtempSync(
+      path.join(path.dirname(outputPath), `.${path.basename(outputPath)}.tmp-`),
+    );
+    const temporaryPath = path.join(temporaryDirectory, 'result.json');
+    try {
+      fs.writeFileSync(temporaryPath, JSON.stringify(mergeJestResults(suiteResults)), {
+        flag: 'wx',
+        mode: 0o600,
+      });
+      fs.renameSync(temporaryPath, outputPath);
+    } finally {
+      fs.rmSync(temporaryDirectory, { recursive: true, force: true });
+    }
+  }
+  } finally {
+    if (outputLock !== undefined) fs.closeSync(outputLock);
+    if (outputLockPath) fs.rmSync(outputLockPath, { force: true });
+  }
 }
 
 for (const signal of ['SIGINT', 'SIGTERM', 'SIGHUP']) {
@@ -255,8 +401,11 @@ if (require.main === module) {
 module.exports = {
   assertNoIncompleteTests,
   cleanupDatabase,
+  childJestArgs,
   discoverSuites,
   makeDatabaseName,
+  mergeJestResults,
   parseRedisUrl,
+  parseRunnerArgs,
   run,
 };

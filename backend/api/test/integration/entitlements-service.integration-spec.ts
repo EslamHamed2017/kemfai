@@ -13,6 +13,7 @@ const MIGRATION_SEEDED_MODULE_FLAG_KEYS = [
   'module.module_selection',
   'module.onboarding_checklist',
   'module.support_access',
+  'module.accounting_foundation',
 ] as const;
 
 /**

@@ -40,7 +40,20 @@ grep -qF 'register_owned_process "$frontend_pid"' "$stage" || fail "frontend pro
 grep -qF 'register_owned_process "$proxy_pid"' "$stage" || fail "proxy process identity is not registered"
 grep -qF 'source "$repo_dir/scripts/fixtures/t071_process_lifecycle.sh"' "$stage" || fail "generated lifecycle does not load the tested process helper"
 grep -qF 'session_survivors' "$repo_dir/scripts/fixtures/t071_process_lifecycle.sh" || fail "process helper does not prove session extinction"
-grep -qF 'docker rm -fv "$resource_id"' "$stage" || fail "container cleanup does not remove anonymous volumes"
+grep -qF '. "$repo_dir/scripts/lib_docker_test_cleanup.sh"' "$stage" \
+  || fail "generated lifecycle does not load the shared exact-owned Docker cleanup helper"
+grep -qF 'kemfai_register_container_intent "$minio_container"' "$stage" \
+  || fail "generated lifecycle does not register the MinIO intent before creation"
+grep -qF 'kemfai_cleanup_owned_containers || cleanup_verification_failed=1' "$stage" \
+  || fail "generated lifecycle does not use shared exact-owned container cleanup"
+grep -qF 'docker rm -f -v "$resource_id"' "$repo_dir/scripts/lib_docker_test_cleanup.sh" \
+  || fail "shared container cleanup does not remove verified anonymous volumes"
+grep -qF 'kemfai_exact_owned_container_id "$container_name"' "$stage" \
+  || fail "relay targeting does not use shared exact container ownership checks"
+grep -qF 'kemfai_exact_owned_network_id "$network"' "$stage" \
+  || fail "relay targeting does not use shared exact network ownership checks"
+grep -qF 'declare -a owned_containers=()' "$stage" \
+  && fail "generated lifecycle retained the pre-library container ownership array"
 grep -qF 'exact_owned_volume_id' "$stage" || fail "generated lifecycle does not verify owned named volumes"
 grep -qF 'volume survivor(s) detected' "$stage" || fail "generated cleanup does not fail on volume survivors"
 grep -qF 'docker image inspect "$image"' "$stage" || fail "generated launcher does not fail closed on missing local images"
@@ -60,6 +73,10 @@ grep -qF 'sanitize_host_environment' "$stage" || fail "host Node processes inher
 grep -qF 'assert_no_dotenv_files' "$stage" || fail "host build/start can silently consume checkout .env files"
 grep -qF 't071_resolve_playwright_browser.mjs' "$stage" || fail "generated preflight does not resolve the installed browser before sanitizing HOME"
 grep -qF 'PLAYWRIGHT_BROWSERS_PATH="$playwright_browsers_path"' "$stage" || fail "sanitized children do not receive the validated browser cache"
+grep -qF 'npx playwright test --config tests/e2e-live/playwright.t071-live.config.ts tests/e2e-live/t071-billing-admin.live.spec.ts' "$stage" \
+  || fail "generated launcher does not target the exact T071 Playwright spec"
+grep -qF 'tests/e2e-live/t071-real-browser.live.spec.ts' "$stage" \
+  && fail "generated launcher retained the mechanically-renamed T056 Playwright target"
 grep -qF 'HOST=127.0.0.1' "$stage" || fail "host services are not explicitly loopback-bound"
 grep -qF 'NEXT_PUBLIC_PAYMENT_PROOF_ORIGINS="http://127.0.0.1:${minio_host_port}"' "$stage" \
   || fail "frontend build does not allowlist the exact owned MinIO proof origin"

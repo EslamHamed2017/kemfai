@@ -249,4 +249,35 @@ describe('committed contract internal consistency (T022)', () => {
     expect(localeUpdateRequest.required).toEqual(['locale']);
     expect(localeUpdateRequest.properties?.locale?.enum).toEqual(['en', 'ar']);
   });
+
+  it('documents T096 localized 429 limits and Retry-After for signup and verify-email', () => {
+    const parsed = readCommittedContractJson();
+    const paths = parsed.paths as Record<
+      string,
+      {
+        post?: {
+          parameters?: Array<{ name?: string; in?: string }>;
+          responses?: Record<string, unknown>;
+        };
+      }
+    >;
+    for (const path of ['/accounts/signup', '/accounts/verify-email']) {
+      const operation = paths[path]?.post;
+      expect(operation).toBeDefined();
+      expect(operation?.parameters).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ name: 'Accept-Language', in: 'header' }),
+        ]),
+      );
+      expect(operation?.responses?.['429']).toEqual(
+        expect.objectContaining({
+          headers: expect.objectContaining({
+            'Retry-After': expect.any(Object),
+            'Content-Language': expect.any(Object),
+          }),
+          content: expect.objectContaining({ 'application/json': expect.any(Object) }),
+        }),
+      );
+    }
+  });
 });

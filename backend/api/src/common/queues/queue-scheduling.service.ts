@@ -2,6 +2,9 @@ import { Injectable, OnModuleInit } from '@nestjs/common';
 import { InjectQueue } from '@nestjs/bullmq';
 import { Queue } from 'bullmq';
 import {
+  ACCOUNTING_RECOVERY_JOB_NAME,
+  ACCOUNTING_RECOVERY_REPEAT_INTERVAL_MS,
+  QUEUE_ACCOUNTING_MUTATION_RECOVERY,
   QUEUE_SUPPORT_ACCESS_EXPIRY_SWEEP,
   QUEUE_TRIAL_EXPIRY_SWEEP,
   SWEEP_JOB_NAME,
@@ -23,10 +26,15 @@ export class QueueSchedulingService implements OnModuleInit {
     @InjectQueue(QUEUE_SUPPORT_ACCESS_EXPIRY_SWEEP)
     private readonly supportAccessSweepQueue: Queue,
     @InjectQueue(QUEUE_TRIAL_EXPIRY_SWEEP) private readonly trialSweepQueue: Queue,
+    @InjectQueue(QUEUE_ACCOUNTING_MUTATION_RECOVERY)
+    private readonly accountingRecoveryQueue: Queue,
   ) {}
 
   async onModuleInit(): Promise<void> {
     await this.ensureSweepSchedules();
+    if (process.env.KEMFAI_DISABLE_ACCOUNTING_RECOVERY_WORKER !== '1') {
+      await this.ensureAccountingRecoverySchedule();
+    }
   }
 
   /**
@@ -44,6 +52,21 @@ export class QueueSchedulingService implements OnModuleInit {
       if (!alreadyRegistered) {
         await queue.add(SWEEP_JOB_NAME, {}, { repeat: { every: SWEEP_REPEAT_INTERVAL_MS } });
       }
+    }
+  }
+  async ensureAccountingRecoverySchedule(): Promise<void> {
+    const existing = await this.accountingRecoveryQueue.getRepeatableJobs();
+    const registered = existing.some(
+      (job) =>
+        job.name === ACCOUNTING_RECOVERY_JOB_NAME &&
+        job.every === String(ACCOUNTING_RECOVERY_REPEAT_INTERVAL_MS),
+    );
+    if (!registered) {
+      await this.accountingRecoveryQueue.add(
+        ACCOUNTING_RECOVERY_JOB_NAME,
+        {},
+        { repeat: { every: ACCOUNTING_RECOVERY_REPEAT_INTERVAL_MS } },
+      );
     }
   }
 }

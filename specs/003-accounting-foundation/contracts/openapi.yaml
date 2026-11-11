@@ -1,0 +1,1504 @@
+openapi: 3.0.3
+info:
+  title: KEMFAI Accounting Foundation API
+  version: 1.0.0
+  description: |
+    Policy-independent API for Accounting Foundation Stories 1-3 only.
+    Tenant scope is derived from the authenticated principal. Company scope is a
+    KEMFAI UUID supplied in X-KEMFAI-Company-Id and authorized server-side.
+
+    This contract intentionally defines no posting, reversal, opening-posting,
+    approval, or period-transition operation. Draft validation never moves the
+    ledger and never means valid-for-post.
+servers:
+  - url: /v1/accounting
+    description: Versioned KEMFAI API/BFF boundary
+tags:
+  - name: Capabilities
+  - name: Accounts
+  - name: Dimensions
+  - name: Journals
+  - name: Currencies
+  - name: Drafts
+security:
+  - bearerAuth: []
+paths:
+  /capabilities:
+    get:
+      tags: [Capabilities]
+      operationId: getAccountingCapabilities
+      summary: Get policy-safe accounting release capabilities
+      parameters:
+        - $ref: '#/components/parameters/CompanyId'
+        - $ref: '#/components/parameters/AcceptLanguage'
+        - $ref: '#/components/parameters/CorrelationId'
+      responses:
+        '200':
+          description: Current safe capabilities; posting remains unavailable while gated.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AccountingCapabilities'
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /accounts:
+    get:
+      tags: [Accounts]
+      operationId: listAccounts
+      summary: List company chart-of-accounts nodes
+      parameters:
+        - $ref: '#/components/parameters/CompanyId'
+        - $ref: '#/components/parameters/AcceptLanguage'
+        - $ref: '#/components/parameters/CorrelationId'
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+        - name: active
+          in: query
+          schema: { type: boolean }
+        - name: nodeKind
+          in: query
+          schema: { $ref: '#/components/schemas/AccountNodeKind' }
+        - name: search
+          in: query
+          schema: { type: string, maxLength: 100 }
+      responses:
+        '200':
+          description: Scoped account page
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AccountPage' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+    post:
+      tags: [Accounts]
+      operationId: createAccount
+      summary: Create a parent or posting account without ledger effect
+      parameters:
+        - $ref: '#/components/parameters/CompanyId'
+        - $ref: '#/components/parameters/AcceptLanguage'
+        - $ref: '#/components/parameters/CorrelationId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AccountCreate' }
+      responses:
+        '201':
+          description: Created once
+          headers:
+            ETag: { $ref: '#/components/headers/ETag' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MutationAccountResult' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/ValidationFailed' }
+        '503': { $ref: '#/components/responses/AuditUnavailable' }
+
+  /accounts/{accountId}:
+    get:
+      tags: [Accounts]
+      operationId: getAccount
+      summary: Get one scoped account
+      parameters:
+        - $ref: '#/components/parameters/CompanyId'
+        - $ref: '#/components/parameters/AcceptLanguage'
+        - $ref: '#/components/parameters/CorrelationId'
+        - $ref: '#/components/parameters/AccountId'
+      responses:
+        '200':
+          description: Account
+          headers:
+            ETag: { $ref: '#/components/headers/ETag' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Account' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    patch:
+      tags: [Accounts]
+      operationId: updateAccount
+      summary: Version-checked edit, reparent, convert, activate, or deactivate
+      parameters:
+        - $ref: '#/components/parameters/CompanyId'
+        - $ref: '#/components/parameters/AcceptLanguage'
+        - $ref: '#/components/parameters/CorrelationId'
+        - $ref: '#/components/parameters/AccountId'
+        - $ref: '#/components/parameters/IfMatch'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AccountUpdate' }
+      responses:
+        '200':
+          description: Updated once
+          headers:
+            ETag: { $ref: '#/components/headers/ETag' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MutationAccountResult' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '412': { $ref: '#/components/responses/PreconditionFailed' }
+        '422': { $ref: '#/components/responses/ValidationFailed' }
+        '503': { $ref: '#/components/responses/AuditUnavailable' }
+
+  /dimension-definitions:
+    get:
+      tags: [Dimensions]
+      operationId: listDimensionDefinitions
+      summary: List built-in and custom dimension definitions
+      parameters:
+        - $ref: '#/components/parameters/CompanyId'
+        - $ref: '#/components/parameters/AcceptLanguage'
+        - $ref: '#/components/parameters/CorrelationId'
+        - name: active
+          in: query
+          schema: { type: boolean }
+      responses:
+        '200':
+          description: Dimension definitions
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: '#/components/schemas/DimensionDefinition' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+    post:
+      tags: [Dimensions]
+      operationId: createDimensionDefinition
+      summary: Create a custom dimension definition
+      parameters:
+        - $ref: '#/components/parameters/CompanyId'
+        - $ref: '#/components/parameters/AcceptLanguage'
+        - $ref: '#/components/parameters/CorrelationId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/DimensionDefinitionCreate' }
+      responses:
+        '201':
+          description: Created
+          headers:
+            ETag: { $ref: '#/components/headers/ETag' }
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/MutationReceipt'
+                  - type: object
+                    required: [resource]
+                    properties:
+                      resource: { $ref: '#/components/schemas/DimensionDefinition' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/ValidationFailed' }
+        '503': { $ref: '#/components/responses/AuditUnavailable' }
+
+  /dimension-definitions/{definitionId}:
+    patch:
+      tags: [Dimensions]
+      operationId: updateDimensionDefinition
+      summary: Version-checked dimension definition update
+      parameters:
+        - $ref: '#/components/parameters/CompanyId'
+        - $ref: '#/components/parameters/AcceptLanguage'
+        - $ref: '#/components/parameters/CorrelationId'
+        - $ref: '#/components/parameters/DefinitionId'
+        - $ref: '#/components/parameters/IfMatch'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/DimensionDefinitionUpdate' }
+      responses:
+        '200':
+          description: Updated
+          headers:
+            ETag: { $ref: '#/components/headers/ETag' }
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/MutationReceipt'
+                  - type: object
+                    required: [resource]
+                    properties:
+                      resource: { $ref: '#/components/schemas/DimensionDefinition' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '412': { $ref: '#/components/responses/PreconditionFailed' }
+        '422': { $ref: '#/components/responses/ValidationFailed' }
+        '503': { $ref: '#/components/responses/AuditUnavailable' }
+
+  /dimension-values:
+    get:
+      tags: [Dimensions]
+      operationId: listDimensionValues
+      summary: List scoped dimension values
+      parameters:
+        - $ref: '#/components/parameters/CompanyId'
+        - $ref: '#/components/parameters/AcceptLanguage'
+        - $ref: '#/components/parameters/CorrelationId'
+        - name: definitionId
+          in: query
+          schema: { type: string, format: uuid }
+        - name: active
+          in: query
+          schema: { type: boolean }
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          description: Dimension value page
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DimensionValuePage' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+    post:
+      tags: [Dimensions]
+      operationId: createDimensionValue
+      summary: Create a dimension value
+      parameters:
+        - $ref: '#/components/parameters/CompanyId'
+        - $ref: '#/components/parameters/AcceptLanguage'
+        - $ref: '#/components/parameters/CorrelationId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/DimensionValueCreate' }
+      responses:
+        '201':
+          description: Created
+          headers:
+            ETag: { $ref: '#/components/headers/ETag' }
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/MutationReceipt'
+                  - type: object
+                    required: [resource]
+                    properties:
+                      resource: { $ref: '#/components/schemas/DimensionValue' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/ValidationFailed' }
+        '503': { $ref: '#/components/responses/AuditUnavailable' }
+
+  /dimension-values/{valueId}:
+    patch:
+      tags: [Dimensions]
+      operationId: updateDimensionValue
+      summary: Version-checked value update or deactivation
+      parameters:
+        - $ref: '#/components/parameters/CompanyId'
+        - $ref: '#/components/parameters/AcceptLanguage'
+        - $ref: '#/components/parameters/CorrelationId'
+        - $ref: '#/components/parameters/ValueId'
+        - $ref: '#/components/parameters/IfMatch'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/DimensionValueUpdate' }
+      responses:
+        '200':
+          description: Updated
+          headers:
+            ETag: { $ref: '#/components/headers/ETag' }
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/MutationReceipt'
+                  - type: object
+                    required: [resource]
+                    properties:
+                      resource: { $ref: '#/components/schemas/DimensionValue' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '412': { $ref: '#/components/responses/PreconditionFailed' }
+        '422': { $ref: '#/components/responses/ValidationFailed' }
+        '503': { $ref: '#/components/responses/AuditUnavailable' }
+
+  /dimension-rules:
+    get:
+      tags: [Dimensions]
+      operationId: listDimensionRules
+      summary: List versioned dimension validation rules
+      parameters:
+        - $ref: '#/components/parameters/CompanyId'
+        - $ref: '#/components/parameters/AcceptLanguage'
+        - $ref: '#/components/parameters/CorrelationId'
+        - name: accountId
+          in: query
+          schema: { type: string, format: uuid }
+        - name: transactionType
+          in: query
+          schema: { type: string, maxLength: 64 }
+        - name: active
+          in: query
+          schema: { type: boolean }
+      responses:
+        '200':
+          description: Dimension rules
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: '#/components/schemas/DimensionRule' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+    post:
+      tags: [Dimensions]
+      operationId: createDimensionRule
+      summary: Create a data-driven draft validation rule
+      parameters:
+        - $ref: '#/components/parameters/CompanyId'
+        - $ref: '#/components/parameters/AcceptLanguage'
+        - $ref: '#/components/parameters/CorrelationId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/DimensionRuleCreate' }
+      responses:
+        '201':
+          description: Created
+          headers:
+            ETag: { $ref: '#/components/headers/ETag' }
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/MutationReceipt'
+                  - type: object
+                    required: [resource]
+                    properties:
+                      resource: { $ref: '#/components/schemas/DimensionRule' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/ValidationFailed' }
+        '503': { $ref: '#/components/responses/AuditUnavailable' }
+
+  /dimension-rules/{ruleId}:
+    patch:
+      tags: [Dimensions]
+      operationId: updateDimensionRule
+      summary: Version-checked dimension rule update
+      parameters:
+        - $ref: '#/components/parameters/CompanyId'
+        - $ref: '#/components/parameters/AcceptLanguage'
+        - $ref: '#/components/parameters/CorrelationId'
+        - $ref: '#/components/parameters/RuleId'
+        - $ref: '#/components/parameters/IfMatch'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/DimensionRuleUpdate' }
+      responses:
+        '200':
+          description: Updated
+          headers:
+            ETag: { $ref: '#/components/headers/ETag' }
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/MutationReceipt'
+                  - type: object
+                    required: [resource]
+                    properties:
+                      resource: { $ref: '#/components/schemas/DimensionRule' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '412': { $ref: '#/components/responses/PreconditionFailed' }
+        '422': { $ref: '#/components/responses/ValidationFailed' }
+        '503': { $ref: '#/components/responses/AuditUnavailable' }
+
+  /journals:
+    get:
+      tags: [Journals]
+      operationId: listJournals
+      summary: List company journals
+      parameters:
+        - $ref: '#/components/parameters/CompanyId'
+        - $ref: '#/components/parameters/AcceptLanguage'
+        - $ref: '#/components/parameters/CorrelationId'
+        - name: active
+          in: query
+          schema: { type: boolean }
+      responses:
+        '200':
+          description: Journals
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: '#/components/schemas/Journal' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+    post:
+      tags: [Journals]
+      operationId: createJournal
+      summary: Create a company journal without enabling posting
+      parameters:
+        - $ref: '#/components/parameters/CompanyId'
+        - $ref: '#/components/parameters/AcceptLanguage'
+        - $ref: '#/components/parameters/CorrelationId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/JournalCreate' }
+      responses:
+        '201':
+          description: Created
+          headers:
+            ETag: { $ref: '#/components/headers/ETag' }
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/MutationReceipt'
+                  - type: object
+                    required: [resource]
+                    properties:
+                      resource: { $ref: '#/components/schemas/Journal' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/ValidationFailed' }
+        '503': { $ref: '#/components/responses/AuditUnavailable' }
+
+  /journals/{journalId}:
+    patch:
+      tags: [Journals]
+      operationId: updateJournal
+      summary: Version-checked journal edit or deactivation
+      parameters:
+        - $ref: '#/components/parameters/CompanyId'
+        - $ref: '#/components/parameters/AcceptLanguage'
+        - $ref: '#/components/parameters/CorrelationId'
+        - $ref: '#/components/parameters/JournalId'
+        - $ref: '#/components/parameters/IfMatch'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/JournalUpdate' }
+      responses:
+        '200':
+          description: Updated
+          headers:
+            ETag: { $ref: '#/components/headers/ETag' }
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/MutationReceipt'
+                  - type: object
+                    required: [resource]
+                    properties:
+                      resource: { $ref: '#/components/schemas/Journal' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '412': { $ref: '#/components/responses/PreconditionFailed' }
+        '422': { $ref: '#/components/responses/ValidationFailed' }
+        '503': { $ref: '#/components/responses/AuditUnavailable' }
+
+  /currencies:
+    get:
+      tags: [Currencies]
+      operationId: listCompanyCurrencies
+      summary: List native currency metadata with company-specific configuration
+      parameters:
+        - $ref: '#/components/parameters/CompanyId'
+        - $ref: '#/components/parameters/AcceptLanguage'
+        - $ref: '#/components/parameters/CorrelationId'
+        - name: enabled
+          in: query
+          schema: { type: boolean }
+      responses:
+        '200':
+          description: Currency configurations
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: '#/components/schemas/CurrencyConfiguration' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /currencies/{currencyCode}:
+    put:
+      tags: [Currencies]
+      operationId: putCompanyCurrencyConfiguration
+      summary: Create or conditionally update company currency enablement
+      description: |
+        If-Match: * is create-only; a current strong ETag is update-only. Only
+        company enablement is mutable. Currency code, native decimal places,
+        native metadata version, base-currency identity, FX source/date policy,
+        rounding policy, and realized/unrealized policy are not mutable here.
+      parameters:
+        - $ref: '#/components/parameters/CompanyId'
+        - $ref: '#/components/parameters/AcceptLanguage'
+        - $ref: '#/components/parameters/CorrelationId'
+        - $ref: '#/components/parameters/CurrencyCode'
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/IfMatchCreateOrUpdate'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CurrencyConfigurationPut' }
+      responses:
+        '200':
+          description: Existing configuration updated
+          headers:
+            ETag: { $ref: '#/components/headers/ETag' }
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/MutationReceipt'
+                  - type: object
+                    required: [resource]
+                    properties:
+                      resource: { $ref: '#/components/schemas/CurrencyConfiguration' }
+        '201':
+          description: Configuration created
+          headers:
+            ETag: { $ref: '#/components/headers/ETag' }
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/MutationReceipt'
+                  - type: object
+                    required: [resource]
+                    properties:
+                      resource: { $ref: '#/components/schemas/CurrencyConfiguration' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '412': { $ref: '#/components/responses/PreconditionFailed' }
+        '422': { $ref: '#/components/responses/ValidationFailed' }
+        '503': { $ref: '#/components/responses/AuditUnavailable' }
+
+  /drafts:
+    get:
+      tags: [Drafts]
+      operationId: listJournalDrafts
+      summary: List non-posting company drafts
+      parameters:
+        - $ref: '#/components/parameters/CompanyId'
+        - $ref: '#/components/parameters/AcceptLanguage'
+        - $ref: '#/components/parameters/CorrelationId'
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          description: Draft page
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DraftPage' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+    post:
+      tags: [Drafts]
+      operationId: createJournalDraft
+      summary: Create a draft with no ledger effect
+      parameters:
+        - $ref: '#/components/parameters/CompanyId'
+        - $ref: '#/components/parameters/AcceptLanguage'
+        - $ref: '#/components/parameters/CorrelationId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/DraftWrite' }
+      responses:
+        '201':
+          description: Draft created once; no ledger movement
+          headers:
+            ETag: { $ref: '#/components/headers/ETag' }
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/MutationReceipt'
+                  - type: object
+                    required: [resource, ledgerEffect]
+                    properties:
+                      resource: { $ref: '#/components/schemas/JournalDraft' }
+                      ledgerEffect: { $ref: '#/components/schemas/NoLedgerEffect' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/ValidationFailed' }
+        '503': { $ref: '#/components/responses/AuditUnavailable' }
+
+  /drafts/{draftId}:
+    get:
+      tags: [Drafts]
+      operationId: getJournalDraft
+      summary: Get one non-posting draft
+      parameters:
+        - $ref: '#/components/parameters/CompanyId'
+        - $ref: '#/components/parameters/AcceptLanguage'
+        - $ref: '#/components/parameters/CorrelationId'
+        - $ref: '#/components/parameters/DraftId'
+      responses:
+        '200':
+          description: Draft
+          headers:
+            ETag: { $ref: '#/components/headers/ETag' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/JournalDraft' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    put:
+      tags: [Drafts]
+      operationId: replaceJournalDraft
+      summary: Replace a version-checked draft without ledger effect
+      parameters:
+        - $ref: '#/components/parameters/CompanyId'
+        - $ref: '#/components/parameters/AcceptLanguage'
+        - $ref: '#/components/parameters/CorrelationId'
+        - $ref: '#/components/parameters/DraftId'
+        - $ref: '#/components/parameters/IfMatch'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/DraftWrite' }
+      responses:
+        '200':
+          description: Draft replaced once; prior validation is stale
+          headers:
+            ETag: { $ref: '#/components/headers/ETag' }
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/MutationReceipt'
+                  - type: object
+                    required: [resource, ledgerEffect]
+                    properties:
+                      resource: { $ref: '#/components/schemas/JournalDraft' }
+                      ledgerEffect: { $ref: '#/components/schemas/NoLedgerEffect' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '412': { $ref: '#/components/responses/PreconditionFailed' }
+        '422': { $ref: '#/components/responses/ValidationFailed' }
+        '503': { $ref: '#/components/responses/AuditUnavailable' }
+
+  /drafts/{draftId}/validate:
+    post:
+      tags: [Drafts]
+      operationId: validateJournalDraft
+      summary: Run policy-independent draft validation with no ledger effect
+      description: |
+        Creates an immutable, auditable validation run. Checks scope, active masters,
+        account node kind, exact transaction/base money metadata, conditional FX
+        provenance, dimension rules, configuration/native-metadata versions, and
+        base arithmetic. Excess metadata scale is preserved and reported as a policy
+        blocker. It does not select FX/rounding policy, calculate a rate/base amount,
+        enforce policy-dependent period actions, or authorize posting.
+      parameters:
+        - $ref: '#/components/parameters/CompanyId'
+        - $ref: '#/components/parameters/AcceptLanguage'
+        - $ref: '#/components/parameters/CorrelationId'
+        - $ref: '#/components/parameters/DraftId'
+        - $ref: '#/components/parameters/IfMatch'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                includePostingReadinessBlockers:
+                  type: boolean
+                  default: true
+                  description: Returns policy blockers but never a posting decision.
+      responses:
+        '200':
+          description: Receipt-bearing immutable validation result; ledger remains unchanged
+          headers:
+            ETag: { $ref: '#/components/headers/ETag' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ValidationMutationResult' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '412': { $ref: '#/components/responses/PreconditionFailed' }
+        '422': { $ref: '#/components/responses/ValidationFailed' }
+        '503': { $ref: '#/components/responses/AuditUnavailable' }
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  parameters:
+    CompanyId:
+      name: X-KEMFAI-Company-Id
+      in: header
+      required: true
+      description: KEMFAI public company UUID; never an Odoo integer ID.
+      schema: { type: string, format: uuid }
+    AcceptLanguage:
+      name: Accept-Language
+      in: header
+      required: false
+      schema:
+        type: string
+        enum: [en, ar]
+        default: en
+    CorrelationId:
+      name: X-Correlation-Id
+      in: header
+      required: false
+      schema: { type: string, format: uuid }
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      schema: { type: string, minLength: 8, maxLength: 128 }
+    IfMatch:
+      name: If-Match
+      in: header
+      required: true
+      description: Strong optimistic version ETag, for example "3"; stale values return 412.
+      schema: { type: string, pattern: '^"[1-9][0-9]*"$' }
+    IfMatchCreateOrUpdate:
+      name: If-Match
+      in: header
+      required: true
+      description: Use * for create-only or the current strong ETag for update-only; mismatch, absence, or staleness returns 412.
+      schema: { type: string, pattern: '^(\*|"[1-9][0-9]*")$' }
+    Cursor:
+      name: cursor
+      in: query
+      required: false
+      schema: { type: string, maxLength: 512 }
+    Limit:
+      name: limit
+      in: query
+      required: false
+      schema: { type: integer, minimum: 1, maximum: 200, default: 50 }
+    AccountId:
+      name: accountId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    DefinitionId:
+      name: definitionId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    ValueId:
+      name: valueId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    RuleId:
+      name: ruleId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    JournalId:
+      name: journalId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    DraftId:
+      name: draftId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    CurrencyCode:
+      name: currencyCode
+      in: path
+      required: true
+      schema: { type: string, pattern: '^[A-Z]{3}$' }
+
+  headers:
+    ETag:
+      description: Strong resource version ETag.
+      schema: { type: string, pattern: '^"[1-9][0-9]*"$' }
+
+  responses:
+    BadRequest:
+      description: Malformed request
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorEnvelope' }
+    Unauthorized:
+      description: Missing or invalid authentication
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorEnvelope' }
+    Forbidden:
+      description: Authenticated but not authorized; no foreign details disclosed
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorEnvelope' }
+    NotFound:
+      description: Missing, inaccessible, or feature-hidden resource
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorEnvelope' }
+    Conflict:
+      description: Altered payload under a used Idempotency-Key, uniqueness, hierarchy, or concurrent-operation conflict
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorEnvelope' }
+    PreconditionFailed:
+      description: If-Match strong version is stale, create-only target exists, or update-only target is absent
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorEnvelope' }
+    ValidationFailed:
+      description: Actionable request/domain validation errors; no partial or ledger effect
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorEnvelope' }
+    AuditUnavailable:
+      description: Audit completion unavailable; success is withheld and the mutation is rolled back or recoverable without duplication
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorEnvelope' }
+
+  schemas:
+    AccountingCapabilities:
+      type: object
+      additionalProperties: false
+      required: [foundationEnabled, draftsEnabled, postingEnabled, reversalEnabled, openingPostingEnabled, periodEnforcementEnabled, policyGate]
+      properties:
+        foundationEnabled: { type: boolean }
+        draftsEnabled: { type: boolean }
+        postingEnabled: { type: boolean, enum: [false] }
+        reversalEnabled: { type: boolean, enum: [false] }
+        openingPostingEnabled: { type: boolean, enum: [false] }
+        periodEnforcementEnabled: { type: boolean, enum: [false] }
+        policyGate:
+          type: string
+          enum: [OWNER_APPROVAL_REQUIRED]
+
+    LocalizedName:
+      type: object
+      additionalProperties: false
+      required: [en, ar]
+      properties:
+        en: { type: string, minLength: 1, maxLength: 200 }
+        ar: { type: string, minLength: 1, maxLength: 200 }
+
+    VersionedResource:
+      type: object
+      required: [id, companyId, version, active]
+      properties:
+        id: { type: string, format: uuid }
+        companyId: { type: string, format: uuid }
+        version: { type: integer, minimum: 1 }
+        active: { type: boolean }
+
+    AccountNodeKind:
+      type: string
+      enum: [parent, posting]
+
+    Account:
+      allOf:
+        - $ref: '#/components/schemas/VersionedResource'
+        - type: object
+          required: [code, name, accountType, nodeKind, selectableForDraftLines]
+          properties:
+            code: { type: string, minLength: 1, maxLength: 64 }
+            name: { $ref: '#/components/schemas/LocalizedName' }
+            accountType: { type: string, minLength: 1, maxLength: 64 }
+            nodeKind: { $ref: '#/components/schemas/AccountNodeKind' }
+            parentId: { type: string, format: uuid, nullable: true }
+            selectableForDraftLines: { type: boolean }
+
+    AccountCreate:
+      type: object
+      additionalProperties: false
+      required: [code, name, accountType, nodeKind]
+      properties:
+        code: { type: string, minLength: 1, maxLength: 64 }
+        name: { $ref: '#/components/schemas/LocalizedName' }
+        accountType: { type: string, minLength: 1, maxLength: 64 }
+        nodeKind: { $ref: '#/components/schemas/AccountNodeKind' }
+        parentId: { type: string, format: uuid, nullable: true }
+        active: { type: boolean, default: true }
+
+    AccountUpdate:
+      type: object
+      additionalProperties: false
+      minProperties: 1
+      properties:
+        code: { type: string, minLength: 1, maxLength: 64 }
+        name: { $ref: '#/components/schemas/LocalizedName' }
+        accountType: { type: string, minLength: 1, maxLength: 64 }
+        nodeKind: { $ref: '#/components/schemas/AccountNodeKind' }
+        parentId: { type: string, format: uuid, nullable: true }
+        active: { type: boolean }
+
+    MutationReceipt:
+      type: object
+      description: Same key/fingerprint replays this original receipt with replayed=true. Tenant receipt/audit failure rolls back; platform-mirror failure withholds success until recovered.
+      required: [operationId, auditEventId, correlationId, replayed]
+      properties:
+        operationId: { type: string, format: uuid }
+        auditEventId: { type: string, format: uuid }
+        correlationId: { type: string, format: uuid }
+        replayed: { type: boolean }
+
+    MutationAccountResult:
+      allOf:
+        - $ref: '#/components/schemas/MutationReceipt'
+        - type: object
+          required: [resource]
+          properties:
+            resource: { $ref: '#/components/schemas/Account' }
+
+    AccountPage:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/Account' }
+        nextCursor: { type: string, nullable: true }
+
+    DimensionKind:
+      type: string
+      enum: [built_in, custom, tag]
+
+    DimensionDefinition:
+      allOf:
+        - $ref: '#/components/schemas/VersionedResource'
+        - type: object
+          required: [key, kind, name]
+          properties:
+            key: { type: string, pattern: '^[a-z][a-z0-9_]{1,63}$' }
+            kind: { $ref: '#/components/schemas/DimensionKind' }
+            name: { $ref: '#/components/schemas/LocalizedName' }
+
+    DimensionDefinitionCreate:
+      type: object
+      additionalProperties: false
+      required: [key, name]
+      properties:
+        key: { type: string, pattern: '^[a-z][a-z0-9_]{1,63}$' }
+        name: { $ref: '#/components/schemas/LocalizedName' }
+        kind: { type: string, enum: [custom, tag], default: custom }
+        active: { type: boolean, default: true }
+
+    DimensionDefinitionUpdate:
+      type: object
+      additionalProperties: false
+      minProperties: 1
+      properties:
+        name: { $ref: '#/components/schemas/LocalizedName' }
+        active: { type: boolean }
+
+    DimensionValue:
+      allOf:
+        - $ref: '#/components/schemas/VersionedResource'
+        - type: object
+          required: [definitionId, code, name]
+          properties:
+            definitionId: { type: string, format: uuid }
+            code: { type: string, minLength: 1, maxLength: 64 }
+            name: { $ref: '#/components/schemas/LocalizedName' }
+
+    DimensionValueCreate:
+      type: object
+      additionalProperties: false
+      required: [definitionId, code, name]
+      properties:
+        definitionId: { type: string, format: uuid }
+        code: { type: string, minLength: 1, maxLength: 64 }
+        name: { $ref: '#/components/schemas/LocalizedName' }
+        active: { type: boolean, default: true }
+
+    DimensionValueUpdate:
+      type: object
+      additionalProperties: false
+      minProperties: 1
+      properties:
+        code: { type: string, minLength: 1, maxLength: 64 }
+        name: { $ref: '#/components/schemas/LocalizedName' }
+        active: { type: boolean }
+
+    DimensionValuePage:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/DimensionValue' }
+        nextCursor: { type: string, nullable: true }
+
+    DimensionRequirement:
+      type: string
+      enum: [required, optional, prohibited]
+
+    DimensionRule:
+      allOf:
+        - $ref: '#/components/schemas/VersionedResource'
+        - type: object
+          required: [dimensionDefinitionId, requirement]
+          properties:
+            accountId: { type: string, format: uuid, nullable: true }
+            transactionType: { type: string, maxLength: 64, nullable: true }
+            dimensionDefinitionId: { type: string, format: uuid }
+            requirement: { $ref: '#/components/schemas/DimensionRequirement' }
+            effectiveFrom: { type: string, format: date, nullable: true }
+            effectiveTo: { type: string, format: date, nullable: true }
+
+    DimensionRuleCreate:
+      type: object
+      additionalProperties: false
+      required: [dimensionDefinitionId, requirement]
+      anyOf:
+        - required: [accountId]
+        - required: [transactionType]
+      properties:
+        accountId: { type: string, format: uuid, nullable: true }
+        transactionType: { type: string, maxLength: 64, nullable: true }
+        dimensionDefinitionId: { type: string, format: uuid }
+        requirement: { $ref: '#/components/schemas/DimensionRequirement' }
+        effectiveFrom: { type: string, format: date, nullable: true }
+        effectiveTo: { type: string, format: date, nullable: true }
+        active: { type: boolean, default: true }
+
+    DimensionRuleUpdate:
+      type: object
+      additionalProperties: false
+      minProperties: 1
+      properties:
+        requirement: { $ref: '#/components/schemas/DimensionRequirement' }
+        effectiveFrom: { type: string, format: date, nullable: true }
+        effectiveTo: { type: string, format: date, nullable: true }
+        active: { type: boolean }
+
+    Journal:
+      allOf:
+        - $ref: '#/components/schemas/VersionedResource'
+        - type: object
+          required: [code, name, journalType, selectableForDrafts]
+          properties:
+            code: { type: string, minLength: 1, maxLength: 16 }
+            name: { $ref: '#/components/schemas/LocalizedName' }
+            journalType: { type: string, enum: [general] }
+            selectableForDrafts: { type: boolean }
+
+    JournalCreate:
+      type: object
+      additionalProperties: false
+      required: [code, name]
+      properties:
+        code: { type: string, minLength: 1, maxLength: 16 }
+        name: { $ref: '#/components/schemas/LocalizedName' }
+        journalType: { type: string, enum: [general], default: general }
+        active: { type: boolean, default: true }
+
+    JournalUpdate:
+      type: object
+      additionalProperties: false
+      minProperties: 1
+      properties:
+        code: { type: string, minLength: 1, maxLength: 16 }
+        name: { $ref: '#/components/schemas/LocalizedName' }
+        active: { type: boolean }
+
+    CurrencyConfiguration:
+      type: object
+      additionalProperties: false
+      required: [id, companyId, version, currencyCode, nativeDecimalPlaces, nativeMetadataVersion, isBase, enabled]
+      properties:
+        id: { type: string, format: uuid }
+        companyId: { type: string, format: uuid }
+        version: { type: integer, minimum: 1 }
+        currencyCode:
+          type: string
+          pattern: '^[A-Z]{3}$'
+          readOnly: true
+        nativeDecimalPlaces:
+          type: integer
+          minimum: 0
+          maximum: 12
+          readOnly: true
+          description: Immutable descriptive native metadata; not owner-approved rounding policy.
+        nativeMetadataVersion:
+          type: string
+          minLength: 1
+          maxLength: 128
+          readOnly: true
+          description: Immutable identifier for the exact native metadata snapshot.
+        isBase:
+          type: boolean
+          readOnly: true
+          description: Derived from the immutable company base currency in this slice.
+        enabled: { type: boolean }
+
+    CurrencyConfigurationPut:
+      type: object
+      additionalProperties: false
+      required: [enabled]
+      properties:
+        enabled: { type: boolean }
+
+    DecimalAmount:
+      type: string
+      description: Exact non-negative decimal lexeme. Any scale is preserved; metadata-scale excess is a policy blocker, never rounded, truncated, or rejected by draft save.
+      pattern: '^(0|[1-9][0-9]*)(\.[0-9]+)?$'
+      maxLength: 80
+
+    DimensionAssignmentWrite:
+      type: object
+      additionalProperties: false
+      required: [definitionId, valueId]
+      properties:
+        definitionId: { type: string, format: uuid }
+        valueId: { type: string, format: uuid }
+
+    DraftLineWrite:
+      type: object
+      additionalProperties: false
+      description: |
+        Semantic conditional enforced by the server: when transactionCurrencyCode
+        differs from companyBaseCurrencyCode, rateReference and rateEffectiveDate
+        must be non-null; when equal, both must be null. OpenAPI 3.0 cannot compare
+        sibling values, so oneOf enforces the pair shape and validation enforces the
+        currency comparison with stable FX_* codes. No rate or base amount is calculated.
+      required: [id, sequence, accountId, transactionCurrencyCode, transactionPrecision, transactionCurrencyMetadataVersion, companyBaseCurrencyCode, basePrecision, baseCurrencyMetadataVersion, currencyConfigurationVersion, transactionDebit, transactionCredit, baseDebit, baseCredit, rateReference, rateEffectiveDate, dimensions]
+      properties:
+        id: { type: string, format: uuid }
+        sequence: { type: integer, minimum: 1 }
+        accountId: { type: string, format: uuid }
+        description: { type: string, maxLength: 500 }
+        transactionCurrencyCode: { type: string, pattern: '^[A-Z]{3}$' }
+        transactionPrecision:
+          type: integer
+          minimum: 0
+          maximum: 12
+          description: Read-only native metadata snapshot, not a rounding instruction.
+        transactionCurrencyMetadataVersion: { type: string, minLength: 1, maxLength: 128 }
+        companyBaseCurrencyCode: { type: string, pattern: '^[A-Z]{3}$' }
+        basePrecision:
+          type: integer
+          minimum: 0
+          maximum: 12
+          description: Read-only native metadata snapshot, not a rounding instruction.
+        baseCurrencyMetadataVersion: { type: string, minLength: 1, maxLength: 128 }
+        currencyConfigurationVersion: { type: integer, minimum: 1 }
+        transactionDebit: { $ref: '#/components/schemas/DecimalAmount' }
+        transactionCredit: { $ref: '#/components/schemas/DecimalAmount' }
+        baseDebit: { $ref: '#/components/schemas/DecimalAmount' }
+        baseCredit: { $ref: '#/components/schemas/DecimalAmount' }
+        rateReference: { type: string, minLength: 1, maxLength: 200, nullable: true }
+        rateEffectiveDate: { type: string, format: date, nullable: true }
+        dimensions:
+          type: array
+          items: { $ref: '#/components/schemas/DimensionAssignmentWrite' }
+      oneOf:
+        - title: Foreign-currency provenance pair
+          properties:
+            rateReference: { type: string, minLength: 1, maxLength: 200, nullable: false }
+            rateEffectiveDate: { type: string, format: date, nullable: false }
+        - title: Base-currency explicit null pair
+          properties:
+            rateReference: { type: string, nullable: true, enum: [null] }
+            rateEffectiveDate: { type: string, nullable: true, enum: [null] }
+
+    DraftWrite:
+      type: object
+      additionalProperties: false
+      required: [journalId, accountingDate, description, transactionType, lines]
+      properties:
+        journalId: { type: string, format: uuid }
+        accountingDate: { type: string, format: date }
+        description: { type: string, maxLength: 500 }
+        transactionType: { type: string, enum: [manual_journal] }
+        source:
+          nullable: true
+          allOf:
+            - $ref: '#/components/schemas/SourceReference'
+        lines:
+          type: array
+          maxItems: 1000
+          items: { $ref: '#/components/schemas/DraftLineWrite' }
+
+    SourceReference:
+      type: object
+      additionalProperties: false
+      required: [type, id]
+      properties:
+        type: { type: string, maxLength: 64 }
+        id: { type: string, format: uuid }
+
+    DimensionAssignment:
+      allOf:
+        - $ref: '#/components/schemas/DimensionAssignmentWrite'
+        - type: object
+          required: [definitionName, valueName, active]
+          properties:
+            definitionName: { $ref: '#/components/schemas/LocalizedName' }
+            valueName: { $ref: '#/components/schemas/LocalizedName' }
+            active: { type: boolean }
+
+    DraftLine:
+      allOf:
+        - $ref: '#/components/schemas/DraftLineWrite'
+        - type: object
+          required: [accountCode, accountName, dimensions]
+          properties:
+            accountCode: { type: string }
+            accountName: { $ref: '#/components/schemas/LocalizedName' }
+            dimensions:
+              type: array
+              items: { $ref: '#/components/schemas/DimensionAssignment' }
+
+    JournalDraft:
+      type: object
+      additionalProperties: false
+      required: [id, companyId, version, status, journalId, accountingDate, description, transactionType, lines, validationState, ledgerEffect]
+      properties:
+        id: { type: string, format: uuid }
+        companyId: { type: string, format: uuid }
+        version: { type: integer, minimum: 1 }
+        status: { type: string, enum: [draft] }
+        journalId: { type: string, format: uuid }
+        accountingDate: { type: string, format: date }
+        description: { type: string }
+        transactionType: { type: string, enum: [manual_journal] }
+        source:
+          nullable: true
+          allOf:
+            - $ref: '#/components/schemas/SourceReference'
+        lines:
+          type: array
+          items: { $ref: '#/components/schemas/DraftLine' }
+        validationState: { type: string, enum: [not_validated, stale, valid_for_draft, invalid] }
+        ledgerEffect: { $ref: '#/components/schemas/NoLedgerEffect' }
+
+    DraftPage:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/JournalDraft' }
+        nextCursor: { type: string, nullable: true }
+
+    NoLedgerEffect:
+      type: string
+      enum: [none]
+
+    ValidationStatus:
+      type: string
+      enum: [valid_for_draft, invalid]
+
+    ValidationIssue:
+      type: object
+      additionalProperties: false
+      required: [code, messageKey]
+      properties:
+        code:
+          type: string
+          enum:
+            - ACCOUNT_NOT_POSTING
+            - ACCOUNT_INACTIVE
+            - JOURNAL_INACTIVE
+            - CURRENCY_DISABLED
+            - AMOUNT_SCALE_EXCEEDS_METADATA
+            - FX_RATE_REFERENCE_REQUIRED
+            - FX_RATE_EFFECTIVE_DATE_REQUIRED
+            - FX_METADATA_NOT_ALLOWED_FOR_BASE
+            - DEBIT_CREDIT_INVALID
+            - BASE_TOTALS_UNBALANCED
+            - DIMENSION_REQUIRED
+            - DIMENSION_PROHIBITED
+            - DIMENSION_INACTIVE
+            - DIMENSION_OUT_OF_SCOPE
+            - CONFIGURATION_STALE
+            - POLICY_APPROVAL_REQUIRED
+        messageKey: { type: string, minLength: 1, maxLength: 200 }
+        messageParams: { type: object, additionalProperties: true }
+        lineId: { type: string, format: uuid, nullable: true }
+        resourceId: { type: string, format: uuid, nullable: true }
+        field: { type: string, maxLength: 200, nullable: true }
+
+    CurrencyConfigurationSnapshot:
+      type: object
+      additionalProperties: false
+      required: [currencyCode, configurationVersion, nativeMetadataVersion, nativeDecimalPlaces]
+      properties:
+        currencyCode: { type: string, pattern: '^[A-Z]{3}$' }
+        configurationVersion: { type: integer, minimum: 1 }
+        nativeMetadataVersion: { type: string, minLength: 1, maxLength: 128 }
+        nativeDecimalPlaces: { type: integer, minimum: 0, maximum: 12 }
+
+    ConfigurationSnapshot:
+      type: object
+      additionalProperties: false
+      required: [accounts, dimensionRules, journal, currencies]
+      properties:
+        accounts:
+          type: object
+          additionalProperties: { type: integer, minimum: 1 }
+          description: Map of exact account UUID to version.
+        dimensionRules:
+          type: object
+          additionalProperties: { type: integer, minimum: 1 }
+          description: Map of exact rule UUID to version.
+        journal:
+          type: object
+          additionalProperties: false
+          required: [id, version]
+          properties:
+            id: { type: string, format: uuid }
+            version: { type: integer, minimum: 1 }
+        currencies:
+          type: object
+          additionalProperties: { $ref: '#/components/schemas/CurrencyConfigurationSnapshot' }
+          description: Map keyed by currency code with separate enablement and immutable native-metadata versions.
+
+    DraftValidationResult:
+      type: object
+      additionalProperties: false
+      required: [id, draftId, draftVersion, status, ledgerEffect, checksPerformed, errors, warnings, policyBlockers, companyBaseCurrencyCode, basePrecision, baseDebitTotal, baseCreditTotal, configurationSnapshot, validatedAt]
+      properties:
+        id: { type: string, format: uuid }
+        draftId: { type: string, format: uuid }
+        draftVersion: { type: integer, minimum: 1 }
+        status: { $ref: '#/components/schemas/ValidationStatus' }
+        ledgerEffect: { $ref: '#/components/schemas/NoLedgerEffect' }
+        checksPerformed:
+          type: array
+          items:
+            type: string
+            enum: [scope, account_activity_and_kind, journal_activity, currency_completeness, exact_money_metadata, fx_provenance, metadata_scale_policy, debit_credit_shape, dimension_rules, configuration_versions, base_arithmetic]
+        errors:
+          type: array
+          items: { $ref: '#/components/schemas/ValidationIssue' }
+        warnings:
+          type: array
+          items: { $ref: '#/components/schemas/ValidationIssue' }
+        policyBlockers:
+          type: array
+          items: { $ref: '#/components/schemas/ValidationIssue' }
+        companyBaseCurrencyCode: { type: string, pattern: '^[A-Z]{3}$' }
+        basePrecision:
+          type: integer
+          minimum: 0
+          maximum: 12
+          description: Native metadata snapshot for both exact base totals; not a rounding instruction.
+        baseDebitTotal: { $ref: '#/components/schemas/DecimalAmount' }
+        baseCreditTotal: { $ref: '#/components/schemas/DecimalAmount' }
+        configurationSnapshot: { $ref: '#/components/schemas/ConfigurationSnapshot' }
+        validatedAt: { type: string, format: date-time }
+
+    ValidationMutationResult:
+      allOf:
+        - $ref: '#/components/schemas/MutationReceipt'
+        - type: object
+          required: [result, ledgerEffect]
+          properties:
+            result: { $ref: '#/components/schemas/DraftValidationResult' }
+            ledgerEffect: { $ref: '#/components/schemas/NoLedgerEffect' }
+
+    ErrorEnvelope:
+      type: object
+      additionalProperties: false
+      required: [statusCode, code, messageKey, correlationId]
+      properties:
+        statusCode: { type: integer, minimum: 400, maximum: 599 }
+        code: { type: string, minLength: 1, maxLength: 100 }
+        messageKey: { type: string, minLength: 1, maxLength: 200 }
+        correlationId: { type: string, format: uuid }
+        issues:
+          type: array
+          items: { $ref: '#/components/schemas/ValidationIssue' }

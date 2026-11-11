@@ -15,7 +15,10 @@
     "/test/integration/module-selection-live.integration-spec.ts$",
     "/test/integration/tenant-isolation.integration-spec.ts$",
     "/test/integration/tenant-provisioning-live.integration-spec.ts$",
-    "/test/integration/no-odoo-exposure.integration-spec.ts$"
+    "/test/integration/no-odoo-exposure.integration-spec.ts$",
+    "/test/integration/accounting-audit-failure.integration-spec.ts$",
+    "/test/integration/accounting-live.integration-spec.ts$",
+    "/test/integration/accounting-tenant-isolation.integration-spec.ts$"
   ],
   "transform": {
     "^.+\\.ts$": "ts-jest"

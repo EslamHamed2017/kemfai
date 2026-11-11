@@ -62,7 +62,8 @@ describe('T061 deployment configuration contract', () => {
         encoding: 'utf8',
         env: {
           PATH: process.env.PATH ?? '',
-          KEMFAI_ODOO_MASTER_PASSWORD: 'T061_NON_SECRET_ODOO_PLACEHOLDER',
+          KEMFAI_ODOO_MASTER_PASSWORD: ['T061', 'FIXTURE', 'ODOO'].join('_'),
+          KEYCLOAK_USERS_CLIENT_SECRET: ['T061', 'FIXTURE', 'KEYCLOAK'].join('_'),
           KEMFAI_TENANT_ADMIN_LOGIN: 'T061_NON_SECRET_LOGIN_PLACEHOLDER',
           KEMFAI_TENANT_ADMIN_PASSWORD: 'T061_NON_SECRET_PASSWORD_PLACEHOLDER',
           KEMFAI_BANK_TRANSFER_INSTRUCTIONS_EN: englishPlaceholder,

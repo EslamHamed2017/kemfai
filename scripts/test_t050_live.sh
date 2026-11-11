@@ -16,8 +16,8 @@ command -v openssl >/dev/null 2>&1 || { echo "FAIL: openssl is unavailable" >&2;
 command -v curl >/dev/null 2>&1 || { echo "FAIL: curl is unavailable" >&2; exit 1; }
 
 run_id="t050r$(openssl rand -hex 5)"
-label_key="kemfai.t050.run"
-label="${label_key}=${run_id}"
+ownership_label_name="kemfai.t050.run"
+label="${ownership_label_name}=${run_id}"
 network="${run_id}_net"
 pg_container="${run_id}_pg"
 redis_container="${run_id}_redis"
@@ -42,7 +42,7 @@ odoo_master_password="$(openssl rand -hex 24)"
 odoo_admin_login="t050-${run_id}@example.invalid"
 odoo_admin_password="$(openssl rand -hex 24)"
 
-kemfai_docker_cleanup_init "$label_key" "$run_id"
+kemfai_docker_cleanup_init "$ownership_label_name" "$run_id"
 
 fail() {
   echo "FAIL: $*" >&2

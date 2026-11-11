@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
-"""Reserve four unique high loopback ports until the owned runner releases each one."""
+"""Reserve seven unique high loopback ports until the owned runner releases each one."""
 
 import json
 import random
 import socket
 import sys
 
-NAMES = ("pg", "redis", "api", "frontend")
+NAMES = ("pg", "redis", "keycloak", "odoo", "api", "frontend", "fault-control")
 sockets: dict[str, socket.socket] = {}
 
 for name in NAMES:

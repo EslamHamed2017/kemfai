@@ -129,7 +129,7 @@ jobs:
       - working-directory: frontend
         run: npm ci --ignore-scripts
       - working-directory: frontend
-        run: npx playwright install --with-deps chromium
+        run: npx playwright install chromium
       - working-directory: frontend
         run: npx playwright test
 
@@ -191,7 +191,7 @@ jobs:
       - working-directory: frontend
         run: npm ci --ignore-scripts
       - working-directory: frontend
-        run: npx playwright install --with-deps chromium
+        run: npx playwright install chromium
       - name: Pull pinned owned-stack images
         run: |
           docker pull postgres:16
@@ -202,6 +202,8 @@ jobs:
           docker pull odoo:18.0
           docker pull bitnamilegacy/minio@sha256:6dabb4a2088c9a79908de3bc05f4586c23ad2182c8908e7e3acbf61c1467fb20
           docker pull quay.io/keycloak/keycloak:26.0
+      - name: T096 security hardening owned Keycloak
+        run: bash scripts/test_t096_security_hardening.sh
       - name: T050 company validation owned stack
         run: bash scripts/test_t050_live.sh
       - name: T054 company setup owned stack
@@ -232,7 +234,7 @@ jobs:
       - working-directory: frontend
         run: npm ci --ignore-scripts
       - working-directory: frontend
-        run: npx playwright install --with-deps chromium
+        run: npx playwright install chromium
       - name: Pull T112 and US8 fixture images
         run: |
           docker pull postgres:16
@@ -316,5 +318,124 @@ jobs:
         with:
           name: t093-evidence-${{ github.run_id }}-${{ github.run_attempt }}
           path: ${{ runner.temp }}/t093-evidence
+          if-no-files-found: error
+          retention-days: 14
+
+
+  accounting-foundation-owned-live:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    permissions:
+      contents: read
+      pull-requests: read
+    services:
+      postgres:
+        image: postgres:16.10-alpine
+        env:
+          POSTGRES_USER: kemfai_af_ci
+          POSTGRES_PASSWORD: ${{ format('ci-fixture-{0}-{1}', github.run_id, github.run_attempt) }}
+          POSTGRES_DB: kemfai_af_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U kemfai_af_ci -d kemfai_af_ci"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+      redis:
+        image: redis:7.4.7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      CONTROL_DB_HOST: 127.0.0.1
+      CONTROL_DB_PORT: 5432
+      CONTROL_DB_USER: kemfai_af_ci
+      CONTROL_DB_PASSWORD: ${{ format('ci-fixture-{0}-{1}', github.run_id, github.run_attempt) }}
+      CONTROL_DB_NAME: kemfai_af_ci
+      KEMFAI_CI_DB_HOST: 127.0.0.1
+      KEMFAI_CI_DB_PORT: 5432
+      KEMFAI_CI_DB_USER: kemfai_af_ci
+      KEMFAI_CI_DB_PASSWORD: ${{ format('ci-fixture-{0}-{1}', github.run_id, github.run_attempt) }}
+      REDIS_URL: redis://127.0.0.1:6379/15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: |
+            backend/api/package-lock.json
+            frontend/package-lock.json
+      - name: Install backend dependencies
+        working-directory: backend/api
+        run: npm ci --ignore-scripts
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm ci --ignore-scripts
+      - name: Install Chromium browser
+        working-directory: frontend
+        run: npx playwright install chromium
+      - name: Pull exact-owned Accounting Foundation images
+        run: |
+          docker pull postgres:16.10-alpine
+          docker pull redis:7.4.7-alpine
+          docker pull quay.io/keycloak/keycloak:26.0
+          docker pull odoo:18.0
+      - name: Verify accounting foundation branch protection
+        run: python3 scripts/fixtures/accounting_foundation_verify_branch_protection.py
+      - name: Discover and run Accounting Foundation contract suite
+        working-directory: backend/api
+        run: npm run test:contract -- --runInBand --runTestsByPath test/contract/accounting-foundation.contract-spec.ts
+      - name: Discover Accounting Foundation owned integration suites
+        working-directory: backend/api
+        shell: bash
+        run: |
+          discovered="$(npx jest --config test/jest-integration-nonlive.json --runInBand --listTests --json --runTestsByPath test/integration/accounting-tenant-isolation.integration-spec.ts test/integration/accounting-audit-failure.integration-spec.ts)"
+          python3 - "$discovered" <<'PY_DISCOVERY'
+          import json
+          import pathlib
+          import sys
+
+          expected = {
+              "accounting-tenant-isolation.integration-spec.ts",
+              "accounting-audit-failure.integration-spec.ts",
+          }
+          discovered = {pathlib.Path(path).name for path in json.loads(sys.argv[1])}
+          if discovered != expected:
+              raise SystemExit(
+                  f"Accounting Foundation integration discovery mismatch: "
+                  f"expected={sorted(expected)} discovered={sorted(discovered)}"
+              )
+          print(f"PASS: discovered exact owned integration suites: {sorted(discovered)}")
+          PY_DISCOVERY
+      - name: Discover and run Accounting Foundation Odoo suites
+        run: bash scripts/ci/test_odoo_addons.sh
+      - name: Discover and run Accounting Foundation frontend unit suites
+        working-directory: frontend
+        run: npm test -- --ci --runInBand tests/unit/accounting-coa.spec.tsx tests/unit/accounting-dimensions.spec.tsx tests/unit/accounting-journals-currencies.spec.tsx tests/unit/accounting-drafts.spec.tsx
+      - name: Discover Accounting Foundation Playwright journey
+        working-directory: frontend
+        run: npx playwright test --config tests/e2e-live/playwright.accounting-foundation.config.ts --list
+      - name: Run accounting foundation owned live
+        env:
+          KEMFAI_AF_EVIDENCE_DIR: ${{ runner.temp }}/accounting-foundation-evidence
+        run: bash scripts/test_accounting_foundation_owned_live.sh all
+      - name: Validate accounting foundation evidence independently
+        if: always()
+        shell: bash
+        env:
+          KEMFAI_AF_EVIDENCE_DIR: ${{ runner.temp }}/accounting-foundation-evidence
+        run: python3 scripts/fixtures/accounting_foundation_validate_evidence.py "$KEMFAI_AF_EVIDENCE_DIR"
+      - name: Upload accounting foundation evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: accounting-foundation-evidence-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/accounting-foundation-evidence
           if-no-files-found: error
           retention-days: 14

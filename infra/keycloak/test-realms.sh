@@ -39,8 +39,9 @@ c_roles = realm_roles(customers)
 i_roles = realm_roles(internal)
 
 # Task line: customers realm = WorkspaceOwner role; internal realm = the six roles.
-if c_roles != ["WorkspaceOwner"]:
-    problems.append(f"customers realm roles {c_roles} != ['WorkspaceOwner']")
+expected_customer_roles = ["WorkspaceOwner", "accounting.coa.create", "accounting.coa.edit", "accounting.coa.view", "accounting.drafts.edit", "accounting.drafts.view"]
+if sorted(c_roles) != sorted(expected_customer_roles):
+    problems.append(f"customers realm roles {sorted(c_roles)} != {sorted(expected_customer_roles)}")
 expected_internal = ["BillingAdmin", "Support", "SuperAdmin", "CustomerSuccess", "TechnicalAdmin", "ReadOnlyManagement"]
 if sorted(i_roles) != sorted(expected_internal):
     problems.append(f"internal realm roles {sorted(i_roles)} != {sorted(expected_internal)}")
@@ -65,8 +66,15 @@ for label, realm, other_roles in (
     if realm.get("identityProviderMappers"):
         problems.append(f"{label} realm configures identityProviderMappers")
     for role in realm.get("roles", {}).get("realm", []):
-        if role.get("composite"):
-            problems.append(f"{label} realm role '{role['name']}' is composite")
+        if not role.get("composite"):
+            continue
+        allowed = label == "customers" and role.get("name") == "WorkspaceOwner"
+        composed = sorted(role.get("composites", {}).get("realm", []))
+        expected_permissions = sorted(expected_customer_roles[1:])
+        if not allowed or composed != expected_permissions:
+            problems.append(
+                f"{label} realm role '{role['name']}' has unexpected composites {composed}"
+            )
 
 # Required actions in the customers realm (task acceptance: both enabled).
 ra = {a["alias"]: a for a in customers.get("requiredActions", [])}
@@ -82,7 +90,7 @@ if customers["realm"] != "kemfai-customers" or internal["realm"] != "kemfai-inte
 if problems:
     print("\n".join(f"  - {p}" for p in problems))
     sys.exit(1)
-print("  OK: role sets exact and disjoint, no brokering/composites, required actions enabled")
+print("  OK: role sets exact and disjoint, owned accounting composites exact, no brokering, required actions enabled")
 PY
 
 echo "--- part 2: fresh keycloak boot auto-imports both realms ---"
@@ -153,6 +161,9 @@ for label, realm in (("kemfai-customers", customers), ("kemfai-internal", intern
 # Customers realm: WorkspaceOwner present, none of the six internal roles present.
 if "WorkspaceOwner" not in c_roles:
     problems.append("WorkspaceOwner role missing from live kemfai-customers realm")
+for permission in expected_customer_roles[1:]:
+    if permission not in c_roles:
+        problems.append(f"customer accounting permission role missing: {permission}")
 internal_roles = {"BillingAdmin", "Support", "SuperAdmin", "CustomerSuccess", "TechnicalAdmin", "ReadOnlyManagement"}
 leaked = sorted(c_roles & internal_roles)
 if leaked:

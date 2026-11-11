@@ -39,7 +39,8 @@
       "malformedEmail": "Enter a valid email address.",
       "weakPassword": "Your password must be 10–128 characters long.",
       "validation": "We couldn't create your account. Please check the form and try again.",
-      "unexpected": "Something went wrong. Please try again."
+      "unexpected": "Something went wrong. Please try again.",
+      "rateLimited": "Too many attempts. Please wait a minute and try again."
     },
     "planUnavailable": {
       "message": "The plan you selected is no longer available.",
@@ -77,6 +78,10 @@
       "sending": "Sending…",
       "confirmation": "If that email has a pending verification, a new link is on its way.",
       "error": "We couldn't send the email. Please try again."
+    },
+    "rateLimited": {
+      "title": "Too many verification attempts",
+      "body": "Please wait a minute before trying this verification link again."
     }
   },
   "mfa": {
@@ -493,6 +498,239 @@
       "action_not_permitted": "Review the permitted support scope.",
       "unknown": "Review the grant before trying again."
     },
-    "status": { "active": "Active", "expired": "Expired", "revoked": "Revoked" }
+    "status": {
+      "active": "Active",
+      "expired": "Expired",
+      "revoked": "Revoked"
+    }
+  },
+  "accountingCoa": {
+    "title": "Chart of accounts",
+    "treeLabel": "Chart of accounts hierarchy",
+    "loading": "Loading accounts…",
+    "empty": "No accounts yet. Create a parent or posting account to begin.",
+    "saved": "Account change saved.",
+    "formLabel": "Account details",
+    "createTitle": "Create account",
+    "editTitle": "Edit account",
+    "noParent": "No parent",
+    "actions": {
+      "create": "Create account",
+      "edit": "Edit",
+      "deactivate": "Deactivate",
+      "retry": "Try again",
+      "save": "Save account",
+      "saving": "Saving…",
+      "cancel": "Cancel"
+    },
+    "fields": {
+      "code": "Code",
+      "nameEn": "English name",
+      "nameAr": "Arabic name",
+      "accountType": "Account type",
+      "nodeKind": "Node kind",
+      "parent": "Parent account"
+    },
+    "nodeKind": {
+      "parent": "Parent",
+      "posting": "Posting"
+    },
+    "errors": {
+      "load": "We couldn't load the chart of accounts. Try again.",
+      "conflict": "This account changed in another session. Your edits are preserved; review and retry.",
+      "general": "We couldn't save this account. Your edits are preserved; try again."
+    }
+  },
+  "accountingDraft": {
+    "title": "Draft journal entry",
+    "loading": "Loading accounts for this draft…",
+    "saved": "Draft saved with no ledger effect.",
+    "nonPostingNotice": "This draft can only be saved and validated. It cannot be posted and does not create ledger entries.",
+    "actions": {
+      "addLine": "Add draft line",
+      "save": "Save draft",
+      "validate": "Validate draft"
+    },
+    "fields": {
+      "account": "Account",
+      "journalId": "Journal identifier",
+      "accountingDate": "Accounting date",
+      "description": "Description",
+      "moneyMetadata": "Draft amount and currency metadata",
+      "transactionCurrencyCode": "Transaction currency code",
+      "transactionPrecision": "Transaction currency precision",
+      "transactionMetadataVersion": "Transaction currency metadata version",
+      "baseCurrencyCode": "Company base currency code",
+      "basePrecision": "Base currency precision",
+      "baseMetadataVersion": "Base currency metadata version",
+      "currencyConfigurationVersion": "Currency configuration version",
+      "transactionDebit": "Transaction debit",
+      "transactionCredit": "Transaction credit",
+      "baseDebit": "Base-currency debit",
+      "baseCredit": "Base-currency credit",
+      "rateReference": "Caller-supplied FX rate reference",
+      "rateEffectiveDate": "FX rate effective date"
+    },
+    "accounts": {
+      "selectPlaceholder": "Select an account",
+      "postingEligible": "Eligible for draft lines",
+      "notPostingEligible": "Not eligible for draft lines"
+    },
+    "lines": {
+      "label": "Draft lines"
+    },
+    "errors": {
+      "load": "We couldn’t load the accounts for this draft. Try again.",
+      "accountNotPosting": "Select an active posting account. Parent and inactive accounts cannot be used on draft lines.",
+      "mutation": "We couldn’t save or validate this draft. Your input is preserved; try again safely.",
+      "DIMENSION_REQUIRED": "A value is required for this dimension.",
+      "DIMENSION_PROHIBITED": "This dimension is not allowed on the draft line.",
+      "DIMENSION_VALUE_INACTIVE": "The selected dimension value is inactive.",
+      "DIMENSION_VALUE_SCOPE": "The selected dimension value does not belong to this company or dimension.",
+      "rateReferenceEffectiveRequired": "Provide both the caller-supplied FX rate reference and its effective date. No rate or base amount is inferred.",
+      "configurationStale": "The draft configuration changed. Your exact values are preserved; review the focused field and try again."
+    },
+    "dimensions": {
+      "selectPlaceholder": "Select a dimension value",
+      "errorsLabel": "Draft dimension validation issues",
+      "errorsSummary": "Review all dimension issues before continuing.",
+      "unknown": "Unknown dimension"
+    },
+    "journals": {
+      "selectPlaceholder": "Select a journal"
+    },
+    "currencies": {
+      "selectPlaceholder": "Select a currency"
+    },
+    "preview": {
+      "title": "Arithmetic validation preview",
+      "nonPosting": "No ledger effect — this is not posting.",
+      "companyBaseCurrency": "Company base currency",
+      "basePrecision": "Base precision",
+      "baseDebitTotal": "Base debit total",
+      "baseCreditTotal": "Base credit total",
+      "configurationSnapshot": "Configuration snapshot",
+      "errors": "Errors",
+      "warnings": "Warnings",
+      "policyBlockers": "Policy blockers"
+    }
+  },
+  "accountingDimensions": {
+    "title": "Dimensions and validation rules",
+    "loading": "Loading dimensions, values, and rules…",
+    "empty": "No dimension definitions are available for this company.",
+    "tableLabel": "Dimension definitions, values, and rules",
+    "valuesLabel": "Dimension values",
+    "rulesLabel": "Dimension validation rules",
+    "inactive": "Inactive",
+    "actions": {
+      "createValue": "Create dimension value",
+      "createRule": "Create validation rule",
+      "retry": "Try again",
+      "save": "Save",
+      "saving": "Saving…",
+      "cancel": "Cancel"
+    },
+    "columns": {
+      "dimension": "Dimension",
+      "kind": "Type",
+      "values": "Values",
+      "rules": "Rules"
+    },
+    "kind": {
+      "built_in": "Built-in",
+      "custom": "Custom",
+      "tag": "Tag"
+    },
+    "valueEditor": {
+      "title": "Create dimension value"
+    },
+    "ruleEditor": {
+      "title": "Create dimension validation rule"
+    },
+    "fields": {
+      "dimension": "Dimension",
+      "code": "Code",
+      "nameEn": "English name",
+      "nameAr": "Arabic name",
+      "account": "Account",
+      "noAccount": "All accounts",
+      "transactionType": "Transaction type",
+      "requirement": "Requirement",
+      "effectiveFrom": "Effective from",
+      "effectiveTo": "Effective to"
+    },
+    "requirement": {
+      "optional": "Optional",
+      "required": "Required",
+      "prohibited": "Prohibited"
+    },
+    "errors": {
+      "load": "We couldn’t load dimensions and rules. Try again.",
+      "conflict": "This configuration changed elsewhere. Reload it before trying again.",
+      "validation": "Check the dimension value or rule fields and try again.",
+      "general": "We couldn’t save this dimension configuration. Your input is preserved; try again safely."
+    }
+  },
+  "accounting": {
+    "title": "Journals and currencies",
+    "loading": "Loading journals and currencies…",
+    "saved": "Changes saved.",
+    "journalDialogLabel": "Journal editor",
+    "journalCreateTitle": "Create journal",
+    "journalEditTitle": "Edit journal",
+    "actions": {
+      "createJournal": "Create journal",
+      "enableCurrency": "Enable currency",
+      "disableCurrency": "Disable currency",
+      "retry": "Try again",
+      "edit": "Edit",
+      "save": "Save",
+      "cancel": "Cancel"
+    },
+    "journals": {
+      "title": "Journals",
+      "empty": "No journals are configured for this company.",
+      "tableLabel": "Company journals"
+    },
+    "currencies": {
+      "title": "Currencies",
+      "empty": "No currencies are available for this company.",
+      "tableLabel": "Company currencies"
+    },
+    "fields": {
+      "code": "Code",
+      "name": "Name",
+      "nameEn": "English name",
+      "nameAr": "Arabic name",
+      "type": "Type",
+      "status": "Status",
+      "actions": "Actions",
+      "currency": "Currency",
+      "enabled": "Enabled",
+      "base": "Base currency",
+      "nativeDecimalPlaces": "Native decimal places",
+      "nativeMetadataVersion": "Native metadata version",
+      "active": "Active"
+    },
+    "status": {
+      "active": "Active",
+      "inactive": "Inactive (history only)",
+      "enabled": "Enabled",
+      "disabled": "Disabled",
+      "base": "Base",
+      "nonBase": "Foreign"
+    },
+    "errors": {
+      "load": "We couldn’t load journals and currencies. Try again.",
+      "invalidRequest": "Check the accounting request and try again.",
+      "forbidden": "You don’t have permission to perform this accounting action.",
+      "notFound": "The requested accounting record was not found.",
+      "conflict": "This accounting request conflicts with an existing change. Review and try again.",
+      "staleConflict": "This record changed elsewhere. Your edits are preserved; review and try again.",
+      "validation": "Review the accounting values and correct the highlighted issues.",
+      "rateLimited": "Too many accounting requests were made. Wait a moment and try again.",
+      "mutation": "We couldn’t save this change. Your input is preserved; try again safely."
+    }
   }
 }

@@ -10,7 +10,7 @@ Decisions that must be frozen before production architecture is final (Spec sect
 | 3 | Billing Phase 2 | LOCKED | Stripe behind KEMFAI Billing Service |
 | 4 | Languages | LOCKED | English + Arabic Day 1, full LTR/RTL |
 | 5 | Country Compliance | LOCKED PRINCIPLE | Country packs per official regs, versioned |
-| 6 | Accounting Policies | LOCKED APPROACH | Explicit Accounting Policy Matrix |
+| 6 | Accounting Policies | LOCKED — v1.0 APPROVED 2026-11-07 | Explicit versioned Accounting Policy Matrix; production activation remains subject to implementation, test, independent-review and acceptance gates |
 
 ## Still OPEN (owner to decide)
 | # | Decision | Options | Recommended default | Owner decision |

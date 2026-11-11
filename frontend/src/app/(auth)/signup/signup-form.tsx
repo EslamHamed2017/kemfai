@@ -45,6 +45,7 @@ export function SignupForm({ planId, billingCycle }: SignupFormProps) {
     try {
       const { error, response } = await getBrowserApiClient().POST('/accounts/signup', {
         body: { email, password, planId, billingCycle, acceptedTerms },
+        params: { header: { 'Accept-Language': locale } },
       });
 
       if (error) {
@@ -63,8 +64,8 @@ export function SignupForm({ planId, billingCycle }: SignupFormProps) {
   if (succeeded) {
     return (
       <main dir={locale === 'ar' ? 'rtl' : 'ltr'}>
-      {/* T104/FR-024 — the locale switcher is available at EVERY onboarding step. */}
-      <LocaleSwitcher />
+        {/* T104/FR-024 — the locale switcher is available at EVERY onboarding step. */}
+        <LocaleSwitcher />
         <h1>{t('success.title')}</h1>
         <p>{t('success.body', { email })}</p>
       </main>
@@ -127,6 +128,7 @@ export function SignupForm({ planId, billingCycle }: SignupFormProps) {
         {errorKind === 'weakPassword' ? <p role="alert">{t('errors.weakPassword')}</p> : null}
         {errorKind === 'validation' ? <p role="alert">{t('errors.validation')}</p> : null}
         {errorKind === 'unexpected' ? <p role="alert">{t('errors.unexpected')}</p> : null}
+        {errorKind === 'rateLimited' ? <p role="alert">{t('errors.rateLimited')}</p> : null}
         {errorKind === 'planUnavailable' ? (
           <p role="alert">
             {t('planUnavailable.message')} <a href="/plans">{t('planUnavailable.link')}</a>

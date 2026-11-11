@@ -56,7 +56,7 @@ describe('MinioStorageService (T025)', () => {
   });
 
   describe('presigned URLs', () => {
-    it('issues a presigned upload URL with the default 15-minute expiry', async () => {
+    it('issues a presigned upload URL with the hardened five-minute expiry', async () => {
       const { client } = fakeClient();
       const service = new MinioStorageService(client);
 
@@ -69,9 +69,26 @@ describe('MinioStorageService (T025)', () => {
       expect(client.presignedPutObject).toHaveBeenCalledWith(
         'kemfai-tenant-t-abc',
         'payment-submissions/s1/f.pdf',
-        15 * 60,
+        5 * 60,
       );
     });
+
+    it.each([0, -1, 301, 1.5, Number.NaN])(
+      'rejects an unsafe presigned expiry override (%s) before calling MinIO',
+      async (expiry) => {
+        const { client } = fakeClient();
+        const service = new MinioStorageService(client);
+
+        await expect(
+          service.getPresignedDownloadUrl(
+            'kemfai-tenant-t-abc',
+            'payment-submissions/s1/f.pdf',
+            expiry,
+          ),
+        ).rejects.toThrow(RangeError);
+        expect(client.presignedGetObject).not.toHaveBeenCalled();
+      },
+    );
 
     it('issues a presigned download URL and honors a caller-supplied expiry override', async () => {
       const { client } = fakeClient();

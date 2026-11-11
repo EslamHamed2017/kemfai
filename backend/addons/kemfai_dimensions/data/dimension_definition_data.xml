@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo noupdate="1">
+  <record id="dimension_definition_entity" model="kemfai.dimension.definition">
+    <field name="public_id">a1d0e4a8-9d31-4f7b-8dc4-2cbec3f27521</field>
+    <field name="company_id" ref="base.main_company"/>
+    <field name="key">entity</field>
+    <field name="kind">built_in</field>
+    <field name="name_en">Entity</field>
+    <field name="name_ar">الكيان</field>
+    <field name="active" eval="True"/>
+  </record>
+  <record id="dimension_definition_branch" model="kemfai.dimension.definition">
+    <field name="public_id">75868e10-f447-4cf0-a693-4e96308c8536</field>
+    <field name="company_id" ref="base.main_company"/>
+    <field name="key">branch</field>
+    <field name="kind">built_in</field>
+    <field name="name_en">Branch / Location</field>
+    <field name="name_ar">الفرع / الموقع</field>
+    <field name="active" eval="True"/>
+  </record>
+  <record id="dimension_definition_department" model="kemfai.dimension.definition">
+    <field name="public_id">38af5177-0c27-4ead-aab5-f9cf3e27eaa5</field>
+    <field name="company_id" ref="base.main_company"/>
+    <field name="key">department</field>
+    <field name="kind">built_in</field>
+    <field name="name_en">Department</field>
+    <field name="name_ar">القسم</field>
+    <field name="active" eval="True"/>
+  </record>
+  <record id="dimension_definition_cost_center" model="kemfai.dimension.definition">
+    <field name="public_id">783d88c6-004f-487e-9a2b-16c4a10959bb</field>
+    <field name="company_id" ref="base.main_company"/>
+    <field name="key">cost_center</field>
+    <field name="kind">built_in</field>
+    <field name="name_en">Cost Center</field>
+    <field name="name_ar">مركز التكلفة</field>
+    <field name="active" eval="True"/>
+  </record>
+  <record id="dimension_definition_project" model="kemfai.dimension.definition">
+    <field name="public_id">c41e64ad-f66d-4c95-8186-ae2ce03a74eb</field>
+    <field name="company_id" ref="base.main_company"/>
+    <field name="key">project</field>
+    <field name="kind">built_in</field>
+    <field name="name_en">Project</field>
+    <field name="name_ar">المشروع</field>
+    <field name="active" eval="True"/>
+  </record>
+  <record id="dimension_definition_salesperson" model="kemfai.dimension.definition">
+    <field name="public_id">c96c9562-b356-40d5-8010-b7340c2420b5</field>
+    <field name="company_id" ref="base.main_company"/>
+    <field name="key">salesperson</field>
+    <field name="kind">built_in</field>
+    <field name="name_en">Salesperson</field>
+    <field name="name_ar">مندوب المبيعات</field>
+    <field name="active" eval="True"/>
+  </record>
+</odoo>

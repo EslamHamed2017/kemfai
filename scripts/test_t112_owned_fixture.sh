@@ -333,8 +333,8 @@ coproc T112_PORT_KEEPER { exec setsid python3 "$repo_dir/scripts/reserve_loopbac
 port_keeper_pid="$T112_PORT_KEEPER_PID"
 port_read_fd="${T112_PORT_KEEPER[0]}"
 port_write_fd="${T112_PORT_KEEPER[1]}"
-register_owned_process "$port_keeper_pid" reserve_loopback_ports.py
 read -r port_json <&"$port_read_fd"
+register_owned_process "$port_keeper_pid" reserve_loopback_ports.py
 readarray -t reserved_ports < <(
   python3 -c 'import json,sys; data=json.loads(sys.argv[1]); [print(data[key]) for key in ("pg","redis","api","frontend")]' "$port_json"
 )

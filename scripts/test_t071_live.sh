@@ -60,32 +60,24 @@ one('control_db="${run_id}_ctrl"', '''control_db="${run_id}_ctrl"
 pg_volume="${run_id}_pgdata"
 minio_volume="${run_id}_miniodata"
 odoo_volume="${run_id}_odoodata"''')
-one('declare -a owned_containers=()', '''declare -a owned_containers=()
+one('kemfai_docker_cleanup_init "kemfai.t071.run" "$run_id"', '''kemfai_docker_cleanup_init "kemfai.t071.run" "$run_id"
 declare -a owned_volumes=()
 declare -a relay_pids=()
 declare -A owned_pid_starttime=()
 declare -A owned_pid_session=()''')
-one('owned_containers+=("$redis_container")\ndocker run -d --label "$label" --name "$redis_container" --network "$network" \\\n  -p 127.0.0.1::6379 redis:7-alpine >/dev/null', '''owned_containers+=("$redis_container")
-docker run -d --label "$label" --name "$redis_container" --network "$network" \\
-  -p 127.0.0.1::6379 redis:7-alpine >/dev/null
+one('  -p 127.0.0.1::6379 redis:7-alpine >/dev/null', '''  -p 127.0.0.1::6379 redis:7-alpine >/dev/null
 
 minio_access="t071$(openssl rand -hex 8)"; minio_secret="$(openssl rand -hex 24)"
 printf '%s\\0%s\\0' "$minio_access" "$minio_secret" >> "$redaction_secrets_file"
 minio_env="$private_dir/minio.env"
 printf 'MINIO_ROOT_USER=%s\\nMINIO_ROOT_PASSWORD=%s\\n' "$minio_access" "$minio_secret" > "$minio_env"; chmod 600 "$minio_env"
-owned_containers+=("$minio_container")
-docker run -d --label "$label" --name "$minio_container" --network "$network" --env-file "$minio_env" \\
-  -p 127.0.0.1::9000 minio/minio:RELEASE.2025-04-22T22-12-26Z server /data >/dev/null
-minio_host_port="$(docker port "$minio_container" 9000/tcp | head -1 | cut -d: -f2)"''')
-
-one('minio_host_port="$(docker port "$minio_container" 9000/tcp | head -1 | cut -d: -f2)"', '''minio_host_port="$(docker port "$minio_container" 9000/tcp | head -1 | cut -d: -f2)"
-ready=0
-for _ in $(seq 1 60); do if curl --fail --silent "http://127.0.0.1:${minio_host_port}/minio/health/ready" >/dev/null 2>&1; then ready=1; break; fi; sleep 0.5; done
-[ "$ready" -eq 1 ] || fail 'private MinIO container never became ready' ''')
+kemfai_register_container_intent "$minio_container"
+docker run -d --label "$label" --name "$minio_container" --network "$network" --env-file "$minio_env" \
+  -p 127.0.0.1::9000 minio/minio:RELEASE.2025-04-22T22-12-26Z server /data >/dev/null''')
 
 # Permanent containers use explicitly named, exactly-labelled volumes. This avoids
 # anonymous data-volume leaks and makes ownership/survivor verification possible.
-one('owned_network="$network"\ndocker network create --internal --label "$label" "$network" >/dev/null', '''owned_network="$network"
+one('kemfai_register_network_intent "$network"\ndocker network create --internal --label "$label" "$network" >/dev/null', '''kemfai_register_network_intent "$network"
 docker network create --internal --label "$label" "$network" >/dev/null
 for volume in "$pg_volume" "$minio_volume" "$odoo_volume"; do
   owned_volumes+=("$volume")
@@ -94,7 +86,6 @@ done''')
 one('--env-file "$pg_env_file" -p 127.0.0.1::5432 postgres:16', '--env-file "$pg_env_file" -v "${pg_volume}:/var/lib/postgresql/data" -p 127.0.0.1::5432 postgres:16')
 one('-p 127.0.0.1::9000 minio/minio:RELEASE.2025-04-22T22-12-26Z server /data', '-v "${minio_volume}:/data" -p 127.0.0.1::9000 quay.io/minio/minio@sha256:14cea493d9a34af32f524e538b8346cf79f3321eff8e708c1e2960462bd8936e server /data')
 one('-v "${conf_file}:/etc/odoo/odoo.conf:ro" -p 127.0.0.1::8069 odoo:18', '-v "${conf_file}:/etc/odoo/odoo.conf:ro" -v "${odoo_volume}:/var/lib/odoo" -p 127.0.0.1::8069 odoo:18')
-one('docker rm -f "$resource_id"', 'docker rm -fv "$resource_id"')
 for port in (5432, 6379, 9000, 8080, 8069):
     one(f' -p 127.0.0.1::{port}', '')
 one('pg_host_port="$(docker port "$pg_container" 5432/tcp | head -1 | cut -d: -f2)"\nredis_host_port="$(docker port "$redis_container" 6379/tcp | head -1 | cut -d: -f2)"', 'start_owned_relay "$pg_container" 5432 pg_host_port\nstart_owned_relay "$redis_container" 6379 redis_host_port')
@@ -105,7 +96,14 @@ for _ in $(seq 1 60); do
   sleep 0.5
 done
 [ "$ready" -eq 1 ] || fail "private Redis container '${redis_container}' never became ready"''')
-one('minio_host_port="$(docker port "$minio_container" 9000/tcp | head -1 | cut -d: -f2)"', 'start_owned_relay "$minio_container" 9000 minio_host_port')
+one('kemfai_register_container_intent "$kc_container"', '''start_owned_relay "$minio_container" 9000 minio_host_port
+ready=0
+for _ in $(seq 1 60); do
+  if curl --fail --silent "http://127.0.0.1:${minio_host_port}/minio/health/ready" >/dev/null 2>&1; then ready=1; break; fi
+  sleep 0.5
+done
+[ "$ready" -eq 1 ] || fail 'private MinIO container never became ready'
+kemfai_register_container_intent "$kc_container"''')
 one('kc_host_port="$(docker port "$kc_container" 8080/tcp | head -1 | cut -d: -f2)"', 'start_owned_relay "$kc_container" 8080 kc_host_port')
 one('odoo_host_port="$(docker port "$http_container" 8069/tcp | head -1 | cut -d: -f2)"', 'start_owned_relay "$http_container" 8069 odoo_host_port')
 
@@ -120,9 +118,9 @@ relay_code=r'''
 start_owned_relay() {
   local container_name="$1" target_port="$2" output_name="$3"
   local container_id network_id ownership_status target_ip subnet config ready relay_pid relay_port ready_pid
-  container_id="$(exact_owned_container_id "$container_name")"; ownership_status=$?
+  container_id="$(kemfai_exact_owned_container_id "$container_name")"; ownership_status=$?
   [ "$ownership_status" -eq 0 ] || fail "cannot establish exact ownership for relay target ${container_name}"
-  network_id="$(exact_owned_network_id "$network")"; ownership_status=$?
+  network_id="$(kemfai_exact_owned_network_id "$network")"; ownership_status=$?
   [ "$ownership_status" -eq 0 ] && [ -n "$network_id" ] || fail "cannot establish exact ownership for relay network"
   target_ip="$(docker inspect -f "{{with index .NetworkSettings.Networks \"${network}\"}}{{.IPAddress}}{{end}}" "$container_id" 2>/dev/null)" || fail "cannot inspect relay target ${container_name}"
   subnet="$(docker network inspect -f '{{(index .IPAM.Config 0).Subnet}}' "$network" 2>/dev/null)" || fail "cannot inspect owned relay subnet"
@@ -161,17 +159,17 @@ exact_owned_volume_id() {
   printf '%s\n' "$resource_id"
 }
 '''
-network_end=s.index('\n# Each of api_pid/frontend_pid', s.index('exact_owned_network_id()'))
-s=s[:network_end]+volume_code+s[network_end:]
+cleanup_start=s.index('\ncleanup() {')
+s=s[:cleanup_start]+volume_code+s[cleanup_start:]
 
 # Process terminators must affect cleanup status, then owned named volumes are removed
 # and exact-label survivors fail closed.
 one('terminate_owned_process_group "$frontend_pid" "next"', 'terminate_owned_process_group "$frontend_pid" "next" || cleanup_verification_failed=1')
 one('terminate_owned_process_group "$api_pid" "dist/main.js"', 'terminate_owned_process_group "$api_pid" "dist/main.js" || cleanup_verification_failed=1')
-one('  for name in "${owned_containers[@]}"; do', '''  for relay_pid in "${relay_pids[@]}"; do
+one('  kemfai_cleanup_owned_containers || cleanup_verification_failed=1', '''  for relay_pid in "${relay_pids[@]}"; do
     terminate_owned_process_group "$relay_pid" "t071_loopback_relay.py" || cleanup_verification_failed=1
   done
-  for name in "${owned_containers[@]}"; do''')
+  kemfai_cleanup_owned_containers || cleanup_verification_failed=1''')
 volume_cleanup=r'''
   for name in "${owned_volumes[@]}"; do
     resource_id="$(exact_owned_volume_id "$name")"; ownership_status=$?
@@ -185,7 +183,7 @@ volume_cleanup=r'''
   volume_survivors="$(docker volume ls -q --filter "label=kemfai.t071.run=${run_id}" 2>/dev/null)" || cleanup_verification_failed=1
   if [ -n "$volume_survivors" ]; then echo "FAIL cleanup: exact-label T071 volume survivor(s) detected for run ${run_id}" >&2; cleanup_verification_failed=1; fi
 '''
-container_survivor_anchor='  if ! network_survivors="$(' 
+container_survivor_anchor='  kemfai_cleanup_owned_networks || cleanup_verification_failed=1'
 idx=s.index(container_survivor_anchor, s.index('cleanup() {'))
 s=s[:idx]+volume_cleanup+s[idx:]
 
@@ -290,6 +288,10 @@ one('export KEMFAI_API_URL="http://127.0.0.1:${api_port}"\n  export REDIS_URL=',
   export REDIS_URL=''')
 
 one('npx playwright test --config tests/e2e-live/playwright.live.config.ts', 'npx playwright test --config tests/e2e-live/playwright.t071-live.config.ts')
+one('npx playwright test --config tests/e2e-live/playwright.t071-live.config.ts tests/e2e-live/t071-real-browser.live.spec.ts',
+    'npx playwright test --config tests/e2e-live/playwright.t071-live.config.ts tests/e2e-live/t071-billing-admin.live.spec.ts')
+one('real browser harness (tests/e2e-live/t071-real-browser.live.spec.ts) failed',
+    'real browser harness (tests/e2e-live/t071-billing-admin.live.spec.ts) failed')
 export_anchor='export T071_BETA_TENANT_ID="$beta_tenant_id"'
 exports=r'''
 export T071_API_URL="http://127.0.0.1:${api_port}" T071_BILLING_ADMIN_EMAIL="$admin_email" T071_BILLING_ADMIN_PASSWORD="$admin_password"
