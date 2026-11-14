@@ -55,8 +55,9 @@ def main() -> None:
     try:
         assert process.stdout and process.stdin
         ports = json.loads(process.stdout.readline())
-        assert set(ports) == {"pg", "redis", "api", "frontend"}
-        assert len(set(ports.values())) == 4
+        expected_names = {"pg", "redis", "keycloak", "odoo", "api", "frontend", "fault-control"}
+        assert set(ports) == expected_names
+        assert len(set(ports.values())) == len(expected_names)
         assert all(20000 <= value < 60000 for value in ports.values())
         for port in ports.values():
             assert_bind_fails(port)
@@ -68,7 +69,7 @@ def main() -> None:
             probe.bind(("127.0.0.1", ports["pg"]))
         finally:
             probe.close()
-        for name in ("redis", "api", "frontend"):
+        for name in expected_names - {"pg"}:
             assert_bind_fails(ports[name])
     finally:
         process.terminate()

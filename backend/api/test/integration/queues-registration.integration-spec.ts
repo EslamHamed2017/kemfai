@@ -2,6 +2,7 @@ import { Queue } from 'bullmq';
 import { redisConnectionFromUrl } from '../../src/common/queues/redis-connection';
 import {
   QUEUE_EMAIL_SEND_VERIFICATION,
+  QUEUE_ACCOUNTING_MUTATION_RECOVERY,
   QUEUE_SUPPORT_ACCESS_EXPIRY_SWEEP,
   QUEUE_TENANT_PROVISION,
   QUEUE_TRIAL_EXPIRY_SWEEP,
@@ -30,9 +31,11 @@ describe('BullMQ queue registration (T021)', () => {
     'notification.billing_decision',
     QUEUE_SUPPORT_ACCESS_EXPIRY_SWEEP,
     QUEUE_TRIAL_EXPIRY_SWEEP,
+    QUEUE_ACCOUNTING_MUTATION_RECOVERY,
   ].map((name) => new Queue(name, { connection }));
 
-  const [tenantProvision, emailVerification, , supportAccessSweep, trialSweep] = queues;
+  const [tenantProvision, emailVerification, , supportAccessSweep, trialSweep, accountingRecovery] =
+    queues;
 
   afterAll(async () => {
     for (const queue of queues) {
@@ -58,9 +61,14 @@ describe('BullMQ queue registration (T021)', () => {
         'notification.billing_decision',
         QUEUE_SUPPORT_ACCESS_EXPIRY_SWEEP,
         QUEUE_TRIAL_EXPIRY_SWEEP,
+        QUEUE_ACCOUNTING_MUTATION_RECOVERY,
       ].sort(),
     );
-    const sweepNames = new Set([QUEUE_SUPPORT_ACCESS_EXPIRY_SWEEP, QUEUE_TRIAL_EXPIRY_SWEEP]);
+    const sweepNames = new Set([
+      QUEUE_SUPPORT_ACCESS_EXPIRY_SWEEP,
+      QUEUE_TRIAL_EXPIRY_SWEEP,
+      QUEUE_ACCOUNTING_MUTATION_RECOVERY,
+    ]);
     for (const queue of queues) {
       const counts = await queue.getJobCounts();
       expect(counts).toBeDefined();
@@ -84,7 +92,11 @@ describe('BullMQ queue registration (T021)', () => {
   });
 
   it('registers each 30s sweep schedule exactly once, idempotently (events.md sweep rows)', async () => {
-    const scheduler = new QueueSchedulingService(supportAccessSweep, trialSweep);
+    const scheduler = new QueueSchedulingService(
+      supportAccessSweep,
+      trialSweep,
+      accountingRecovery,
+    );
 
     await scheduler.ensureSweepSchedules();
     await scheduler.ensureSweepSchedules(); // re-bootstrap must not duplicate

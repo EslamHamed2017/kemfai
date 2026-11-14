@@ -1083,7 +1083,7 @@ refusal after expiry, and confirm every action is audit-logged — independent o
     build, not just a warning.
   - **Roles**: Primary: Codex · Backup: Claude · Reviewer: Gemini
 
-- [ ] T096 Security hardening pass: presigned URL expiry tuning, Keycloak service-account credential scoping,
+- [x] T096 Security hardening pass: presigned URL expiry tuning, Keycloak service-account credential scoping,
   and rate limiting on `/accounts/signup` and `/accounts/verify-email`, in `backend/api/src/common/` and
   `backend/api/src/integrations/minio/`
   - **Dependencies**: T025, T032, T033
@@ -1091,7 +1091,7 @@ refusal after expiry, and confirm every action is audit-logged — independent o
     endpoints reject bursts beyond a documented rate limit with a localized 429.
   - **Roles**: Primary: GLM · Backup: Claude · Reviewer: Codex
 
-- [ ] T097 [P] Documentation: reconcile any implementation-time deviations discovered during build back into
+- [x] T097 [P] Documentation: reconcile any implementation-time deviations discovered during build back into
   `specs/001-saas-onboarding-shell/quickstart.md` and, if a locked baseline item is affected, flag it for Owner
   approval per `docs/GATE0_DECISIONS.md`
   - **Dependencies**: T001–T096, T099–T107 (post-implementation — the full set of Setup/Foundational/User-Story
@@ -1104,7 +1104,7 @@ refusal after expiry, and confirm every action is audit-logged — independent o
     merged (Constitution Governance).
   - **Roles**: Primary: Claude · Backup: Gemini · Reviewer: Codex
 
-- [ ] T098 Run the full `quickstart.md` validation end-to-end (all 8 story walkthroughs, once EN/LTR and once
+- [x] T098 Run the full `quickstart.md` validation end-to-end (all 8 story walkthroughs, once EN/LTR and once
   AR/RTL) and record pass/fail results
   - **Dependencies**: T097, T108, T109, T110, T111, T112 (previously only T097, which let this task claim a
     fully green automated suite before the CI wiring and full-surface sweeps it depends on even existed — fixed
@@ -1117,7 +1117,7 @@ refusal after expiry, and confirm every action is audit-logged — independent o
     T001–T096 suite.
   - **Roles**: Primary: Gemini · Backup: Claude · Reviewer: Codex
 
-- [ ] T108 [P] Wire the NestJS Jest contract/integration suites (`npm run test:contract`,
+- [x] T108 [P] Wire the NestJS Jest contract/integration suites (`npm run test:contract`,
   `npm run test:integration` in `backend/api`), the Playwright e2e/a11y suites (`npx playwright test` in
   `frontend`), and the Odoo addon Python tests (`odoo-bin --test-enable` against each `kemfai_*` addon) into
   `.github/workflows/ci.yml`, replacing the `accounting-invariants` job's literal `echo` placeholder with real

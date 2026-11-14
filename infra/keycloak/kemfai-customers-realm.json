@@ -12,7 +12,56 @@
       {
         "id": "9a1f2c34-1b2c-4e3f-8a9b-4c5d6e7f8a01",
         "name": "WorkspaceOwner",
-        "description": "Workspace Owner - automatically assigned to the verifying user of a tenant, scoped to their own tenant only (FR-002, data-model.md Roles & Scopes). Role name matches the camel-case convention committed in support_access_grantee_role_enum.",
+        "description": "Workspace Owner with configuration-driven Accounting Foundation permissions, scoped to its own ready tenant.",
+        "composite": true,
+        "clientRole": false,
+        "containerId": "kemfai-customers",
+        "composites": {
+          "realm": [
+            "accounting.coa.view",
+            "accounting.coa.create",
+            "accounting.coa.edit",
+            "accounting.drafts.view",
+            "accounting.drafts.edit"
+          ]
+        }
+      },
+      {
+        "id": "9a1f2c34-1b2c-4e3f-8a9b-4c5d6e7f8a02",
+        "name": "accounting.coa.view",
+        "description": "Accounting Foundation permission; granted through configured customer role composition.",
+        "composite": false,
+        "clientRole": false,
+        "containerId": "kemfai-customers"
+      },
+      {
+        "id": "9a1f2c34-1b2c-4e3f-8a9b-4c5d6e7f8a03",
+        "name": "accounting.coa.create",
+        "description": "Accounting Foundation permission; granted through configured customer role composition.",
+        "composite": false,
+        "clientRole": false,
+        "containerId": "kemfai-customers"
+      },
+      {
+        "id": "9a1f2c34-1b2c-4e3f-8a9b-4c5d6e7f8a04",
+        "name": "accounting.coa.edit",
+        "description": "Accounting Foundation permission; granted through configured customer role composition.",
+        "composite": false,
+        "clientRole": false,
+        "containerId": "kemfai-customers"
+      },
+      {
+        "id": "9a1f2c34-1b2c-4e3f-8a9b-4c5d6e7f8a05",
+        "name": "accounting.drafts.view",
+        "description": "Accounting Foundation permission; granted through configured customer role composition.",
+        "composite": false,
+        "clientRole": false,
+        "containerId": "kemfai-customers"
+      },
+      {
+        "id": "9a1f2c34-1b2c-4e3f-8a9b-4c5d6e7f8a06",
+        "name": "accounting.drafts.edit",
+        "description": "Accounting Foundation permission; granted through configured customer role composition.",
         "composite": false,
         "clientRole": false,
         "containerId": "kemfai-customers"
@@ -95,6 +144,46 @@
           }
         }
       ]
+    },
+    {
+      "id": "9a1f2c34-1b2c-4e3f-8a9b-4c5d6e7f8c01",
+      "clientId": "kemfai-users",
+      "name": "KEMFAI user provisioner",
+      "description": "T096 least-privilege service account used only by the API account lifecycle integration.",
+      "enabled": true,
+      "publicClient": false,
+      "bearerOnly": false,
+      "standardFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": true,
+      "clientAuthenticatorType": "client-secret",
+      "secret": "${KEYCLOAK_USERS_CLIENT_SECRET}",
+      "protocol": "openid-connect",
+      "fullScopeAllowed": false
     }
-  ]
+  ],
+  "users": [
+    {
+      "username": "service-account-kemfai-users",
+      "enabled": true,
+      "serviceAccountClientId": "kemfai-users",
+      "clientRoles": {
+        "realm-management": [
+          "manage-users",
+          "view-realm"
+        ]
+      }
+    }
+  ],
+  "clientScopeMappings": {
+    "realm-management": [
+      {
+        "client": "kemfai-users",
+        "roles": [
+          "manage-users",
+          "view-realm"
+        ]
+      }
+    ]
+  }
 }

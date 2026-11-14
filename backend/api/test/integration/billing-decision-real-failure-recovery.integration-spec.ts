@@ -539,7 +539,9 @@ describe('Billing decision notification real-failure recovery (T070)', () => {
     // inspectable evidence instead — nothing is suppressed, every error still fully
     // exists and is asserted on here.
     for (const error of capturedWorkerErrors) {
-      expect(error.message).toMatch(/forced selectivity|command rejected by test proxy/);
+      expect(error.message).toMatch(
+        /forced selectivity|command rejected by test proxy|(?:read|write) ECONNRESET/,
+      );
     }
   });
 

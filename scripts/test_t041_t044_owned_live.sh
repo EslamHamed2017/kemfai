@@ -14,7 +14,7 @@ docker info >/dev/null 2>&1 || { echo 'FAIL: Docker daemon is unreachable' >&2; 
 [ ! -e "$api_dir/.env" ] || { echo 'FAIL: checkout-local backend .env is refused' >&2; exit 1; }
 
 run_id="t041t044r$(openssl rand -hex 6)"
-label_key='kemfai.t041-t044.run'; label="$label_key=$run_id"
+ownership_label_name='kemfai.t041-t044.run'; label="$ownership_label_name=$run_id"
 network="${run_id}_net"; pg="${run_id}_pg"; redis="${run_id}_redis"
 minio="${run_id}_minio"; keycloak="${run_id}_keycloak"; odoo="${run_id}_odoo"
 control_db="kemfai_t041_${run_id//[^a-zA-Z0-9]/_}"
@@ -22,9 +22,9 @@ evidence="${KEMFAI_ARTIFACTS_DIR:-$repo_dir/.artifacts/t041-t044-${run_id}}"
 private="$(mktemp -d)"; mkdir -p "$evidence"; chmod 700 "$private" "$evidence"
 pg_password="$(openssl rand -hex 24)"; minio_access="t041$(openssl rand -hex 8)"
 minio_secret="$(openssl rand -hex 24)"; kc_admin="admin_${run_id}"
-kc_password="$(openssl rand -hex 24)"; odoo_master="$(openssl rand -hex 24)"
+kc_password="$(openssl rand -hex 24)"; kc_users_secret="$(openssl rand -hex 24)"; odoo_master="$(openssl rand -hex 24)"
 odoo_login="admin-${run_id}@example.invalid"; odoo_password="$(openssl rand -hex 24)"
-kemfai_docker_cleanup_init "$label_key" "$run_id"
+kemfai_docker_cleanup_init "$ownership_label_name" "$run_id"
 fail() { echo "FAIL: $*" >&2; exit 1; }
 cleanup() {
   local status=$? cleanup_status=0
@@ -55,7 +55,15 @@ printf 'HOST=%s\nPORT=5432\nUSER=odoo\nPASSWORD=%s\n' "$pg" "$pg_password" >"$pr
 cat >"$private/realm.json" <<JSON
 {"realm":"kemfai-customers","enabled":true,"registrationAllowed":false,
  "roles":{"realm":[{"name":"WorkspaceOwner"}]},
- "clients":[{"clientId":"kemfai-api","enabled":true,"publicClient":true,"standardFlowEnabled":false,"directAccessGrantsEnabled":false}]}
+ "clients":[
+   {"clientId":"kemfai-api","enabled":true,"publicClient":true,"standardFlowEnabled":false,"directAccessGrantsEnabled":false},
+   {"id":"9a1f2c34-1b2c-4e3f-8a9b-4c5d6e7f8c01","clientId":"kemfai-users","enabled":true,
+    "publicClient":false,"bearerOnly":false,"standardFlowEnabled":false,"directAccessGrantsEnabled":false,
+    "serviceAccountsEnabled":true,"clientAuthenticatorType":"client-secret","secret":"$kc_users_secret",
+    "protocol":"openid-connect","fullScopeAllowed":false}],
+ "users":[{"username":"service-account-kemfai-users","enabled":true,"serviceAccountClientId":"kemfai-users",
+   "clientRoles":{"realm-management":["manage-users","view-realm"]}}],
+ "clientScopeMappings":{"realm-management":[{"client":"kemfai-users","roles":["manage-users","view-realm"]}]}}
 JSON
 cat >"$private/odoo.conf" <<EOF
 [options]
@@ -76,8 +84,11 @@ chmod 644 "$private/odoo.conf" "$private/realm.json"
 
 docker run -d --name "$pg" --label "$label" --network "$network" --env-file "$private/pg.env" \
   --tmpfs /var/lib/postgresql/data:rw,noexec,nosuid,size=1g -p 127.0.0.1:0:5432 postgres:16.10-alpine >/dev/null
-for _ in $(seq 1 180); do docker exec "$pg" pg_isready -U odoo -d "$control_db" >/dev/null 2>&1 && break; sleep .5; done
-if ! docker exec "$pg" pg_isready -U odoo -d "$control_db" >/dev/null 2>&1; then
+for _ in $(seq 1 180); do
+  docker exec "$pg" psql -U odoo -d "$control_db" -Atqc 'SELECT 1' 2>/dev/null | grep -qx 1 && break
+  sleep .5
+done
+if ! docker exec "$pg" psql -U odoo -d "$control_db" -Atqc 'SELECT 1' 2>/dev/null | grep -qx 1; then
   docker inspect "$pg" >"$evidence/postgres-inspect.json" 2>&1 || true
   docker logs --tail 300 "$pg" >"$evidence/postgres-readiness.log" 2>&1 || true
   fail 'PostgreSQL readiness timed out'
@@ -127,7 +138,7 @@ fi
 export CONTROL_DB_HOST=127.0.0.1 CONTROL_DB_PORT="$pg_port" CONTROL_DB_USER=odoo
 export CONTROL_DB_PASSWORD="$pg_password" CONTROL_DB_NAME="$control_db" REDIS_URL="redis://127.0.0.1:$redis_port/13"
 export STORAGE_ENDPOINT="http://127.0.0.1:$minio_port" STORAGE_ACCESS_KEY="$minio_access" STORAGE_SECRET_KEY="$minio_secret"
-export KEYCLOAK_URL="http://127.0.0.1:$kc_port" KEYCLOAK_CUSTOMERS_REALM=kemfai-customers KEYCLOAK_ADMIN="$kc_admin" KEYCLOAK_ADMIN_PASSWORD="$kc_password"
+export KEYCLOAK_URL="http://127.0.0.1:$kc_port" KEYCLOAK_CUSTOMERS_REALM=kemfai-customers KEYCLOAK_ADMIN="$kc_admin" KEYCLOAK_ADMIN_PASSWORD="$kc_password" KEYCLOAK_USERS_CLIENT_ID=kemfai-users KEYCLOAK_USERS_CLIENT_SECRET="$kc_users_secret"
 export KEMFAI_ODOO_URL="http://127.0.0.1:$odoo_port" KEMFAI_ODOO_MASTER_PASSWORD="$odoo_master"
 export KEMFAI_TENANT_ADMIN_LOGIN="$odoo_login" KEMFAI_TENANT_ADMIN_PASSWORD="$odoo_password" KEMFAI_LIVE_PROVISION=1
 (cd "$api_dir" && npm run migration:run) >"$evidence/migrations.log" 2>&1 || fail 'control migrations failed'

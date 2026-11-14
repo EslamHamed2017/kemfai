@@ -1,0 +1,7 @@
+id,name,model_id:id,group_id:id,perm_read,perm_write,perm_create,perm_unlink
+access_kemfai_account_audit_system,kemfai.account.audit system,model_kemfai_account_audit_event,base.group_system,1,0,1,0
+access_kemfai_account_receipt_system,kemfai.account.mutation.receipt system,model_kemfai_account_mutation_receipt,base.group_system,1,0,1,0
+access_kemfai_account_draft_system,kemfai.account.draft system,model_kemfai_account_draft,base.group_system,1,1,1,1
+access_kemfai_account_draft_line_system,kemfai.account.draft.line system,model_kemfai_account_draft_line,base.group_system,1,1,1,1
+access_kemfai_account_currency_config_system,kemfai.account.currency.config system,model_kemfai_account_currency_config,base.group_system,1,1,1,0
+access_kemfai_account_draft_validation_system,kemfai.account.draft.validation system,model_kemfai_account_draft_validation,base.group_system,1,0,1,0

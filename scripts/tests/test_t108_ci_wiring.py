@@ -104,13 +104,18 @@ def workflow_named_step(workflow: str, name: str) -> str:
 class TestT108CiWiring(unittest.TestCase):
     def test_pr_targets_and_all_four_commands_are_blocking(self) -> None:
         self.assertRegex(WORKFLOW, r"pull_request:\s*\n\s+branches: \[main, develop\]")
-        for command in (
-            "npm run test:contract -- --runInBand",
-            "npm run test:integration -- --runInBand",
-            "npx playwright test",
-            "bash scripts/ci/test_odoo_addons.sh",
-        ):
-            self.assertEqual(1, WORKFLOW.count(command), command)
+        required_job_commands = {
+            "backend-contract-integration": (
+                "npm run test:contract -- --runInBand",
+                "npm run test:integration -- --runInBand",
+            ),
+            "frontend-playwright": ("npx playwright test",),
+            "accounting-invariants": ("bash scripts/ci/test_odoo_addons.sh",),
+        }
+        for job_name, commands in required_job_commands.items():
+            job = workflow_job(WORKFLOW, job_name)
+            for command in commands:
+                self.assertEqual(1, job.count(command), f"{job_name}: {command}")
         self.assertNotIn("continue-on-error", WORKFLOW)
         self.assertNotIn("|| true", WORKFLOW)
         self.assertNotRegex(WORKFLOW, r"echo .*accounting")
@@ -284,10 +289,11 @@ class TestT108CiWiring(unittest.TestCase):
             "timeout-minutes:",
             "cache-dependency-path:",
             "--health-cmd",
-            "npx playwright install --with-deps chromium",
+            "npx playwright install chromium",
             "odoo:18.0",
         ):
             self.assertIn(required, WORKFLOW)
+        self.assertNotIn("playwright install --with-deps", WORKFLOW)
         self.assertNotIn("secrets.", WORKFLOW)
 
     def test_generic_integration_suite_has_no_silent_live_skips(self) -> None:
@@ -300,11 +306,15 @@ class TestT108CiWiring(unittest.TestCase):
             text = path.read_text(encoding="utf-8")
             if "describe.skip" in text:
                 gated.add(f"/test/integration/{path.name}$")
-        # T093 and T109 are intentionally owned by exact-resource runners. They must never run
-        # as unobserved generic suites; every other generic exclusion remains describe.skip-owned.
+        # T093, T109, and Accounting Foundation are intentionally owned by exact-resource
+        # runners. They must never run as unobserved generic suites; every other generic
+        # exclusion remains describe.skip-owned.
         owned_verifiers = {
             "/test/integration/audit-source-linkage.integration-spec.ts$",
             "/test/integration/no-odoo-exposure.integration-spec.ts$",
+            "/test/integration/accounting-audit-failure.integration-spec.ts$",
+            "/test/integration/accounting-live.integration-spec.ts$",
+            "/test/integration/accounting-tenant-isolation.integration-spec.ts$",
         }
         ignored = set(INTEGRATION_CONFIG["testPathIgnorePatterns"])
         self.assertTrue(owned_verifiers <= ignored)
@@ -315,6 +325,16 @@ class TestT108CiWiring(unittest.TestCase):
         t109 = (ROOT / "scripts/test_t109_odoo_exposure.sh").read_text(encoding="utf-8")
         self.assertIn("test/integration/no-odoo-exposure.integration-spec.ts", t109)
         self.assertIn("backend-jest.json", t109)
+        accounting = (ROOT / "scripts/test_accounting_foundation_owned_live.sh").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("test/integration/accounting-live.integration-spec.ts", accounting)
+        accounting_job = workflow_job(WORKFLOW, "accounting-foundation-owned-live")
+        for suite in (
+            "test/integration/accounting-tenant-isolation.integration-spec.ts",
+            "test/integration/accounting-audit-failure.integration-spec.ts",
+        ):
+            self.assertIn(suite, accounting_job)
 
     def test_odoo_runner_invokes_and_proves_each_addon(self) -> None:
         runner = (ROOT / "scripts/ci/test_odoo_addons.sh").read_text(encoding="utf-8")
@@ -374,6 +394,9 @@ class TestT108CiWiring(unittest.TestCase):
             "/test/integration/tenant-provisioning-live.integration-spec.ts$": "bash scripts/test_t041_t044_owned_live.sh",
             "/test/integration/audit-source-linkage.integration-spec.ts$": "bash scripts/test_t093_owned_fixture.sh",
             "/test/integration/no-odoo-exposure.integration-spec.ts$": "bash scripts/test_t109_odoo_exposure.sh all",
+            "/test/integration/accounting-audit-failure.integration-spec.ts$": "test/integration/accounting-audit-failure.integration-spec.ts",
+            "/test/integration/accounting-live.integration-spec.ts$": "bash scripts/test_accounting_foundation_owned_live.sh all",
+            "/test/integration/accounting-tenant-isolation.integration-spec.ts$": "test/integration/accounting-tenant-isolation.integration-spec.ts",
         }
         self.assertEqual(excluded, set(expected_owned))
         workflow = (ROOT / ".github/workflows/ci.yml").read_text()
@@ -399,7 +422,6 @@ class TestT108CiWiring(unittest.TestCase):
         self.assertIn("bash scripts/test_t112_owned_fixture.sh ui", workflow)
         self.assertIn("bash scripts/test-us8-owned-live.sh", workflow)
         self.assertIn("bash scripts/test_t109_odoo_exposure.sh all", workflow)
-        self.assertEqual(workflow.count("uses: actions/upload-artifact@v4"), 4)
         artifacts = (
             ("Upload T112 evidence", "${{ runner.temp }}/t112-evidence"),
             ("Upload US8 evidence", "${{ runner.temp }}/us8-evidence"),

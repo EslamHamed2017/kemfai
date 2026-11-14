@@ -13,6 +13,7 @@ import { LocaleUpdateRequestDto } from './dto/locale-update.request.dto';
 import { SignupRequestDto } from './dto/signup.request.dto';
 import { VerifyEmailRequestDto } from './dto/verify-email.request.dto';
 import { ResendVerificationRequestDto } from './dto/resend-verification.request.dto';
+import { PublicAccountRateLimit } from './public-accounts-rate-limit';
 
 /**
  * The accounts surface of the onboarding shell (T032+). `module.accounts` is the
@@ -35,6 +36,7 @@ export class AccountsController {
    */
   @Public()
   @Post('signup')
+  @PublicAccountRateLimit('signup')
   @HttpCode(HttpStatus.CREATED)
   signup(@Body() dto: SignupRequestDto): Promise<SignupResult> {
     return this.accounts.signup(dto);
@@ -48,6 +50,7 @@ export class AccountsController {
    */
   @Public()
   @Post('verify-email')
+  @PublicAccountRateLimit('verify-email')
   @HttpCode(HttpStatus.OK)
   verifyEmail(@Body() dto: VerifyEmailRequestDto): Promise<VerifyEmailResult> {
     return this.accounts.verifyEmail(dto.token);

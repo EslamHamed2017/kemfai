@@ -3,10 +3,23 @@ import type { MinioClientLike } from './minio-client';
 import { tenantBucketName } from './tenant-bucket-naming';
 
 /**
- * Short-lived by design (T096 tunes the exact window later) — presigned URLs must never
- * be long-lived enough to outlive a normal upload/review session.
+ * T096: every upload/review URL expires within five minutes. Caller overrides may shorten
+ * this window but can never extend it, so a future call site cannot silently weaken it.
  */
-const DEFAULT_PRESIGNED_URL_EXPIRY_SECONDS = 15 * 60;
+export const MAX_PRESIGNED_URL_EXPIRY_SECONDS = 5 * 60;
+
+function validatedExpiry(expirySeconds: number): number {
+  if (
+    !Number.isInteger(expirySeconds) ||
+    expirySeconds < 1 ||
+    expirySeconds > MAX_PRESIGNED_URL_EXPIRY_SECONDS
+  ) {
+    throw new RangeError(
+      `Presigned URL expiry must be an integer between 1 and ${MAX_PRESIGNED_URL_EXPIRY_SECONDS} seconds`,
+    );
+  }
+  return expirySeconds;
+}
 
 /**
  * Bucket-per-tenant evidence storage (T025; research.md §5). `createTenantBucket` is the
@@ -45,17 +58,17 @@ export class MinioStorageService {
   async getPresignedUploadUrl(
     bucket: string,
     objectKey: string,
-    expirySeconds: number = DEFAULT_PRESIGNED_URL_EXPIRY_SECONDS,
+    expirySeconds: number = MAX_PRESIGNED_URL_EXPIRY_SECONDS,
   ): Promise<string> {
-    return this.client.presignedPutObject(bucket, objectKey, expirySeconds);
+    return this.client.presignedPutObject(bucket, objectKey, validatedExpiry(expirySeconds));
   }
 
   async getPresignedDownloadUrl(
     bucket: string,
     objectKey: string,
-    expirySeconds: number = DEFAULT_PRESIGNED_URL_EXPIRY_SECONDS,
+    expirySeconds: number = MAX_PRESIGNED_URL_EXPIRY_SECONDS,
   ): Promise<string> {
-    return this.client.presignedGetObject(bucket, objectKey, expirySeconds);
+    return this.client.presignedGetObject(bucket, objectKey, validatedExpiry(expirySeconds));
   }
 
   /**

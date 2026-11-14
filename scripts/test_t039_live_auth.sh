@@ -6,6 +6,24 @@ compose_file="$repo_dir/infra/docker/docker-compose.yml"
 
 docker compose -f "$compose_file" up -d kemfai-db redis keycloak
 until docker exec kemfai-db pg_isready -U odoo >/dev/null 2>&1; do sleep 1; done
+
+# The development seed keeps module.accounts fail-closed. Enable it only for this
+# live auth probe, then restore the exact prior state even when the probe fails.
+prior_accounts_flag="$(docker exec kemfai-db psql -U odoo -d kemfai_control -At -c   "SELECT CASE WHEN enabled THEN 'true' ELSE 'false' END FROM feature_flag WHERE feature_key='module.accounts'")"
+restore_accounts_flag() {
+  local status=$? restore_status=0
+  trap - EXIT
+  set +e
+  if [ -z "$prior_accounts_flag" ]; then
+    docker exec kemfai-db psql -U odoo -d kemfai_control -v ON_ERROR_STOP=1 -c       "DELETE FROM feature_flag WHERE feature_key='module.accounts'" >/dev/null || restore_status=$?
+  else
+    docker exec kemfai-db psql -U odoo -d kemfai_control -v ON_ERROR_STOP=1 -c       "UPDATE feature_flag SET enabled=$prior_accounts_flag WHERE feature_key='module.accounts'" >/dev/null || restore_status=$?
+  fi
+  [ "$status" -ne 0 ] || status=$restore_status
+  exit "$status"
+}
+trap restore_accounts_flag EXIT
+docker exec kemfai-db psql -U odoo -d kemfai_control -v ON_ERROR_STOP=1 -c   "INSERT INTO feature_flag(feature_key, enabled, notes) VALUES ('module.accounts', true, 'temporary T039/T103 live-auth gate') ON CONFLICT (feature_key) DO UPDATE SET enabled=true" >/dev/null
 # Keep reused development volumes aligned with the Compose application credential.
 docker exec kemfai-db psql -U odoo -d postgres -v ON_ERROR_STOP=1 -c \
   "ALTER ROLE kemfai_api WITH PASSWORD '${CONTROL_DB_APP_PASSWORD:-kemfai_api_dev}'" >/dev/null

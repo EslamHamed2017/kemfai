@@ -637,6 +637,12 @@ with open('$merged_file', 'w') as f:
     -H "Content-Type: application/json" \
     --data "[{\"id\":\"${owner_role_id}\",\"name\":\"WorkspaceOwner\"}]" >/dev/null
 }
+# Odoo/bootstrap work can exceed Keycloak's short admin-token lifetime. Refresh
+# immediately before the two admin bindings rather than reusing the phase-2 token.
+TOKEN="$(admin_token)"
+[ -n "$TOKEN" ] || fail "could not refresh scratch Keycloak admin token"
+printf '%s\0' "$TOKEN" >> "$redaction_secrets_file"
+write_token_header
 bind_owner "$alpha_kc_id" "$alpha_tenant_id"
 bind_owner "$beta_kc_id" "$beta_tenant_id"
 echo "PASS: control-plane seeded — Alpha tenant=${alpha_tenant_id}, Beta tenant=${beta_tenant_id}; both bound WorkspaceOwner in scratch Keycloak." | tee -a "$evidence_file"
@@ -730,7 +736,7 @@ export T056_ALPHA_TENANT_ID="$alpha_tenant_id"
 export T056_BETA_TENANT_ID="$beta_tenant_id"
 
 set +e
-npx playwright test --config tests/e2e-live/playwright.live.config.ts > "$artifacts_dir/browser-harness.log" 2>&1
+npx playwright test --config tests/e2e-live/playwright.live.config.ts tests/e2e-live/t056-real-browser.live.spec.ts > "$artifacts_dir/browser-harness.log" 2>&1
 status=$?
 set -e
 redact_secrets < "$artifacts_dir/browser-harness.log"

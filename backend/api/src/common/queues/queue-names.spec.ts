@@ -2,6 +2,7 @@ import {
   ALL_QUEUE_NAMES,
   BILLING_DECISION_NOTIFICATION_ATTEMPTS,
   BILLING_DECISION_NOTIFICATION_BACKOFF,
+  QUEUE_ACCOUNTING_MUTATION_RECOVERY,
   QUEUE_EMAIL_SEND_VERIFICATION,
   QUEUE_NOTIFICATION_BILLING_DECISION,
   QUEUE_SUPPORT_ACCESS_EXPIRY_SWEEP,
@@ -20,19 +21,21 @@ import {
  * restate that table so any drift in either direction fails the suite.
  */
 describe('Queue names & job-id strategies (T021, contracts/events.md)', () => {
-  it('registers exactly the five queues documented in events.md', () => {
+  it('retains the five Phase 1 queues and adds the Accounting recovery queue', () => {
     expect(ALL_QUEUE_NAMES).toEqual([
       'tenant.provision',
       'email.send_verification',
       'notification.billing_decision',
       'support_access.expiry_sweep',
       'trial.expiry_sweep',
+      'accounting.mutation_recovery',
     ]);
     expect(QUEUE_TENANT_PROVISION).toBe('tenant.provision');
     expect(QUEUE_EMAIL_SEND_VERIFICATION).toBe('email.send_verification');
     expect(QUEUE_NOTIFICATION_BILLING_DECISION).toBe('notification.billing_decision');
     expect(QUEUE_SUPPORT_ACCESS_EXPIRY_SWEEP).toBe('support_access.expiry_sweep');
     expect(QUEUE_TRIAL_EXPIRY_SWEEP).toBe('trial.expiry_sweep');
+    expect(QUEUE_ACCOUNTING_MUTATION_RECOVERY).toBe('accounting.mutation_recovery');
   });
 
   it('tenant.provision uses the bare account_id as its unique job id', () => {

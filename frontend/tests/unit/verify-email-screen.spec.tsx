@@ -75,6 +75,7 @@ describe('VerifyEmailScreen (T038)', () => {
 
     expect(postMock).toHaveBeenCalledWith('/accounts/verify-email', {
       body: { token: 'valid-token' },
+      params: { header: { 'Accept-Language': 'en' } },
     });
 
     expect(screen.getByRole('link', { name: en.verifyEmail.success.continue })).toHaveAttribute(
@@ -90,7 +91,10 @@ describe('VerifyEmailScreen (T038)', () => {
   ] as const)(
     'shows a distinct actionable %s-link error from the backend 410 reason',
     async (reason, title, body) => {
-      postMock.mockResolvedValueOnce({ error: { reason, message: 'Gone' } });
+      postMock.mockResolvedValueOnce({
+        error: { reason, message: 'Gone' },
+        response: { status: 410 },
+      });
 
       renderScreen(`${reason}-token`);
 
@@ -106,8 +110,28 @@ describe('VerifyEmailScreen (T038)', () => {
     },
   );
 
+  it('shows a dedicated rate-limit state for 429 and does not offer another immediate request', async () => {
+    postMock.mockResolvedValueOnce({
+      error: { statusCode: 429, message: 'Too many attempts' },
+      response: { status: 429 },
+    });
+
+    renderScreen('rate-limited-token');
+
+    await waitFor(() => {
+      expect(
+        screen.getByRole('heading', { name: en.verifyEmail.rateLimited.title }),
+      ).toBeInTheDocument();
+    });
+    expect(screen.getByText(en.verifyEmail.rateLimited.body)).toBeInTheDocument();
+    expect(screen.queryByLabelText(en.verifyEmail.resend.emailLabel)).not.toBeInTheDocument();
+  });
+
   it('treats a superseded or unclassified failure as invalid with the same safe resend action', async () => {
-    postMock.mockResolvedValueOnce({ error: { reason: 'superseded', message: 'Gone' } });
+    postMock.mockResolvedValueOnce({
+      error: { reason: 'superseded', message: 'Gone' },
+      response: { status: 410 },
+    });
 
     renderScreen('superseded-token');
 

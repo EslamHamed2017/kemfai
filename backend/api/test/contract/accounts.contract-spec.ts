@@ -9,6 +9,7 @@ import { Account } from '../../src/modules/accounts/entities/account.entity';
 import { Plan } from '../../src/modules/entitlements/entities/plan.entity';
 import { KEYCLOAK_USER_PROVISIONER } from '../../src/integrations/keycloak/keycloak-user-provisioner';
 import { ACCOUNTS_FEATURE_KEY } from '../../src/modules/accounts/accounts.controller';
+import { PublicAccountsRateLimiter } from '../../src/modules/accounts/public-accounts-rate-limit';
 import { FakeKeycloakUsers } from '../support/fake-keycloak-users';
 import { FakeKeycloak, startFakeKeycloak } from '../support/fake-keycloak';
 import {
@@ -21,7 +22,7 @@ import { ContractCoverage, OpenApiContractValidator } from '../support/openapi-c
 /**
  * T027 — contract test for the five US1 accounts endpoints against the committed
  * `specs/001-saas-onboarding-shell/contracts/openapi.yaml`. Every documented response
- * code (201/409/422/200/410/202) is exercised at least once; each response is checked
+ * code (including localized 429 responses) is exercised at least once; each response is checked
  * against whatever the contract actually declares for it (status codes always, plus a
  * body schema wherever one is declared — see OpenApiContractValidator).
  *
@@ -123,6 +124,7 @@ describe('Accounts contract (T027, HTTP integration against contracts/openapi.ya
   let suiteEmailQueue: Queue;
   let suiteTenantProvisionQueue: Queue;
   let flagSnapshot: FeatureFlagSnapshot;
+  let rateLimiter: PublicAccountsRateLimiter;
   const validator = new OpenApiContractValidator();
   const coverage = new ContractCoverage(validator);
   const createdPlanIds: string[] = [];
@@ -149,6 +151,7 @@ describe('Accounts contract (T027, HTTP integration against contracts/openapi.ya
       .compile();
     app = moduleRef.createNestApplication();
     await app.init();
+    rateLimiter = app.get(PublicAccountsRateLimiter);
 
     suiteEmailQueue = new Queue(QUEUE_EMAIL_SEND_VERIFICATION, {
       connection: redisConnectionFromUrl(),
@@ -156,6 +159,10 @@ describe('Accounts contract (T027, HTTP integration against contracts/openapi.ya
     suiteTenantProvisionQueue = new Queue(QUEUE_TENANT_PROVISION, {
       connection: redisConnectionFromUrl(),
     });
+  });
+
+  beforeEach(() => {
+    rateLimiter.clear();
   });
 
   afterAll(async () => {
@@ -309,6 +316,30 @@ describe('Accounts contract (T027, HTTP integration against contracts/openapi.ya
       coverage.record('/accounts/signup', 'post', response.status, response.body);
       expect(response.status).toBe(422);
     });
+
+    it('429: rejects the sixth request in a minute with English retry metadata', async () => {
+      const invalidBody = {
+        ...validSignupBody(suiteEmail('signup-429'), randomUUID()),
+        password: 'short',
+      };
+      for (let attempt = 0; attempt < 5; attempt += 1) {
+        await request(app.getHttpServer()).post('/accounts/signup').send(invalidBody).expect(422);
+      }
+
+      const response = await request(app.getHttpServer())
+        .post('/accounts/signup')
+        .set('Accept-Language', 'en-US')
+        .send(invalidBody);
+      coverage.record('/accounts/signup', 'post', response.status, response.body);
+      expect(response.status).toBe(429);
+      expect(response.headers['content-language']).toBe('en');
+      expect(Number(response.headers['retry-after'])).toBeGreaterThan(0);
+      expect(response.body).toMatchObject({
+        statusCode: 429,
+        message: 'Too many attempts. Please try again later.',
+        error: 'Too Many Requests',
+      });
+    });
   });
 
   describe('POST /accounts/verify-email', () => {
@@ -337,6 +368,29 @@ describe('Accounts contract (T027, HTTP integration against contracts/openapi.ya
         .send({ token: 'totally-unknown-token-value' });
       coverage.record('/accounts/verify-email', 'post', response.status, response.body);
       expect(response.status).toBe(410);
+    });
+
+    it('429: rejects the eleventh request in a minute with Arabic retry metadata', async () => {
+      for (let attempt = 0; attempt < 10; attempt += 1) {
+        await request(app.getHttpServer())
+          .post('/accounts/verify-email')
+          .send({ token: `unknown-rate-limit-token-${attempt}` })
+          .expect(410);
+      }
+
+      const response = await request(app.getHttpServer())
+        .post('/accounts/verify-email')
+        .set('Accept-Language', 'ar-AE')
+        .send({ token: 'unknown-rate-limit-token-denied' });
+      coverage.record('/accounts/verify-email', 'post', response.status, response.body);
+      expect(response.status).toBe(429);
+      expect(response.headers['content-language']).toBe('ar');
+      expect(Number(response.headers['retry-after'])).toBeGreaterThan(0);
+      expect(response.body).toMatchObject({
+        statusCode: 429,
+        message: 'عدد المحاولات كبير جدًا. يُرجى المحاولة مرة أخرى لاحقًا.',
+        error: 'Too Many Requests',
+      });
     });
   });
 

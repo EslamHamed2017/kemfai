@@ -326,11 +326,14 @@ export class TenantProvisionProcessor extends WorkerHost {
   }
   private async installModules(db: string): Promise<void> {
     const uid = await this.odoo.authenticate(db, this.credentials.login, this.credentials.password);
+    const upgradeableAccountingAddons = new Set(['kemfai_dimensions', 'kemfai_accounting']);
     const names = [
       'kemfai_tenant_core',
       'kemfai_company_setup',
       'kemfai_module_selection',
       'kemfai_onboarding_checklist',
+      'kemfai_dimensions',
+      'kemfai_accounting',
     ];
     await this.odoo.executeKw(
       db,
@@ -351,8 +354,19 @@ export class TenantProvisionProcessor extends WorkerHost {
     )) as Array<{ id: number; name: string; state: string }>;
     if (!Array.isArray(rows) || names.some((name) => !rows.some((row) => row.name === name)))
       throw new Error('Required Odoo addon missing');
-    for (const row of rows) {
-      if (row.state !== 'installed') {
+    const rowsByName = new Map(rows.map((row) => [row.name, row]));
+    for (const name of names) {
+      const row = rowsByName.get(name)!;
+      if (row.state === 'installed' && upgradeableAccountingAddons.has(name)) {
+        await this.odoo.executeKw(
+          db,
+          uid,
+          this.credentials.password,
+          'ir.module.module',
+          'button_immediate_upgrade',
+          [[row.id]],
+        );
+      } else if (row.state !== 'installed') {
         await this.odoo.executeKw(
           db,
           uid,
@@ -377,6 +391,33 @@ export class TenantProvisionProcessor extends WorkerHost {
       names.some((name) => !verified.some((row) => row.name === name && row.state === 'installed'))
     )
       throw new Error('Required Odoo addon not installed');
+
+    const storyOneThroughThreeModels = [
+      'account.account',
+      'kemfai.account.audit.event',
+      'kemfai.account.mutation.receipt',
+      'kemfai.account.draft',
+      'kemfai.account.draft.line',
+      'kemfai.dimension.definition',
+      'kemfai.dimension.value',
+      'kemfai.dimension.rule',
+      'kemfai.account.draft.dimension',
+      'account.journal',
+      'kemfai.account.currency.config',
+      'kemfai.account.draft.validation',
+    ];
+    for (const model of storyOneThroughThreeModels) {
+      const fields = await this.odoo.executeKw(
+        db,
+        uid,
+        this.credentials.password,
+        model,
+        'fields_get',
+        [],
+      );
+      if (!fields || typeof fields !== 'object' || Array.isArray(fields))
+        throw new Error('Required accounting model not callable');
+    }
   }
   /**
    * T056 round-5 — resolves the id, not merely the count, of the tenant's single

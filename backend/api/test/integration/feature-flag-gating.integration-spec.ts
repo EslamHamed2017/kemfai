@@ -9,6 +9,13 @@ import { FeatureFlagGuard } from '../../src/common/guards/feature-flag.guard';
 import controlDataSource from '../../src/database/data-source';
 import { Account, BillingCycle } from '../../src/modules/accounts/entities/account.entity';
 import { AccountsModule } from '../../src/modules/accounts/accounts.module';
+import { AccountingModule } from '../../src/modules/accounting/accounting.module';
+import { AccountsService as AccountingAccountsService } from '../../src/modules/accounting/accounts/accounts.service';
+import { DraftsService as AccountingDraftsService } from '../../src/modules/accounting/drafts/drafts.service';
+import { AccountingOdooContextService } from '../../src/modules/accounting/accounting-odoo-context.service';
+import { DimensionsService } from '../../src/modules/accounting/dimensions/dimensions.service';
+import { DraftValidationService } from '../../src/modules/accounting/drafts/draft-validation.service';
+import { JournalsCurrenciesService } from '../../src/modules/accounting/journals-currencies/journals-currencies.service';
 import { AccountsService } from '../../src/modules/accounts/accounts.service';
 import { MfaService } from '../../src/modules/accounts/mfa.service';
 import {
@@ -47,6 +54,9 @@ const TENANT_ID = '11200000-0000-4000-8000-000000000004';
 const PLAN_ID = '11200000-0000-4000-8000-000000000005';
 const SUBSCRIPTION_ID = '11200000-0000-4000-8000-000000000006';
 const GRANT_ID = '11200000-0000-4000-8000-000000000007';
+const COMPANY_ID = '11200000-0000-4000-8000-000000000008';
+const ACCOUNTING_RESOURCE_ID = '11200000-0000-4000-8000-000000000009';
+const DRAFT_ID = '11200000-0000-4000-8000-000000000010';
 const SUPPORT_GRANT_EXPIRES_AT = new Date(Date.now() + 12 * 60 * 60 * 1000).toISOString();
 
 const CUSTOMER_ISSUER = 'http://127.0.0.1/realms/t112-customers';
@@ -59,6 +69,7 @@ const FLAG_KEYS = [
   'module.module_selection',
   'module.onboarding_checklist',
   'module.support_access',
+  'module.accounting_foundation',
 ] as const;
 
 type FlagKey = (typeof FLAG_KEYS)[number];
@@ -139,6 +150,55 @@ const supportAccess = {
     revokedAt: '2026-10-25T01:00:00.000Z',
   }),
 };
+const accountingResource = {
+  id: ACCOUNTING_RESOURCE_ID,
+  companyId: COMPANY_ID,
+  version: 1,
+  active: true,
+  code: '1000',
+  name: { en: 'Cash', ar: 'النقدية' },
+  accountType: 'asset_current',
+  nodeKind: 'posting',
+  parentId: null,
+  selectableForDraftLines: true,
+};
+const accountingAccounts = {
+  list: jest.fn().mockResolvedValue({ items: [accountingResource], nextCursor: null }),
+  create: jest.fn().mockResolvedValue({ resource: accountingResource }),
+  get: jest.fn().mockResolvedValue(accountingResource),
+  update: jest.fn().mockResolvedValue({ resource: accountingResource }),
+};
+const draftResource = { id: DRAFT_ID, companyId: COMPANY_ID, version: 1, status: 'draft' };
+const accountingDrafts = {
+  list: jest.fn().mockResolvedValue({ items: [draftResource], nextCursor: null }),
+  save: jest.fn().mockResolvedValue({ resource: draftResource, ledgerEffect: 'none' }),
+  update: jest.fn().mockResolvedValue({ resource: draftResource, ledgerEffect: 'none' }),
+  get: jest.fn().mockResolvedValue(draftResource),
+};
+const draftValidation = {
+  validate: jest.fn().mockResolvedValue({ result: { draftVersion: 1 }, ledgerEffect: 'none' }),
+};
+const dimensionResource = { id: ACCOUNTING_RESOURCE_ID, version: 1, active: true };
+const dimensions = {
+  listDefinitions: jest.fn().mockResolvedValue({ items: [dimensionResource] }),
+  createDefinition: jest.fn().mockResolvedValue({ resource: dimensionResource }),
+  updateDefinition: jest.fn().mockResolvedValue({ resource: dimensionResource }),
+  listValues: jest.fn().mockResolvedValue({ items: [dimensionResource], nextCursor: null }),
+  createValue: jest.fn().mockResolvedValue({ resource: dimensionResource }),
+  updateValue: jest.fn().mockResolvedValue({ resource: dimensionResource }),
+  listRules: jest.fn().mockResolvedValue({ items: [dimensionResource] }),
+  createRule: jest.fn().mockResolvedValue({ resource: dimensionResource }),
+  updateRule: jest.fn().mockResolvedValue({ resource: dimensionResource }),
+};
+const journalCurrencyResource = { id: ACCOUNTING_RESOURCE_ID, version: 1, active: true };
+const journalsCurrencies = {
+  listJournals: jest.fn().mockResolvedValue({ items: [journalCurrencyResource] }),
+  createJournal: jest.fn().mockResolvedValue({ resource: journalCurrencyResource }),
+  updateJournal: jest.fn().mockResolvedValue({ resource: journalCurrencyResource }),
+  listCurrencies: jest.fn().mockResolvedValue({ items: [journalCurrencyResource] }),
+  putCurrencyConfiguration: jest.fn().mockResolvedValue({ resource: journalCurrencyResource }),
+};
+const accountingContext = { resolve: jest.fn().mockResolvedValue({}) };
 const supportWorkspace = {
   summary: jest.fn().mockResolvedValue({
     tenantId: TENANT_ID,
@@ -147,6 +207,35 @@ const supportWorkspace = {
     billingCycle: SubscriptionBillingCycle.MONTHLY,
     currentPeriodEnd: '2099-01-01',
   }),
+};
+
+const draftWriteBody = {
+  journalId: ACCOUNTING_RESOURCE_ID,
+  accountingDate: '2026-11-04',
+  description: 'Non-posting draft',
+  transactionType: 'manual_journal',
+  source: null,
+  lines: [
+    {
+      id: DRAFT_ID,
+      sequence: 1,
+      accountId: ACCOUNTING_RESOURCE_ID,
+      transactionCurrencyCode: 'USD',
+      transactionPrecision: 2,
+      transactionCurrencyMetadataVersion: 'usd-v1',
+      companyBaseCurrencyCode: 'USD',
+      basePrecision: 2,
+      baseCurrencyMetadataVersion: 'usd-v1',
+      currencyConfigurationVersion: 1,
+      transactionDebit: '0.00',
+      transactionCredit: '0.00',
+      baseDebit: '0.00',
+      baseCredit: '0.00',
+      rateReference: null,
+      rateEffectiveDate: null,
+      dimensions: [],
+    },
+  ],
 };
 
 interface EndpointCase {
@@ -355,6 +444,276 @@ const ENDPOINTS: EndpointCase[] = [
     enabledStatus: 200,
     serviceCall: supportWorkspace.summary,
   },
+  {
+    label: 'GET /v1/accounting/accounts',
+    featureKey: 'module.accounting_foundation',
+    method: 'get',
+    path: '/v1/accounting/accounts',
+    auth: 'owner',
+    headers: { 'x-kemfai-company-id': COMPANY_ID },
+    enabledStatus: 200,
+    serviceCall: accountingAccounts.list,
+  },
+  {
+    label: 'POST /v1/accounting/accounts',
+    featureKey: 'module.accounting_foundation',
+    method: 'post',
+    path: '/v1/accounting/accounts',
+    auth: 'owner',
+    headers: { 'x-kemfai-company-id': COMPANY_ID },
+    body: {
+      code: '1000',
+      name: { en: 'Cash', ar: 'النقدية' },
+      accountType: 'asset_current',
+      nodeKind: 'posting',
+    },
+    enabledStatus: 201,
+    serviceCall: accountingAccounts.create,
+  },
+  {
+    label: 'GET /v1/accounting/accounts/:accountId',
+    featureKey: 'module.accounting_foundation',
+    method: 'get',
+    path: `/v1/accounting/accounts/${ACCOUNTING_RESOURCE_ID}`,
+    auth: 'owner',
+    headers: { 'x-kemfai-company-id': COMPANY_ID },
+    enabledStatus: 200,
+    serviceCall: accountingAccounts.get,
+  },
+  {
+    label: 'PATCH /v1/accounting/accounts/:accountId',
+    featureKey: 'module.accounting_foundation',
+    method: 'patch',
+    path: `/v1/accounting/accounts/${ACCOUNTING_RESOURCE_ID}`,
+    auth: 'owner',
+    headers: { 'x-kemfai-company-id': COMPANY_ID, 'if-match': '"1"' },
+    body: { active: true },
+    enabledStatus: 200,
+    serviceCall: accountingAccounts.update,
+  },
+  {
+    label: 'GET /v1/accounting/capabilities',
+    featureKey: 'module.accounting_foundation',
+    method: 'get',
+    path: '/v1/accounting/capabilities',
+    auth: 'owner',
+    headers: { 'x-kemfai-company-id': COMPANY_ID },
+    enabledStatus: 200,
+    serviceCall: accountingContext.resolve,
+  },
+  {
+    label: 'GET /v1/accounting/dimension-definitions',
+    featureKey: 'module.accounting_foundation',
+    method: 'get',
+    path: '/v1/accounting/dimension-definitions',
+    auth: 'owner',
+    headers: { 'x-kemfai-company-id': COMPANY_ID },
+    enabledStatus: 200,
+    serviceCall: dimensions.listDefinitions,
+  },
+  {
+    label: 'POST /v1/accounting/dimension-definitions',
+    featureKey: 'module.accounting_foundation',
+    method: 'post',
+    path: '/v1/accounting/dimension-definitions',
+    auth: 'owner',
+    headers: { 'x-kemfai-company-id': COMPANY_ID },
+    body: { key: 'cost_center' },
+    enabledStatus: 201,
+    serviceCall: dimensions.createDefinition,
+  },
+  {
+    label: 'PATCH /v1/accounting/dimension-definitions/:definitionId',
+    featureKey: 'module.accounting_foundation',
+    method: 'patch',
+    path: `/v1/accounting/dimension-definitions/${ACCOUNTING_RESOURCE_ID}`,
+    auth: 'owner',
+    headers: { 'x-kemfai-company-id': COMPANY_ID, 'if-match': '"1"' },
+    body: { active: true },
+    enabledStatus: 200,
+    serviceCall: dimensions.updateDefinition,
+  },
+  {
+    label: 'GET /v1/accounting/dimension-values',
+    featureKey: 'module.accounting_foundation',
+    method: 'get',
+    path: '/v1/accounting/dimension-values',
+    auth: 'owner',
+    headers: { 'x-kemfai-company-id': COMPANY_ID },
+    enabledStatus: 200,
+    serviceCall: dimensions.listValues,
+  },
+  {
+    label: 'POST /v1/accounting/dimension-values',
+    featureKey: 'module.accounting_foundation',
+    method: 'post',
+    path: '/v1/accounting/dimension-values',
+    auth: 'owner',
+    headers: { 'x-kemfai-company-id': COMPANY_ID },
+    body: {
+      definitionId: ACCOUNTING_RESOURCE_ID,
+      code: 'CC1',
+      name: { en: 'Cost center', ar: 'مركز التكلفة' },
+    },
+    enabledStatus: 201,
+    serviceCall: dimensions.createValue,
+  },
+  {
+    label: 'PATCH /v1/accounting/dimension-values/:valueId',
+    featureKey: 'module.accounting_foundation',
+    method: 'patch',
+    path: `/v1/accounting/dimension-values/${ACCOUNTING_RESOURCE_ID}`,
+    auth: 'owner',
+    headers: { 'x-kemfai-company-id': COMPANY_ID, 'if-match': '"1"' },
+    body: { active: true },
+    enabledStatus: 200,
+    serviceCall: dimensions.updateValue,
+  },
+  {
+    label: 'GET /v1/accounting/dimension-rules',
+    featureKey: 'module.accounting_foundation',
+    method: 'get',
+    path: '/v1/accounting/dimension-rules',
+    auth: 'owner',
+    headers: { 'x-kemfai-company-id': COMPANY_ID },
+    enabledStatus: 200,
+    serviceCall: dimensions.listRules,
+  },
+  {
+    label: 'POST /v1/accounting/dimension-rules',
+    featureKey: 'module.accounting_foundation',
+    method: 'post',
+    path: '/v1/accounting/dimension-rules',
+    auth: 'owner',
+    headers: { 'x-kemfai-company-id': COMPANY_ID },
+    body: {
+      accountId: ACCOUNTING_RESOURCE_ID,
+      dimensionDefinitionId: ACCOUNTING_RESOURCE_ID,
+      requirement: 'required',
+    },
+    enabledStatus: 201,
+    serviceCall: dimensions.createRule,
+  },
+  {
+    label: 'PATCH /v1/accounting/dimension-rules/:ruleId',
+    featureKey: 'module.accounting_foundation',
+    method: 'patch',
+    path: `/v1/accounting/dimension-rules/${ACCOUNTING_RESOURCE_ID}`,
+    auth: 'owner',
+    headers: { 'x-kemfai-company-id': COMPANY_ID, 'if-match': '"1"' },
+    body: { active: true },
+    enabledStatus: 200,
+    serviceCall: dimensions.updateRule,
+  },
+  {
+    label: 'GET /v1/accounting/journals',
+    featureKey: 'module.accounting_foundation',
+    method: 'get',
+    path: '/v1/accounting/journals',
+    auth: 'owner',
+    headers: { 'x-kemfai-company-id': COMPANY_ID },
+    enabledStatus: 200,
+    serviceCall: journalsCurrencies.listJournals,
+  },
+  {
+    label: 'POST /v1/accounting/journals',
+    featureKey: 'module.accounting_foundation',
+    method: 'post',
+    path: '/v1/accounting/journals',
+    auth: 'owner',
+    headers: { 'x-kemfai-company-id': COMPANY_ID },
+    body: {
+      code: 'GJ',
+      name: { en: 'General journal', ar: 'دفتر اليومية العام' },
+      journalType: 'general',
+    },
+    enabledStatus: 201,
+    serviceCall: journalsCurrencies.createJournal,
+  },
+  {
+    label: 'PATCH /v1/accounting/journals/:journalId',
+    featureKey: 'module.accounting_foundation',
+    method: 'patch',
+    path: `/v1/accounting/journals/${ACCOUNTING_RESOURCE_ID}`,
+    auth: 'owner',
+    headers: { 'x-kemfai-company-id': COMPANY_ID, 'if-match': '"1"' },
+    body: { active: true },
+    enabledStatus: 200,
+    serviceCall: journalsCurrencies.updateJournal,
+  },
+  {
+    label: 'GET /v1/accounting/currencies',
+    featureKey: 'module.accounting_foundation',
+    method: 'get',
+    path: '/v1/accounting/currencies',
+    auth: 'owner',
+    headers: { 'x-kemfai-company-id': COMPANY_ID },
+    enabledStatus: 200,
+    serviceCall: journalsCurrencies.listCurrencies,
+  },
+  {
+    label: 'PUT /v1/accounting/currencies/:currencyCode',
+    featureKey: 'module.accounting_foundation',
+    method: 'put',
+    path: '/v1/accounting/currencies/USD',
+    auth: 'owner',
+    headers: { 'x-kemfai-company-id': COMPANY_ID, 'if-match': '*' },
+    body: { enabled: true },
+    enabledStatus: 201,
+    serviceCall: journalsCurrencies.putCurrencyConfiguration,
+  },
+  {
+    label: 'GET /v1/accounting/drafts',
+    featureKey: 'module.accounting_foundation',
+    method: 'get',
+    path: '/v1/accounting/drafts',
+    auth: 'owner',
+    headers: { 'x-kemfai-company-id': COMPANY_ID },
+    enabledStatus: 200,
+    serviceCall: accountingDrafts.list,
+  },
+  {
+    label: 'PUT /v1/accounting/drafts/:draftId',
+    featureKey: 'module.accounting_foundation',
+    method: 'put',
+    path: `/v1/accounting/drafts/${DRAFT_ID}`,
+    auth: 'owner',
+    headers: { 'x-kemfai-company-id': COMPANY_ID, 'if-match': '"1"' },
+    body: draftWriteBody,
+    enabledStatus: 200,
+    serviceCall: accountingDrafts.update,
+  },
+  {
+    label: 'POST /v1/accounting/drafts',
+    featureKey: 'module.accounting_foundation',
+    method: 'post',
+    path: '/v1/accounting/drafts',
+    auth: 'owner',
+    headers: { 'x-kemfai-company-id': COMPANY_ID },
+    body: draftWriteBody,
+    enabledStatus: 201,
+    serviceCall: accountingDrafts.save,
+  },
+  {
+    label: 'GET /v1/accounting/drafts/:draftId',
+    featureKey: 'module.accounting_foundation',
+    method: 'get',
+    path: `/v1/accounting/drafts/${DRAFT_ID}`,
+    auth: 'owner',
+    headers: { 'x-kemfai-company-id': COMPANY_ID },
+    enabledStatus: 200,
+    serviceCall: accountingDrafts.get,
+  },
+  {
+    label: 'POST /v1/accounting/drafts/:draftId/validate',
+    featureKey: 'module.accounting_foundation',
+    method: 'post',
+    path: `/v1/accounting/drafts/${DRAFT_ID}/validate`,
+    auth: 'owner',
+    headers: { 'x-kemfai-company-id': COMPANY_ID, 'if-match': '"1"' },
+    enabledStatus: 200,
+    serviceCall: draftValidation.validate,
+  },
 ];
 
 const EXPECTED_METADATA_INVENTORY = [
@@ -365,7 +724,28 @@ const EXPECTED_METADATA_INVENTORY = [
   'GET /modules => module.module_selection',
   'GET /onboarding/checklist => module.onboarding_checklist',
   'GET /support-access/grants => module.support_access',
+  'GET /v1/accounting/accounts => module.accounting_foundation',
+  'GET /v1/accounting/accounts/:accountId => module.accounting_foundation',
+  'GET /v1/accounting/capabilities => module.accounting_foundation',
+  'GET /v1/accounting/dimension-definitions => module.accounting_foundation',
+  'POST /v1/accounting/dimension-definitions => module.accounting_foundation',
+  'PATCH /v1/accounting/dimension-definitions/:definitionId => module.accounting_foundation',
+  'GET /v1/accounting/dimension-values => module.accounting_foundation',
+  'POST /v1/accounting/dimension-values => module.accounting_foundation',
+  'PATCH /v1/accounting/dimension-values/:valueId => module.accounting_foundation',
+  'GET /v1/accounting/dimension-rules => module.accounting_foundation',
+  'POST /v1/accounting/dimension-rules => module.accounting_foundation',
+  'PATCH /v1/accounting/dimension-rules/:ruleId => module.accounting_foundation',
+  'GET /v1/accounting/journals => module.accounting_foundation',
+  'POST /v1/accounting/journals => module.accounting_foundation',
+  'PATCH /v1/accounting/journals/:journalId => module.accounting_foundation',
+  'GET /v1/accounting/currencies => module.accounting_foundation',
+  'PUT /v1/accounting/currencies/:currencyCode => module.accounting_foundation',
+  'GET /v1/accounting/drafts => module.accounting_foundation',
+  'PUT /v1/accounting/drafts/:draftId => module.accounting_foundation',
+  'GET /v1/accounting/drafts/:draftId => module.accounting_foundation',
   'PATCH /accounts/me/locale => module.accounts',
+  'PATCH /v1/accounting/accounts/:accountId => module.accounting_foundation',
   'POST /accounts/mfa/confirm => module.accounts',
   'POST /accounts/mfa/enroll => module.accounts',
   'POST /accounts/resend-verification => module.accounts',
@@ -374,6 +754,9 @@ const EXPECTED_METADATA_INVENTORY = [
   'POST /companies/current/setup/complete => module.company_setup',
   'POST /support-access/grants => module.support_access',
   'POST /support-access/grants/:grantId/revoke => module.support_access',
+  'POST /v1/accounting/accounts => module.accounting_foundation',
+  'POST /v1/accounting/drafts => module.accounting_foundation',
+  'POST /v1/accounting/drafts/:draftId/validate => module.accounting_foundation',
   'PUT /companies/current/settings => module.company_setup',
   'PUT /companies/current/setup => module.company_setup',
   'PUT /modules/selection => module.module_selection',
@@ -433,6 +816,18 @@ describe('FeatureFlagGuard full production-route gating (T112)', () => {
       .useValue(supportAccess)
       .overrideProvider(SupportWorkspaceService)
       .useValue(supportWorkspace)
+      .overrideProvider(AccountingAccountsService)
+      .useValue(accountingAccounts)
+      .overrideProvider(AccountingDraftsService)
+      .useValue(accountingDrafts)
+      .overrideProvider(DraftValidationService)
+      .useValue(draftValidation)
+      .overrideProvider(DimensionsService)
+      .useValue(dimensions)
+      .overrideProvider(JournalsCurrenciesService)
+      .useValue(journalsCurrencies)
+      .overrideProvider(AccountingOdooContextService)
+      .useValue(accountingContext)
       .compile();
     app = moduleRef.createNestApplication();
     await app.init();
@@ -486,6 +881,7 @@ describe('FeatureFlagGuard full production-route gating (T112)', () => {
       ...moduleInventory(ModuleSelectionModule, 'module.module_selection', reflector),
       ...moduleInventory(ChecklistModule, 'module.onboarding_checklist', reflector),
       ...moduleInventory(SupportAccessModule, 'module.support_access', reflector),
+      ...moduleInventory(AccountingModule, 'module.accounting_foundation', reflector),
     ].sort();
     const actualGatedRoutes = applicationGatedInventory(app, reflector).sort();
     const exercisedRoutes = ENDPOINTS.map(

@@ -15,8 +15,8 @@ import {
  *   - KEYCLOAK_CUSTOMERS_REALM (default kemfai-customers)
  *   - Admin token: EITHER a scoped service client (KEYCLOAK_USERS_CLIENT_ID +
  *     KEYCLOAK_USERS_CLIENT_SECRET, client_credentials — the production posture), OR the
- *     dev bootstrap admin (KEYCLOAK_ADMIN/KEYCLOAK_ADMIN_PASSWORD via admin-cli, the
- *     credentials already committed to infra/.env.example for local development).
+ *     explicitly enabled, non-production bootstrap admin fallback. Production always
+ *     requires the scoped service client; exposing bootstrap credentials is insufficient.
  *
  * User create/delete (T032) and email-verification mirroring (T033) are implemented —
  * the minimum Admin REST surface the accounts saga needs; broader admin capabilities are
@@ -52,6 +52,11 @@ const TOKEN_EXPIRY_SAFETY_MS = 10_000;
 function resolveAdminTokenConfig(realm: string, baseUrl: string): AdminTokenConfig | null {
   const clientId = process.env.KEYCLOAK_USERS_CLIENT_ID;
   const clientSecret = process.env.KEYCLOAK_USERS_CLIENT_SECRET;
+  if (Boolean(clientId) !== Boolean(clientSecret)) {
+    throw new KeycloakUnavailableError(
+      'Keycloak user-provisioning service credentials are incomplete',
+    );
+  }
   if (clientId && clientSecret) {
     return {
       tokenUrl: `${baseUrl}/realms/${realm}/protocol/openid-connect/token`,
@@ -62,9 +67,16 @@ function resolveAdminTokenConfig(realm: string, baseUrl: string): AdminTokenConf
       }),
     };
   }
+
+  // T096: bootstrap-admin credentials are never an implicit production fallback. Local
+  // development must opt in explicitly; production requires the least-privilege service
+  // account even if an operator accidentally exposes KEYCLOAK_ADMIN to the API process.
+  const allowBootstrapAdmin =
+    process.env.NODE_ENV !== 'production' &&
+    process.env.KEYCLOAK_ALLOW_BOOTSTRAP_ADMIN_FALLBACK === 'true';
   const username = process.env.KEYCLOAK_ADMIN;
   const password = process.env.KEYCLOAK_ADMIN_PASSWORD;
-  if (username && password) {
+  if (allowBootstrapAdmin && username && password) {
     return {
       tokenUrl: `${baseUrl}/realms/master/protocol/openid-connect/token`,
       body: new URLSearchParams({
@@ -87,7 +99,7 @@ export class AdminRestKeycloakUserProvisioner implements KeycloakUserProvisioner
     const config = resolveAdminTokenConfig(realm, baseUrl);
     if (!config) {
       throw new KeycloakUnavailableError(
-        'No Keycloak admin credentials configured (set KEYCLOAK_USERS_CLIENT_ID/SECRET or KEYCLOAK_ADMIN/PASSWORD)',
+        'Scoped Keycloak user-provisioning credentials are not configured',
       );
     }
 

@@ -29,9 +29,11 @@ describe('EnforceBillingDecisionNotificationTerminalState1789891000000 SQL order
 
   it('creates all missing schema objects before reconciliation and the CHECK', async () => {
     await migration.up(runner);
-    expect(query).toHaveBeenCalledTimes(4);
+    expect(query).toHaveBeenCalledTimes(5);
     const sql = query.mock.calls.map(([statement]) => statement as string);
     for (const column of [
+      'decision_occurrence',
+      'delivered_at',
       'first_send_attempted_at',
       'provider_request_body',
       'provider_message_id',
@@ -40,9 +42,10 @@ describe('EnforceBillingDecisionNotificationTerminalState1789891000000 SQL order
     ]) {
       expect(sql[0]).toMatch(new RegExp(`ADD COLUMN IF NOT EXISTS "${column}"`));
     }
-    expect(sql[1]).toMatch(/CREATE INDEX IF NOT EXISTS.*ambiguous_sweep/s);
-    expect(sql[2]).toMatch(/UPDATE "billing_decision_notification_outbox"/);
-    expect(sql[3]).toMatch(/ADD CONSTRAINT.*terminal_state/s);
+    expect(sql[1]).toMatch(/ALTER COLUMN "decision_occurrence" DROP DEFAULT/);
+    expect(sql[2]).toMatch(/CREATE INDEX IF NOT EXISTS.*ambiguous_sweep/s);
+    expect(sql[3]).toMatch(/UPDATE "billing_decision_notification_outbox"/);
+    expect(sql[4]).toMatch(/ADD CONSTRAINT.*terminal_state/s);
   });
 
   it('owns a transaction for direct invocation and holds ACCESS EXCLUSIVE before guard and DDL', async () => {

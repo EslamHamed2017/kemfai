@@ -6,9 +6,12 @@ import { IdempotencyRecordStatus } from '../../modules/idempotency/entities/idem
 import { IdempotencyService } from '../../modules/idempotency/idempotency.service';
 import { TenantScopedRequest } from '../tenant-context/tenant-context.model';
 
-function makeContext(req: Partial<TenantScopedRequest>): ExecutionContext {
+function makeContext(
+  req: Partial<TenantScopedRequest>,
+  res: { setHeader: jest.Mock } = { setHeader: jest.fn() },
+): ExecutionContext {
   return {
-    switchToHttp: () => ({ getRequest: () => req }),
+    switchToHttp: () => ({ getRequest: () => req, getResponse: () => res }),
   } as unknown as ExecutionContext;
 }
 
@@ -105,7 +108,7 @@ describe('IdempotencyKeyInterceptor (T020)', () => {
       idempotencyKey: 'key-1',
       method: 'POST',
       path: '/accounts',
-      fingerprint: expect.any(String),
+      fingerprint: fingerprintOf(req.body),
     });
     expect(service.complete).toHaveBeenCalledWith('claim-1', { id: 'account-1' });
     expect(service.release).not.toHaveBeenCalled();
@@ -128,6 +131,37 @@ describe('IdempotencyKeyInterceptor (T020)', () => {
     expect(service.claim).toHaveBeenCalledWith(
       expect.objectContaining({ scope: 'keycloak:user-42:tenant:tenant-7' }),
     );
+  });
+
+  it('includes company and concurrency headers in the request fingerprint', async () => {
+    const fingerprints: string[] = [];
+    for (const headers of [
+      {
+        'idempotency-key': 'key-1',
+        'x-kemfai-company-id': '11111111-1111-4111-8111-111111111111',
+        'if-match': '"3"',
+      },
+      {
+        'idempotency-key': 'key-1',
+        'x-kemfai-company-id': '11111111-1111-4111-8111-111111111111',
+        'if-match': '"4"',
+      },
+      {
+        'idempotency-key': 'key-1',
+        'x-kemfai-company-id': '22222222-2222-4222-8222-222222222222',
+        'if-match': '"3"',
+      },
+    ]) {
+      const service = makeService({ claim: jest.fn().mockResolvedValue('claim-1') });
+      const interceptor = new IdempotencyKeyInterceptor(service);
+      await firstValueFrom(
+        interceptor.intercept(makeContext(makeReq({ headers })), makeHandler({ ok: true })),
+      );
+      fingerprints.push((service.claim as jest.Mock).mock.calls[0][0].fingerprint);
+    }
+
+    expect(fingerprints[0]).not.toBe(fingerprints[1]);
+    expect(fingerprints[0]).not.toBe(fingerprints[2]);
   });
 
   it('never stores or replays anything for unauthenticated callers: the request always executes, even with a key header', async () => {
@@ -202,6 +236,26 @@ describe('IdempotencyKeyInterceptor (T020)', () => {
 
     expect(result).toEqual({ id: 'account-1', replayed: true });
     expect(handleSpy).not.toHaveBeenCalled();
+  });
+
+  it('restores a strong resource ETag when replaying a completed mutation', async () => {
+    const req = makeReq({ headers: { 'idempotency-key': 'key-1' } });
+    const res = { setHeader: jest.fn() };
+    const service = makeService({
+      claim: jest.fn().mockResolvedValue(null),
+      find: jest.fn().mockResolvedValue({
+        id: 'claim-1',
+        fingerprint: fingerprintOf(req.body),
+        status: IdempotencyRecordStatus.COMPLETED,
+        responseBody: { resource: { id: 'account-1', version: 4 } },
+        lockedAt: new Date(),
+      }),
+    });
+    const interceptor = new IdempotencyKeyInterceptor(service);
+
+    await firstValueFrom(interceptor.intercept(makeContext(req, res), makeHandler({})));
+
+    expect(res.setHeader).toHaveBeenCalledWith('ETag', '"4"');
   });
 
   it('throws 409 without invoking the handler when the same key is reused with a different payload', async () => {

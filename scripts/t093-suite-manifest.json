@@ -252,6 +252,21 @@
       "path": "test/integration/no-odoo-exposure.integration-spec.ts",
       "run": false,
       "rationale": "T109 owns this AppModule exposure sweep with its exact PostgreSQL/Redis fixture, identity label, frontend runtime, and evidence validators; T093 must classify but not duplicate it"
+    },
+    {
+      "path": "test/integration/accounting-audit-failure.integration-spec.ts",
+      "run": false,
+      "rationale": "Accounting Foundation exact-owned live race and fault-injection suite requires its routed Nest, fault controller, authenticated user, and tenant Odoo database; the PostgreSQL/Redis-only T093 harness cannot execute it"
+    },
+    {
+      "path": "test/integration/accounting-live.integration-spec.ts",
+      "run": false,
+      "rationale": "Accounting Foundation exact-owned live RPC suite requires its routed Nest, authenticated users, two tenant Odoo databases, and fault controller; the PostgreSQL/Redis-only T093 harness cannot execute it"
+    },
+    {
+      "path": "test/integration/accounting-tenant-isolation.integration-spec.ts",
+      "run": false,
+      "rationale": "Accounting Foundation exact-owned tenant isolation suite requires its routed Nest, authenticated users, and distinct tenant Odoo databases; the PostgreSQL/Redis-only T093 harness cannot execute it"
     }
   ]
 }

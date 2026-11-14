@@ -6,6 +6,7 @@ import {
   NestInterceptor,
 } from '@nestjs/common';
 import { createHash } from 'node:crypto';
+import { Response } from 'express';
 import { Observable, firstValueFrom, from, throwError } from 'rxjs';
 import { IdempotencyRecordStatus } from '../../modules/idempotency/entities/idempotency-key.entity';
 import { IdempotencyService } from '../../modules/idempotency/idempotency.service';
@@ -82,7 +83,9 @@ export class IdempotencyKeyInterceptor implements NestInterceptor {
   constructor(private readonly idempotency: IdempotencyService) {}
 
   intercept(context: ExecutionContext, next: CallHandler): Observable<unknown> {
-    const req = context.switchToHttp().getRequest<TenantScopedRequest>();
+    const http = context.switchToHttp();
+    const req = http.getRequest<TenantScopedRequest>();
+    const res = http.getResponse<Response>();
     const header = req.headers[IDEMPOTENCY_HEADER];
     const idempotencyKey = Array.isArray(header) ? header[0] : header;
 
@@ -105,9 +108,23 @@ export class IdempotencyKeyInterceptor implements NestInterceptor {
       );
     }
     const path = req.path;
-    const fingerprint = fingerprintOf(req.body);
+    const companyHeader = req.headers['x-kemfai-company-id'];
+    const companyId = Array.isArray(companyHeader) ? companyHeader[0] : companyHeader;
+    const ifMatchHeader = req.headers['if-match'];
+    const ifMatch = Array.isArray(ifMatchHeader) ? ifMatchHeader[0] : ifMatchHeader;
+    // Company/If-Match first ship with the Accounting Foundation routes in this same
+    // release; main has no pre-existing route that accepts either header. Body-only routes
+    // deliberately retain the legacy hash below, so their persisted replay keys remain valid.
+    const fingerprint =
+      companyId || ifMatch
+        ? fingerprintOf({
+            body: req.body ?? {},
+            companyId: companyId?.trim() || null,
+            ifMatch: ifMatch?.trim() || null,
+          })
+        : fingerprintOf(req.body);
 
-    return from(this.resolve(scope, idempotencyKey, req.method, path, fingerprint, next));
+    return from(this.resolve(scope, idempotencyKey, req.method, path, fingerprint, next, res));
   }
 
   private async resolve(
@@ -117,6 +134,7 @@ export class IdempotencyKeyInterceptor implements NestInterceptor {
     path: string,
     fingerprint: string,
     next: CallHandler,
+    res?: Response,
   ): Promise<unknown> {
     const claimedId = await this.idempotency.claim({
       scope,
@@ -129,7 +147,7 @@ export class IdempotencyKeyInterceptor implements NestInterceptor {
       return this.runAndSettle(claimedId, next);
     }
 
-    return this.awaitExistingClaim(scope, idempotencyKey, method, path, fingerprint, next);
+    return this.awaitExistingClaim(scope, idempotencyKey, method, path, fingerprint, next, res);
   }
 
   private async runAndSettle(id: string, next: CallHandler): Promise<unknown> {
@@ -151,6 +169,7 @@ export class IdempotencyKeyInterceptor implements NestInterceptor {
     path: string,
     fingerprint: string,
     next: CallHandler,
+    res?: Response,
     deadline = Date.now() + POLL_TIMEOUT_MS,
   ): Promise<unknown> {
     const existing = await this.idempotency.find(scope, idempotencyKey, method, path);
@@ -174,6 +193,7 @@ export class IdempotencyKeyInterceptor implements NestInterceptor {
         path,
         fingerprint,
         next,
+        res,
         deadline,
       );
     }
@@ -185,6 +205,7 @@ export class IdempotencyKeyInterceptor implements NestInterceptor {
     }
 
     if (existing.status === IdempotencyRecordStatus.COMPLETED) {
+      this.restoreReplayHeaders(res, existing.responseBody);
       return existing.responseBody;
     }
 
@@ -209,7 +230,24 @@ export class IdempotencyKeyInterceptor implements NestInterceptor {
       path,
       fingerprint,
       next,
+      res,
       deadline,
     );
+  }
+
+  private restoreReplayHeaders(res: Response | undefined, body: unknown): void {
+    if (!res || !body || typeof body !== 'object' || Array.isArray(body)) return;
+    const envelope = body as { resource?: unknown; result?: unknown };
+    const candidate =
+      envelope.resource &&
+      typeof envelope.resource === 'object' &&
+      !Array.isArray(envelope.resource)
+        ? (envelope.resource as { version?: unknown }).version
+        : envelope.result && typeof envelope.result === 'object' && !Array.isArray(envelope.result)
+          ? (envelope.result as { draftVersion?: unknown }).draftVersion
+          : undefined;
+    if (Number.isSafeInteger(candidate) && (candidate as number) > 0) {
+      res.setHeader('ETag', `"${candidate}"`);
+    }
   }
 }

@@ -1,0 +1,5 @@
+id,name,model_id:id,group_id:id,perm_read,perm_write,perm_create,perm_unlink
+access_kemfai_dimension_definition_system,kemfai.dimension.definition system,model_kemfai_dimension_definition,base.group_system,1,1,1,0
+access_kemfai_dimension_value_system,kemfai.dimension.value system,model_kemfai_dimension_value,base.group_system,1,1,1,0
+access_kemfai_dimension_rule_system,kemfai.dimension.rule system,model_kemfai_dimension_rule,base.group_system,1,1,1,0
+access_kemfai_draft_dimension_system,kemfai.account.draft.dimension system,model_kemfai_account_draft_dimension,base.group_system,1,0,1,0

@@ -111,16 +111,19 @@ describe('tenant provisioning control-plane transactions (T044)', () => {
           // single-element id list, not a bare count.
           return [1];
         }
-        if (method === 'button_immediate_install') {
+        if (method === 'button_immediate_install' || method === 'button_immediate_upgrade') {
           fail('addon');
           return true;
         }
+        if (method === 'fields_get') return { id: {} };
         fail('addon-list');
         return [
           'kemfai_tenant_core',
           'kemfai_company_setup',
           'kemfai_module_selection',
           'kemfai_onboarding_checklist',
+          'kemfai_dimensions',
+          'kemfai_accounting',
         ].map((name, index) => ({ id: index + 1, name, state: 'installed' }));
       },
     ),

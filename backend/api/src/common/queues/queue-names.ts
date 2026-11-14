@@ -14,6 +14,7 @@ export const QUEUE_EMAIL_SEND_VERIFICATION = 'email.send_verification';
 export const QUEUE_NOTIFICATION_BILLING_DECISION = 'notification.billing_decision';
 export const QUEUE_SUPPORT_ACCESS_EXPIRY_SWEEP = 'support_access.expiry_sweep';
 export const QUEUE_TRIAL_EXPIRY_SWEEP = 'trial.expiry_sweep';
+export const QUEUE_ACCOUNTING_MUTATION_RECOVERY = 'accounting.mutation_recovery';
 
 export const ALL_QUEUE_NAMES = [
   QUEUE_TENANT_PROVISION,
@@ -21,6 +22,7 @@ export const ALL_QUEUE_NAMES = [
   QUEUE_NOTIFICATION_BILLING_DECISION,
   QUEUE_SUPPORT_ACCESS_EXPIRY_SWEEP,
   QUEUE_TRIAL_EXPIRY_SWEEP,
+  QUEUE_ACCOUNTING_MUTATION_RECOVERY,
 ] as const;
 
 export type QueueName = (typeof ALL_QUEUE_NAMES)[number];
@@ -35,6 +37,9 @@ export const SWEEP_REPEAT_INTERVAL_MS = 30_000;
 
 /** Fixed job name used by both scheduled sweeps; one repeatable job per sweep queue. */
 export const SWEEP_JOB_NAME = 'sweep';
+
+export const ACCOUNTING_RECOVERY_JOB_NAME = 'recover';
+export const ACCOUNTING_RECOVERY_REPEAT_INTERVAL_MS = 5_000;
 
 /**
  * Composite job-id separator. BullMQ reserves `:` for its own internal Redis keys and

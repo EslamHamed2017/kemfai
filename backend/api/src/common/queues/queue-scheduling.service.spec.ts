@@ -1,5 +1,10 @@
 import { Queue } from 'bullmq';
-import { SWEEP_JOB_NAME, SWEEP_REPEAT_INTERVAL_MS } from './queue-names';
+import {
+  ACCOUNTING_RECOVERY_JOB_NAME,
+  ACCOUNTING_RECOVERY_REPEAT_INTERVAL_MS,
+  SWEEP_JOB_NAME,
+  SWEEP_REPEAT_INTERVAL_MS,
+} from './queue-names';
 import { QueueSchedulingService } from './queue-scheduling.service';
 
 type RepeatableJob = { name: string; every: string };
@@ -16,8 +21,16 @@ function fakeQueue(repeatables: RepeatableJob[]) {
   };
 }
 
-function serviceFor(a: ReturnType<typeof fakeQueue>, b: ReturnType<typeof fakeQueue>) {
-  return new QueueSchedulingService(a as unknown as Queue, b as unknown as Queue);
+function serviceFor(
+  a: ReturnType<typeof fakeQueue>,
+  b: ReturnType<typeof fakeQueue>,
+  accounting: ReturnType<typeof fakeQueue> = fakeQueue([]),
+) {
+  return new QueueSchedulingService(
+    a as unknown as Queue,
+    b as unknown as Queue,
+    accounting as unknown as Queue,
+  );
 }
 
 /**
@@ -63,5 +76,27 @@ describe('QueueSchedulingService (T021)', () => {
 
     expect(supportAccess.add).toHaveBeenCalledTimes(1);
     expect(trial.add).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('Accounting recovery schedule (T037)', () => {
+  it('registers one fixed repeatable recovery job and is idempotent on re-bootstrap', async () => {
+    const accounting = fakeQueue([]);
+    const service = serviceFor(fakeQueue([]), fakeQueue([]), accounting);
+    await service.ensureAccountingRecoverySchedule();
+    expect(accounting.add).toHaveBeenCalledWith(
+      ACCOUNTING_RECOVERY_JOB_NAME,
+      {},
+      { repeat: { every: ACCOUNTING_RECOVERY_REPEAT_INTERVAL_MS } },
+    );
+
+    const existing = fakeQueue([
+      {
+        name: ACCOUNTING_RECOVERY_JOB_NAME,
+        every: String(ACCOUNTING_RECOVERY_REPEAT_INTERVAL_MS),
+      },
+    ]);
+    await serviceFor(fakeQueue([]), fakeQueue([]), existing).ensureAccountingRecoverySchedule();
+    expect(existing.add).not.toHaveBeenCalled();
   });
 });

@@ -12,11 +12,17 @@ export class EnforceBillingDecisionNotificationTerminalState1789891000000 implem
   public async up(queryRunner: QueryRunner): Promise<void> {
     await queryRunner.query(`
       ALTER TABLE "billing_decision_notification_outbox"
+        ADD COLUMN IF NOT EXISTS "decision_occurrence" int NOT NULL DEFAULT 0,
+        ADD COLUMN IF NOT EXISTS "delivered_at" timestamptz NULL,
         ADD COLUMN IF NOT EXISTS "first_send_attempted_at" timestamptz NULL,
         ADD COLUMN IF NOT EXISTS "provider_request_body" text NULL,
         ADD COLUMN IF NOT EXISTS "provider_message_id" text NULL,
         ADD COLUMN IF NOT EXISTS "quarantined_at" timestamptz NULL,
         ADD COLUMN IF NOT EXISTS "delivery_rejected_at" timestamptz NULL
+    `);
+    await queryRunner.query(`
+      ALTER TABLE "billing_decision_notification_outbox"
+        ALTER COLUMN "decision_occurrence" DROP DEFAULT
     `);
     await queryRunner.query(`
       CREATE INDEX IF NOT EXISTS "ix_billing_decision_notification_outbox_ambiguous_sweep"
