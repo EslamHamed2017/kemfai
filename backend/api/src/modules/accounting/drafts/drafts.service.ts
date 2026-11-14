@@ -56,6 +56,8 @@ const ISSUE_CODES = new Set<ValidationIssueCode>([
   'DIMENSION_OUT_OF_SCOPE',
   'CONFIGURATION_STALE',
   'POLICY_APPROVAL_REQUIRED',
+  'DRAFT_MINIMUM_LINES_REQUIRED',
+  'DRAFT_LINE_AMOUNT_REQUIRED',
 ]);
 
 type DraftAction = 'draft.save' | 'draft.update' | 'draft.validate';

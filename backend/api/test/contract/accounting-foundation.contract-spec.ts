@@ -5,6 +5,7 @@ import request = require('supertest');
 import { AppModule } from '../../src/app.module';
 import { resolve } from 'node:path';
 import { load } from 'js-yaml';
+import type { ValidationIssueCode } from '../../src/modules/accounting/dto/draft.dto';
 
 type JsonObject = Record<string, unknown>;
 
@@ -12,6 +13,11 @@ const CONTRACT_PATH = resolve(
   __dirname,
   '../../../../specs/003-accounting-foundation/contracts/openapi.yaml',
 );
+const STRUCTURAL_DRAFT_ISSUE_CODES: ValidationIssueCode[] = [
+  'DRAFT_MINIMUM_LINES_REQUIRED',
+  'DRAFT_LINE_AMOUNT_REQUIRED',
+];
+
 const HTTP_METHODS = new Set(['get', 'post', 'put', 'patch', 'delete', 'options', 'head', 'trace']);
 const CANONICAL_OPERATIONS = [
   'GET /capabilities',
@@ -149,6 +155,16 @@ describe('Accounting Foundation committed OpenAPI contract (T001)', () => {
 
   it('matches the canonical safe path/method matrix exactly', () => {
     expect(operationMatrix(document)).toEqual(CANONICAL_OPERATIONS);
+  });
+
+  it('commits structural draft validation codes to the public issue enum', () => {
+    const components = document.components as JsonObject;
+    const schemas = components.schemas as Record<string, JsonObject>;
+    const issue = schemas.ValidationIssue;
+    const properties = issue.properties as Record<string, JsonObject>;
+    const codes = properties.code.enum as string[];
+
+    expect(codes).toEqual(expect.arrayContaining(STRUCTURAL_DRAFT_ISSUE_CODES));
   });
 });
 

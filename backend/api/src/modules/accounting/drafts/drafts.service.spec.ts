@@ -355,6 +355,18 @@ describe('DraftsService minimal non-posting durable path (T051)', () => {
     expect(JSON.stringify(h.odoo.executeKw.mock.calls)).not.toContain('account.move');
   });
 
+  it.each(['DRAFT_MINIMUM_LINES_REQUIRED', 'DRAFT_LINE_AMOUNT_REQUIRED'])(
+    'round-trips the structural validation issue %s from Odoo',
+    async (code) => {
+      const h = harness(upstream([{ code, message_key: code, line_id: LINE, field: 'lines' }]));
+
+      await expect(h.service.validate(request(), COMPANY, DRAFT, 1)).resolves.toMatchObject({
+        ledgerEffect: 'none',
+        result: { status: 'invalid', errors: [{ code, messageKey: code }] },
+      });
+    },
+  );
+
   it('fails closed on malformed upstream data', async () => {
     const h = harness({ id: DRAFT, ledger_effect: 'posted' });
     await expect(h.service.save(request(), COMPANY, body())).rejects.toBeInstanceOf(

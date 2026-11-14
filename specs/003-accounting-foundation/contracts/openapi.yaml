@@ -1405,6 +1405,8 @@ components:
             - DIMENSION_OUT_OF_SCOPE
             - CONFIGURATION_STALE
             - POLICY_APPROVAL_REQUIRED
+            - DRAFT_MINIMUM_LINES_REQUIRED
+            - DRAFT_LINE_AMOUNT_REQUIRED
         messageKey: { type: string, minLength: 1, maxLength: 200 }
         messageParams: { type: object, additionalProperties: true }
         lineId: { type: string, format: uuid, nullable: true }
