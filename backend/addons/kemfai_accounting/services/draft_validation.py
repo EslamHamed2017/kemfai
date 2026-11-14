@@ -414,6 +414,13 @@ class KemfaiAccountDraftValidation(models.Model):
                     )
                 )
 
+        if len(lines) < 2:
+            errors.append(
+                self._kemfai_issue(
+                    "DRAFT_MINIMUM_LINES_REQUIRED", field="lines"
+                )
+            )
+
         for line in lines:
             persisted_line = draft.line_ids.filtered(
                 lambda candidate: candidate.public_id == line["id"]
@@ -464,6 +471,21 @@ class KemfaiAccountDraftValidation(models.Model):
                 base_debit_total += amounts["baseDebit"]
             if amounts["baseCredit"] is not None:
                 base_credit_total += amounts["baseCredit"]
+            if all(
+                amounts[field] is not None and amounts[field] == 0
+                for field in (
+                    "transactionDebit",
+                    "transactionCredit",
+                    "baseDebit",
+                    "baseCredit",
+                )
+            ):
+                errors.append(
+                    self._kemfai_issue(
+                        "DRAFT_LINE_AMOUNT_REQUIRED", line=line, field="amount"
+                    )
+                )
+
             for debit, credit, field in (
                 ("transactionDebit", "transactionCredit", "transaction_amount"),
                 ("baseDebit", "baseCredit", "base_amount"),

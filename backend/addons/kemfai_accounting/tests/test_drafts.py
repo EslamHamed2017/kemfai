@@ -807,6 +807,24 @@ class TestDraftValidationPreviewAndSafety(TransactionCase):
         )
         self.assertFalse(hasattr(self.Draft, "action_post"))
 
+    def test_single_zero_line_is_invalid_for_draft_without_posting(self):
+        saved = self._save(
+            [self._line(sequence=1, debit="0.00", credit="0.00")]
+        )
+
+        result = self._validate(saved)
+
+        self.assertEqual("invalid", result["validation_state"])
+        self.assertIn(
+            "DRAFT_MINIMUM_LINES_REQUIRED",
+            {error["code"] for error in result["errors"]},
+        )
+        self.assertIn(
+            "DRAFT_LINE_AMOUNT_REQUIRED",
+            {error["code"] for error in result["errors"]},
+        )
+        self._assert_no_ledger_effect(result)
+
     def test_balanced_preview_has_exact_base_totals_and_is_only_valid_for_draft(self):
         saved = self._save(
             [
