@@ -333,8 +333,9 @@ class AccountingFoundationCiStructureTests(unittest.TestCase):
         )
         source = BRANCH_PROTECTION_VALIDATOR.read_text(encoding="utf-8")
         self.assertIn("accounting-foundation-owned-live", source)
-        self.assertRegex(source, r"\bgh\b")
-        self.assertRegex(source, r"\bapi\b")
+        self.assertRegex(source, r"\bcurl\b")
+        self.assertIn("https://api.github.com/", source)
+        self.assertNotRegex(source, r"(?i)authorization|GH_TOKEN|GITHUB_TOKEN")
         mutation_pattern = (
             r"(?i)(?:--method|-X)[\"',\s]*(?:POST|PUT|PATCH|DELETE)\b|"
             r"\bgh\s+api\b[^\n]*(?:--input|-f|--field|--raw-field)\b|"
@@ -368,15 +369,15 @@ class AccountingFoundationCiStructureTests(unittest.TestCase):
         self, payload: dict[str, Any], event: str = "pull_request"
     ) -> tuple[subprocess.CompletedProcess[str], str]:
         with tempfile.TemporaryDirectory(prefix="kemfai-af-gh-") as directory:
-            fake_gh = Path(directory) / "gh"
+            fake_curl = Path(directory) / "curl"
             args_log = Path(directory) / "args.log"
-            fake_gh.write_text(
+            fake_curl.write_text(
                 "#!/usr/bin/env bash\n"
                 "printf '%s\\n' \"$GH_PAYLOAD\"\n"
                 "printf '%s\\n' \"$*\" >\"$GH_ARGS_LOG\"\n",
                 encoding="utf-8",
             )
-            fake_gh.chmod(0o755)
+            fake_curl.chmod(0o755)
             env = {
                 **os.environ,
                 "PATH": f"{directory}:{os.environ.get('PATH', '')}",
@@ -413,9 +414,9 @@ class AccountingFoundationCiStructureTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertEqual(
             arguments.strip(),
-            "api repos/owner/repository/branches/main",
+            "--disable --fail --silent --show-error --proto =https --tlsv1.2 -H Accept: application/vnd.github+json -H User-Agent: kemfai-branch-protection-verifier https://api.github.com/repos/owner/repository/branches/main",
         )
-        self.assertNotRegex(arguments, r"--method|-X|--input|--field|-f")
+        self.assertNotRegex(arguments, r"(?i)(?:-X|--request|authorization|token|(?:^|\s)-L(?:\s|$)|--location)")
 
     def test_branch_protection_validator_fails_closed_when_check_is_missing(self) -> None:
         result, _ = self._run_branch_protection_validator(

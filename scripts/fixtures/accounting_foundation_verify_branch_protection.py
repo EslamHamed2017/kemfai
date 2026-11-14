@@ -9,6 +9,7 @@ import re
 import subprocess
 import sys
 from typing import Any
+from urllib.parse import quote
 
 REQUIRED_CHECK = "accounting-foundation-owned-live"
 READ_EVENTS = {"pull_request", "pull_request_target", "merge_group"}
@@ -40,9 +41,23 @@ def main() -> int:
         return fail("GITHUB_REPOSITORY is absent or malformed")
     if re.fullmatch(r"[A-Za-z0-9._/-]+", branch) is None or ".." in branch:
         return fail("target branch is absent or malformed")
-    endpoint = f"repos/{repository}/branches/{branch}"
+    endpoint = f"https://api.github.com/repos/{repository}/branches/{quote(branch, safe='')}"
     result = subprocess.run(
-        ["gh", "api", endpoint],
+        [
+            "curl",
+            "--disable",
+            "--fail",
+            "--silent",
+            "--show-error",
+            "--proto",
+            "=https",
+            "--tlsv1.2",
+            "-H",
+            "Accept: application/vnd.github+json",
+            "-H",
+            "User-Agent: kemfai-branch-protection-verifier",
+            endpoint,
+        ],
         text=True,
         capture_output=True,
         check=False,
@@ -53,7 +68,9 @@ def main() -> int:
         payload = json.loads(result.stdout)
     except json.JSONDecodeError:
         return fail("required-status lookup returned invalid JSON")
-    protection = payload.get("protection") if isinstance(payload, dict) else None
+    if not isinstance(payload, dict):
+        return fail("required-status lookup returned malformed branch metadata")
+    protection = payload.get("protection")
     if (
         payload.get("protected") is not True
         or not isinstance(protection, dict)
