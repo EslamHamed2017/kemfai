@@ -399,17 +399,41 @@ class AccountingFoundationCiStructureTests(unittest.TestCase):
 
     def test_branch_protection_validator_accepts_only_the_exact_required_check(self) -> None:
         result, arguments = self._run_branch_protection_validator(
-            {"contexts": [], "checks": [{"context": JOB_NAME, "app_id": 1}]}
+            {
+                "protected": True,
+                "protection": {
+                    "enabled": True,
+                    "required_status_checks": {
+                        "contexts": [],
+                        "checks": [{"context": JOB_NAME, "app_id": 1}],
+                    },
+                },
+            }
         )
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertEqual(
             arguments.strip(),
-            "api repos/owner/repository/branches/main/protection/required_status_checks",
+            "api repos/owner/repository/branches/main",
         )
         self.assertNotRegex(arguments, r"--method|-X|--input|--field|-f")
 
     def test_branch_protection_validator_fails_closed_when_check_is_missing(self) -> None:
-        result, _ = self._run_branch_protection_validator({"contexts": ["another-check"]})
+        result, _ = self._run_branch_protection_validator(
+            {
+                "protected": True,
+                "protection": {
+                    "enabled": True,
+                    "required_status_checks": {"contexts": ["another-check"]},
+                },
+            }
+        )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("FAIL", result.stderr)
+
+    def test_branch_protection_validator_fails_closed_when_branch_is_unprotected(self) -> None:
+        result, _ = self._run_branch_protection_validator(
+            {"protected": False, "protection": {"enabled": False}}
+        )
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("FAIL", result.stderr)
 

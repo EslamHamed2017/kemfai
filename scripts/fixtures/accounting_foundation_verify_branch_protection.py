@@ -40,7 +40,7 @@ def main() -> int:
         return fail("GITHUB_REPOSITORY is absent or malformed")
     if re.fullmatch(r"[A-Za-z0-9._/-]+", branch) is None or ".." in branch:
         return fail("target branch is absent or malformed")
-    endpoint = f"repos/{repository}/branches/{branch}/protection/required_status_checks"
+    endpoint = f"repos/{repository}/branches/{branch}"
     result = subprocess.run(
         ["gh", "api", endpoint],
         text=True,
@@ -53,7 +53,14 @@ def main() -> int:
         payload = json.loads(result.stdout)
     except json.JSONDecodeError:
         return fail("required-status lookup returned invalid JSON")
-    contexts = required_contexts(payload)
+    protection = payload.get("protection") if isinstance(payload, dict) else None
+    if (
+        payload.get("protected") is not True
+        or not isinstance(protection, dict)
+        or protection.get("enabled") is not True
+    ):
+        return fail("target branch is not protected")
+    contexts = required_contexts(protection.get("required_status_checks"))
     if REQUIRED_CHECK not in contexts:
         return fail(f"{REQUIRED_CHECK} is not configured as a required status check")
     print(f"PASS: {REQUIRED_CHECK} is required on {repository}:{branch} (read-only)")
