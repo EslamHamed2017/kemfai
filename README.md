@@ -44,3 +44,9 @@ See AGENTS.md for agent roles, responsibilities and no-blocker rules.
 ## Status
 - Gate 0 - foundation setup (in progress)
 - P0 launch scope - see Spec Section 23
+
+## License and trademark
+
+KEMFAI source code is licensed under the [GNU General Public License v3.0](LICENSE), except for third-party components that retain their own licenses. Distributed derivative works must comply with the GPL.
+
+The **KEMFAI** name, logos, and brand identity are not licensed under the GPL. Modified distributions must use different branding and must not imply official status or endorsement. See [TRADEMARK_POLICY.md](TRADEMARK_POLICY.md).
