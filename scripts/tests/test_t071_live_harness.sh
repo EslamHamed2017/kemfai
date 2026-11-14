@@ -7,6 +7,7 @@ stage="$(mktemp)"
 probe_pid=""
 delayed_probe_pid=""
 registration_failure_pid_file=""
+pidfd_probe_pid=""
 private_home=""
 fixture_dir=""
 relay_dir=""
@@ -14,6 +15,7 @@ offline_cleanup() {
   [ -z "$probe_pid" ] || kill -KILL -- "-$probe_pid" 2>/dev/null || true
   [ -z "$delayed_probe_pid" ] || kill -KILL -- "-$delayed_probe_pid" 2>/dev/null || kill -KILL -- "$delayed_probe_pid" 2>/dev/null || true
   [ -z "$registration_failure_pid_file" ] || rm -f -- "$registration_failure_pid_file"
+  [ -z "$pidfd_probe_pid" ] || kill -KILL -- "$pidfd_probe_pid" 2>/dev/null || true
   [ -z "$private_home" ] || rmdir "$private_home" 2>/dev/null || true
   [ -z "$fixture_dir" ] || rm -rf -- "$fixture_dir"
   [ -z "$relay_dir" ] || rm -rf -- "$relay_dir"
@@ -116,6 +118,23 @@ if pid_owned_by_this_run "$probe_pid" sleep; then fail "changed start time was a
 owned_pid_starttime["$probe_pid"]="$saved_start"
 terminate_owned_process_group "$probe_pid" sleep || fail "owned process session did not terminate"
 [ -z "$(session_survivors "${owned_pid_session[$probe_pid]}")" ] || fail "owned process-session survivor remained"
+
+# Pre-session cleanup must use a stable kernel process reference. A mismatched pinned
+# start time must not signal the process; the matching identity must terminate it.
+sleep 30 &
+pidfd_probe_pid=$!
+pidfd_probe_start="$(process_identity "$pidfd_probe_pid")"
+read -r pidfd_probe_start _ <<<"$pidfd_probe_start"
+if signal_owned_pid "$pidfd_probe_pid" invalid TERM; then
+  fail "pidfd signaling accepted a mismatched process identity"
+fi
+kill -0 "$pidfd_probe_pid" 2>/dev/null || fail "mismatched pidfd identity signaled the process"
+owned_pid_starttime["$pidfd_probe_pid"]="$pidfd_probe_start"
+owned_pid_session["$pidfd_probe_pid"]=""
+terminate_owned_process_group "$pidfd_probe_pid" sleep \
+  || fail "matching pre-session pidfd identity was not terminated"
+wait "$pidfd_probe_pid" 2>/dev/null || true
+pidfd_probe_pid=""
 
 # Registration must tolerate the bounded fork-to-exec race: the background PID exists
 # before it becomes the leader of the new setsid session.

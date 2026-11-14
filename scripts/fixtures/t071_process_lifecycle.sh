@@ -10,6 +10,27 @@ print(fields[19], fields[3])
 PY
 }
 
+signal_owned_pid() {
+  python3 - "$1" "$2" "$3" <<'PY'
+import os, pathlib, signal, sys
+pid, expected_start, signal_name = int(sys.argv[1]), sys.argv[2], sys.argv[3]
+try:
+    pidfd = os.pidfd_open(pid)
+except ProcessLookupError:
+    raise SystemExit(1)
+try:
+    raw = pathlib.Path('/proc', str(pid), 'stat').read_text()
+    fields = raw[raw.rfind(')') + 2:].split()
+    if fields[19] != expected_start:
+        raise SystemExit(1)
+    signal.pidfd_send_signal(pidfd, getattr(signal, f'SIG{signal_name}'))
+except (FileNotFoundError, ProcessLookupError):
+    raise SystemExit(1)
+finally:
+    os.close(pidfd)
+PY
+}
+
 register_owned_process() {
   local pid="$1" expected_substr="$2" identity initial_start start session cmdline matched=0
   [ -n "$pid" ] && [ -r "/proc/$pid/stat" ] || fail "cannot register missing ${expected_substr} process"
@@ -66,23 +87,16 @@ terminate_owned_process_group() {
   [ -n "$pid" ] || return 0
   session="${owned_pid_session[$pid]:-}"
   if [ -z "$session" ]; then
-    # Registration pinned the start time but failed before setsid. Signal only the exact
-    # positive PID; never infer or signal an unowned process group.
+    # Registration pinned the start time but failed before setsid. Open a pidfd before
+    # validating the pinned start time, then signal through that stable kernel reference;
+    # never signal a reusable positive PID after a separate identity check.
     for _ in $(seq 1 25); do
-      identity="$(process_identity "$pid" 2>/dev/null)" || return 0
-      read -r start _ <<<"$identity"
-      [ "$start" = "${owned_pid_starttime[$pid]:-}" ] || return 0
-      kill -TERM -- "$pid" 2>/dev/null || true
+      signal_owned_pid "$pid" "${owned_pid_starttime[$pid]:-}" TERM || return 0
       sleep 0.2
     done
-    identity="$(process_identity "$pid" 2>/dev/null)" || return 0
-    read -r start _ <<<"$identity"
-    [ "$start" = "${owned_pid_starttime[$pid]:-}" ] || return 0
-    kill -KILL -- "$pid" 2>/dev/null || true
+    signal_owned_pid "$pid" "${owned_pid_starttime[$pid]:-}" KILL || return 0
     for _ in $(seq 1 25); do
-      identity="$(process_identity "$pid" 2>/dev/null)" || return 0
-      read -r start _ <<<"$identity"
-      [ "$start" = "${owned_pid_starttime[$pid]:-}" ] || return 0
+      process_identity "$pid" >/dev/null 2>&1 || return 0
       sleep 0.2
     done
     echo "FAIL cleanup: owned ${expected_substr} pre-session process survivor: ${pid}" >&2
