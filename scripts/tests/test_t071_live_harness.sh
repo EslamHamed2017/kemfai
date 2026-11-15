@@ -23,6 +23,8 @@ private_home=""
 fixture_dir=""
 relay_dir=""
 relay_supervisor=""
+startup_signal_dir=""
+startup_signal_supervisor=""
 offline_cleanup() {
   [ -z "$probe_pid" ] || kill -KILL -- "-$probe_pid" 2>/dev/null || true
   [ -z "$delayed_probe_pid" ] || kill -KILL -- "-$delayed_probe_pid" 2>/dev/null || kill -KILL -- "$delayed_probe_pid" 2>/dev/null || true
@@ -41,6 +43,8 @@ offline_cleanup() {
   [ -z "$fixture_dir" ] || rm -rf -- "$fixture_dir"
   [ -z "$relay_supervisor" ] || terminate_owned_process_group "$relay_supervisor" t071_loopback_relay.py 2>/dev/null || true
   [ -z "$relay_dir" ] || rm -rf -- "$relay_dir"
+  [ -z "$startup_signal_supervisor" ] || terminate_owned_process_group "$startup_signal_supervisor" sleep 2>/dev/null || true
+  [ -z "$startup_signal_dir" ] || rm -rf -- "$startup_signal_dir"
   rm -f -- "$stage"
 }
 trap offline_cleanup EXIT
@@ -148,6 +152,58 @@ owned_pid_starttime["$probe_pid"]="$saved_start"
 terminate_owned_process_group "$probe_pid" sleep || fail "owned process session did not terminate"
 [ -z "$(session_survivors "${owned_pid_session[$probe_pid]}")" ] || fail "owned process-session survivor remained"
 probe_pid=""
+
+# Termination during the fork-to-handler startup window must remain pending until
+# the supervisor can forward it. sitecustomize deterministically pauses pidfd_open
+# after the service fork but before signal handlers are installed.
+startup_signal_dir="$(mktemp -d)"
+cat >"$startup_signal_dir/sitecustomize.py" <<'PY_STARTUP_SIGNAL'
+import os
+import pathlib
+import time
+
+_original_pidfd_open = os.pidfd_open
+
+def paused_pidfd_open(pid):
+    marker = pathlib.Path(os.environ["KEMFAI_STARTUP_SIGNAL_MARKER"])
+    marker.write_text(str(pid) + "\n")
+    release = marker.with_suffix(".release")
+    for _ in range(3000):
+        if release.exists():
+            break
+        time.sleep(0.01)
+    else:
+        raise TimeoutError("startup signal test was not released")
+    return _original_pidfd_open(pid)
+
+os.pidfd_open = paused_pidfd_open
+PY_STARTUP_SIGNAL
+startup_signal_marker="$startup_signal_dir/paused"
+PYTHONPATH="$startup_signal_dir" KEMFAI_STARTUP_SIGNAL_MARKER="$startup_signal_marker" \
+  python3 "$repo_dir/scripts/fixtures/t071_owned_session_exec.py" \
+    --keep-env KEMFAI_STARTUP_SIGNAL_MARKER sleep 30 &
+startup_signal_supervisor=$!
+register_owned_process "$startup_signal_supervisor" sleep
+for _ in $(seq 1 500); do [ -s "$startup_signal_marker" ] && break; sleep .01; done
+[ -s "$startup_signal_marker" ] || fail "startup-signal fixture did not reach the pre-handler window"
+read -r startup_signal_child <"$startup_signal_marker"
+kill -TERM "$startup_signal_supervisor"
+: >"$startup_signal_marker.release"
+for _ in $(seq 1 500); do
+  if ! kill -0 "$startup_signal_child" 2>/dev/null; then break; fi
+  sleep .01
+done
+if kill -0 "$startup_signal_child" 2>/dev/null; then
+  fail "termination during supervisor startup orphaned the service child"
+fi
+set +e
+wait "$startup_signal_supervisor"
+startup_signal_status=$?
+set -e
+[ "$startup_signal_status" -eq 143 ] \
+  || fail "startup-signal supervisor returned unexpected status: $startup_signal_status"
+startup_signal_supervisor=""
+rm -rf -- "$startup_signal_dir"; startup_signal_dir=""
 
 # Cleanup must terminate every member of the owned session, including descendants
 # that create a separate process group while remaining in that session.

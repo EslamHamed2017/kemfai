@@ -21,6 +21,9 @@ def session_members(session: int) -> list[int]:
     return found
 
 
+FORWARDED_SIGNALS = (signal.SIGINT, signal.SIGTERM, signal.SIGHUP)
+previous_signal_mask = signal.pthread_sigmask(signal.SIG_BLOCK, FORWARDED_SIGNALS)
+
 os.setsid()
 args = sys.argv[1:]
 keep = {"PATH", "HOME", "PLAYWRIGHT_BROWSERS_PATH"}
@@ -44,6 +47,7 @@ for name in tuple(os.environ):
 os.environ["KEMFAI_OWNED_SESSION_LEADER"] = str(os.getpid())
 service_pid = os.fork()
 if service_pid == 0:
+    signal.pthread_sigmask(signal.SIG_SETMASK, previous_signal_mask)
     os.execvp(args[0], args)
 try:
     service_pidfd = os.pidfd_open(service_pid)
@@ -62,8 +66,9 @@ def forward_service_signal(signum: int, _frame: object) -> None:
         pass
 
 
-for forwarded_signal in (signal.SIGINT, signal.SIGTERM, signal.SIGHUP):
+for forwarded_signal in FORWARDED_SIGNALS:
     signal.signal(forwarded_signal, forward_service_signal)
+signal.pthread_sigmask(signal.SIG_SETMASK, previous_signal_mask)
 
 while True:
     try:
