@@ -90,7 +90,7 @@ start_relay(){
   local container="$1" port="$2" out="$3" ip subnet cfg ready pid rpid rport
   ip="$(docker inspect -f "{{with index .NetworkSettings.Networks \"$network\"}}{{.IPAddress}}{{end}}" "$container")"; subnet="$(docker network inspect -f '{{(index .IPAM.Config 0).Subnet}}' "$network")"
   cfg="$private_dir/relay-$container.json"; ready="$private_dir/relay-$container.ready"; printf '{"targetIp":"%s","subnet":"%s","targetPort":%s,"readyFile":"%s"}\n' "$ip" "$subnet" "$port" "$ready" >"$cfg"
-  (export T071_RELAY_CONFIG="$cfg"; exec setsid python3 "$repo_dir/scripts/fixtures/t071_loopback_relay.py") >"$artifacts_dir/relay-$container.log" 2>&1 & pid=$!; relay_pids+=("$pid"); register_owned_process "$pid" t071_loopback_relay.py
+  (export T071_RELAY_CONFIG="$cfg"; exec python3 "$repo_dir/scripts/fixtures/t071_owned_session_exec.py" --keep-env T071_RELAY_CONFIG python3 "$repo_dir/scripts/fixtures/t071_loopback_relay.py") >"$artifacts_dir/relay-$container.log" 2>&1 & pid=$!; relay_pids+=("$pid"); register_owned_process "$pid" t071_loopback_relay.py
   for _ in $(seq 1 100); do [ -s "$ready" ] && break; sleep .05; done; [ -s "$ready" ] || fail "relay $container"
   read -r rpid rport < <(python3 -c 'import json,sys;d=json.load(open(sys.argv[1]));print(d["pid"],d["port"])' "$ready"); [ "$rpid" = "$pid" ] || fail 'relay pid mismatch'; printf -v "$out" '%s' "$rport"
 }

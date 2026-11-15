@@ -398,4 +398,11 @@ if (!(expired >= 0 && fresh > expired && conflict > fresh)) {
   process.exit(1);
 }
 NODE
+t074_runner="$repo_dir/scripts/test_t074_live_browser.sh"
+grep -qF 't071_owned_session_exec.py" --keep-env T071_RELAY_CONFIG python3 "$repo_dir/scripts/fixtures/t071_loopback_relay.py"' "$t074_runner" \
+  || fail "T074 relay does not use the owned session supervisor"
+grep -qF 'exec setsid python3 "$repo_dir/scripts/fixtures/t071_loopback_relay.py"' "$t074_runner" \
+  && fail "T074 relay reverted to the direct setsid launcher"
+echo "PASS: T074 relay uses the owned session supervisor"
+
 echo "PASS: T071 harness stages safely, validates URLs exactly, and declares real-stack proof points."
