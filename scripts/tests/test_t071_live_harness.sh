@@ -8,6 +8,8 @@ probe_pid=""
 delayed_probe_pid=""
 registration_failure_pid_file=""
 pidfd_probe_pid=""
+transition_supervisor=""
+transition_child=""
 leaf_violation_parent=""
 leaf_violation_child=""
 leaf_violation_file=""
@@ -30,6 +32,8 @@ offline_cleanup() {
   [ -z "$delayed_probe_pid" ] || kill -KILL -- "-$delayed_probe_pid" 2>/dev/null || kill -KILL -- "$delayed_probe_pid" 2>/dev/null || true
   [ -z "$registration_failure_pid_file" ] || rm -f -- "$registration_failure_pid_file"
   [ -z "$pidfd_probe_pid" ] || kill -KILL -- "$pidfd_probe_pid" 2>/dev/null || true
+  [ -z "$transition_child" ] || kill -KILL -- "$transition_child" 2>/dev/null || true
+  [ -z "$transition_supervisor" ] || kill -KILL -- "$transition_supervisor" 2>/dev/null || true
   [ -z "$leaf_violation_child" ] || kill -KILL -- "$leaf_violation_child" 2>/dev/null || true
   [ -z "$leaf_violation_parent" ] || kill -KILL -- "$leaf_violation_parent" 2>/dev/null || true
   [ -z "$leaf_violation_file" ] || rm -f -- "$leaf_violation_file"
@@ -304,6 +308,35 @@ terminate_owned_process_group "$pidfd_probe_pid" sleep \
   || fail "matching pre-session pidfd identity was not terminated"
 wait "$pidfd_probe_pid" 2>/dev/null || true
 pidfd_probe_pid=""
+
+# Cleanup can begin after the pinned launcher has completed setsid/fork but before
+# registration records the session. It must authenticate that transition and clean
+# the whole newly owned session rather than treating its child as a leaf violation.
+python3 "$repo_dir/scripts/fixtures/t071_owned_session_exec.py" sleep 30 &
+transition_supervisor=$!
+transition_identity="$(process_identity "$transition_supervisor")"
+read -r transition_start _ <<<"$transition_identity"
+for _ in $(seq 1 50); do
+  transition_identity="$(process_identity "$transition_supervisor" 2>/dev/null || true)"
+  transition_child="$(python3 - "$transition_supervisor" <<'PY_CHILD'
+import pathlib, sys
+try:
+    print(pathlib.Path('/proc', sys.argv[1], 'task', sys.argv[1], 'children').read_text().strip())
+except (FileNotFoundError, ProcessLookupError):
+    pass
+PY_CHILD
+)"
+  read -r _ transition_session <<<"$transition_identity"
+  [ "$transition_session" = "$transition_supervisor" ] && [ -n "$transition_child" ] && break
+  sleep .02
+done
+[ "$transition_session" = "$transition_supervisor" ] && [ -n "$transition_child" ]   || fail "owned-session transition fixture did not start"
+owned_pid_starttime["$transition_supervisor"]="$transition_start"
+owned_pid_session["$transition_supervisor"]=""
+terminate_owned_process_group "$transition_supervisor" sleep   || fail "cleanup did not adopt the pinned pre-session to owned-session transition"
+[ -z "$(session_survivors "$transition_supervisor")" ]   || fail "transitioned owned session survivor remained"
+wait "$transition_supervisor" 2>/dev/null || true
+transition_supervisor=""; transition_child=""
 
 # Pre-session cleanup is only safe for the no-fork launcher invariant. If a caller
 # violates it, cleanup must fail closed without signaling either the parent or child.

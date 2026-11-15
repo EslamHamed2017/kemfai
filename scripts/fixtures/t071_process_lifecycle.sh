@@ -165,7 +165,7 @@ PY
 }
 
 terminate_owned_process_group() {
-  local pid="$1" expected_substr="$2" forced_kill_var="${3:-}" session survivors signal_status children declaration
+  local pid="$1" expected_substr="$2" forced_kill_var="${3:-}" session survivors signal_status children declaration identity start current_session
   if [ -n "$forced_kill_var" ]; then
     if [[ ! "$forced_kill_var" =~ ^[a-zA-Z_][a-zA-Z0-9_]*$ ]] \
       || ! declaration="$(declare -p "$forced_kill_var" 2>/dev/null)"; then
@@ -180,10 +180,22 @@ terminate_owned_process_group() {
   [ -n "$pid" ] || return 0
   session="${owned_pid_session[$pid]:-}"
   if [ -z "$session" ]; then
-    # Registration pinned the start time but failed before setsid. Open a pidfd before
-    # validating the pinned start time, then signal through that stable kernel reference;
-    # never signal a reusable positive PID after a separate identity check.
-    children="$(python3 - "$pid" <<'PY_CHILDREN'
+    # Registration can time out just before the pinned launcher completes setsid/fork.
+    # Re-read its immutable identity at cleanup time and adopt the owned session if that
+    # transition has completed; otherwise retain the strict pre-session leaf invariant.
+    identity="$(process_identity "$pid" 2>/dev/null)" || true
+    if [ -n "$identity" ]; then
+      read -r start current_session <<<"$identity"
+      if [ "$start" = "${owned_pid_starttime[$pid]:-}" ] && [ "$current_session" = "$pid" ]; then
+        session="$current_session"
+        owned_pid_session["$pid"]="$current_session"
+      fi
+    fi
+    if [ -z "$session" ]; then
+      # Registration pinned the start time but failed before setsid. Open a pidfd before
+      # validating the pinned start time, then signal through that stable kernel reference;
+      # never signal a reusable positive PID after a separate identity check.
+      children="$(python3 - "$pid" <<'PY_CHILDREN'
 import pathlib, sys
 try:
     print(pathlib.Path('/proc', sys.argv[1], 'task', sys.argv[1], 'children').read_text().strip())
@@ -218,8 +230,9 @@ PY_CHILDREN
       process_identity "$pid" >/dev/null 2>&1 || return 0
       sleep 0.2
     done
-    echo "FAIL cleanup: owned ${expected_substr} pre-session process survivor: ${pid}" >&2
-    return 1
+      echo "FAIL cleanup: owned ${expected_substr} pre-session process survivor: ${pid}" >&2
+      return 1
+    fi
   fi
   if terminate_verified_owned_session "$pid" "${owned_pid_starttime[$pid]:-}" "$session"; then
     signal_status=0
