@@ -15,9 +15,14 @@ cross_group_parent=""
 cross_group_child=""
 cross_group_child_start=""
 cross_group_file=""
+exited_service_leader=""
+exited_service_child=""
+exited_service_child_start=""
+exited_service_file=""
 private_home=""
 fixture_dir=""
 relay_dir=""
+relay_supervisor=""
 offline_cleanup() {
   [ -z "$probe_pid" ] || kill -KILL -- "-$probe_pid" 2>/dev/null || true
   [ -z "$delayed_probe_pid" ] || kill -KILL -- "-$delayed_probe_pid" 2>/dev/null || kill -KILL -- "$delayed_probe_pid" 2>/dev/null || true
@@ -29,8 +34,12 @@ offline_cleanup() {
   [ -z "$cross_group_child" ] || signal_owned_pid "$cross_group_child" "$cross_group_child_start" KILL 2>/dev/null || true
   [ -z "$cross_group_parent" ] || signal_owned_pid "$cross_group_parent" "${owned_pid_starttime[$cross_group_parent]:-}" KILL 2>/dev/null || true
   [ -z "$cross_group_file" ] || rm -f -- "$cross_group_file"
+  [ -z "$exited_service_child" ] || signal_owned_pid "$exited_service_child" "$exited_service_child_start" KILL 2>/dev/null || true
+  [ -z "$exited_service_leader" ] || signal_owned_pid "$exited_service_leader" "${owned_pid_starttime[$exited_service_leader]:-}" KILL 2>/dev/null || true
+  [ -z "$exited_service_file" ] || rm -f -- "$exited_service_file"
   [ -z "$private_home" ] || rmdir "$private_home" 2>/dev/null || true
   [ -z "$fixture_dir" ] || rm -rf -- "$fixture_dir"
+  [ -z "$relay_supervisor" ] || terminate_owned_process_group "$relay_supervisor" t071_loopback_relay.py 2>/dev/null || true
   [ -z "$relay_dir" ] || rm -rf -- "$relay_dir"
   rm -f -- "$stage"
 }
@@ -58,7 +67,7 @@ grep -qF 'register_owned_process "$api_pid"' "$stage" || fail "API process ident
 grep -qF 'register_owned_process "$frontend_pid"' "$stage" || fail "frontend process identity is not registered"
 grep -qF 'register_owned_process "$proxy_pid"' "$stage" || fail "proxy process identity is not registered"
 grep -qF 'source "$repo_dir/scripts/fixtures/t071_process_lifecycle.sh"' "$stage" || fail "generated lifecycle does not load the tested process helper"
-[ "$(grep -cF 't071_owned_session_exec.py' "$stage")" -eq 4 ] || fail "every owned host service must use the no-fork session launcher"
+[ "$(grep -cF 't071_owned_session_exec.py' "$stage")" -eq 4 ] || fail "every owned host service must use the owned session supervisor"
 grep -qF 'exec setsid ' "$stage" && fail "generated lifecycle retained a racy direct setsid launch"
 grep -qF 'session_survivors' "$repo_dir/scripts/fixtures/t071_process_lifecycle.sh" || fail "process helper does not prove session extinction"
 grep -qF '. "$repo_dir/scripts/lib_docker_test_cleanup.sh"' "$stage" \
@@ -123,6 +132,11 @@ grep -qE '^exec "\$stage"$' "$runner" && fail "wrapper exec bypasses its private
 # local process session (no sockets, Docker, or network).
 declare -A owned_pid_starttime=() owned_pid_session=()
 source "$repo_dir/scripts/fixtures/t071_process_lifecycle.sh"
+set +e
+python3 "$repo_dir/scripts/fixtures/t071_owned_session_exec.py" sh -c 'exit 7'
+supervisor_exit=$?
+set -e
+[ "$supervisor_exit" -eq 7 ] || fail "owned session supervisor did not preserve service exit status"
 python3 "$repo_dir/scripts/fixtures/t071_owned_session_exec.py" sleep 30 &
 probe_pid=$!
 register_owned_process "$probe_pid" sleep
@@ -166,6 +180,57 @@ terminate_owned_process_group "$cross_group_parent" python3 \
 wait "$cross_group_parent" 2>/dev/null || true
 cross_group_parent=""; cross_group_child=""; cross_group_child_start=""
 rm -f -- "$cross_group_file"; cross_group_file=""
+
+# The authenticated session leader must remain alive while any service descendant
+# survives, even when the directly executed service process exits first. Otherwise
+# cleanup cannot safely distinguish that owned orphan session from a reused SID.
+exited_service_file="$(mktemp)"
+python3 "$repo_dir/scripts/fixtures/t071_owned_session_exec.py" python3 -c '
+import os, pathlib, sys, time
+child = os.fork()
+if child == 0:
+    os.setpgid(0, 0)
+    time.sleep(30)
+else:
+    pathlib.Path(sys.argv[1]).write_text(str(child) + "\n")
+' "$exited_service_file" &
+exited_service_leader=$!
+register_owned_process "$exited_service_leader" python3
+for _ in $(seq 1 50); do [ -s "$exited_service_file" ] && break; sleep .02; done
+[ -s "$exited_service_file" ] || fail "exited-service fixture did not start"
+read -r exited_service_child <"$exited_service_file"
+exited_service_child_identity="$(process_identity "$exited_service_child")"
+read -r exited_service_child_start _ <<<"$exited_service_child_identity"
+sleep .1
+kill -0 "$exited_service_leader" 2>/dev/null \
+  || fail "owned session leader exited while a service descendant survived"
+terminate_owned_process_group "$exited_service_leader" python3 \
+  || fail "owned session with an exited service process did not terminate"
+[ -z "$(session_survivors "${owned_pid_session[$exited_service_leader]}")" ] \
+  || fail "exited-service owned session survivor remained"
+wait "$exited_service_leader" 2>/dev/null || true
+exited_service_leader=""; exited_service_child=""; exited_service_child_start=""
+rm -f -- "$exited_service_file"; exited_service_file=""
+
+# The real relay readiness contract must expose the registered supervisor identity,
+# not the forked service PID, so the generated launcher can authenticate it.
+relay_dir="$(mktemp -d)"; chmod 700 "$relay_dir"
+relay_config="$relay_dir/config.json"; relay_ready="$relay_dir/ready.json"
+printf '{"targetIp":"10.0.0.2","subnet":"10.0.0.0/24","targetPort":5432,"readyFile":"%s"}\n'   "$relay_ready" >"$relay_config"; chmod 600 "$relay_config"
+(
+  export T071_RELAY_CONFIG="$relay_config"
+  exec python3 "$repo_dir/scripts/fixtures/t071_owned_session_exec.py"     --keep-env T071_RELAY_CONFIG python3 "$repo_dir/scripts/fixtures/t071_loopback_relay.py"
+) &
+relay_supervisor=$!
+register_owned_process "$relay_supervisor" t071_loopback_relay.py
+for _ in $(seq 1 50); do [ -s "$relay_ready" ] && break; sleep .02; done
+[ -s "$relay_ready" ] || fail "supervised relay did not publish readiness"
+relay_ready_pid="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["pid"])' "$relay_ready")"
+[ "$relay_ready_pid" = "$relay_supervisor" ]   || fail "supervised relay readiness did not identify its registered leader"
+terminate_owned_process_group "$relay_supervisor" t071_loopback_relay.py   || fail "supervised relay session did not terminate"
+[ -z "$(session_survivors "${owned_pid_session[$relay_supervisor]}")" ]   || fail "supervised relay session survivor remained"
+wait "$relay_supervisor" 2>/dev/null || true
+relay_supervisor=""; rm -rf -- "$relay_dir"; relay_dir=""
 
 # Pre-session cleanup must use a stable kernel process reference. A mismatched pinned
 # start time must not signal the process; the matching identity must terminate it.

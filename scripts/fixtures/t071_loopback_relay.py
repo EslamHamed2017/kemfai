@@ -86,7 +86,14 @@ def main() -> None:
         return
     with Relay(("127.0.0.1", 0), Handler) as server:
         server.target = (config["target"], config["port"])
-        payload = json.dumps({"pid": os.getpid(), "port": server.server_address[1]}) + "\n"
+        leader_text = os.environ.get("KEMFAI_OWNED_SESSION_LEADER", "")
+        try:
+            leader_pid = int(leader_text)
+        except ValueError:
+            fail("owned session leader identity is invalid")
+        if leader_pid <= 0 or leader_pid != os.getsid(0):
+            fail("owned session leader identity does not match the relay session")
+        payload = json.dumps({"pid": leader_pid, "port": server.server_address[1]}) + "\n"
         descriptor = os.open(config["ready"], os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
         with os.fdopen(descriptor, "w", encoding="utf-8") as ready:
             ready.write(payload)
