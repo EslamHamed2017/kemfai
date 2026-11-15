@@ -86,6 +86,80 @@ print(' '.join(found))
 PY
 }
 
+terminate_verified_owned_session() {
+  python3 - "$1" "$2" "$3" <<'PY'
+import os, pathlib, signal, sys, time
+leader, expected_start, expected_session = int(sys.argv[1]), sys.argv[2], sys.argv[3]
+
+def identity(path):
+    raw = path.read_text()
+    fields = raw[raw.rfind(')') + 2:].split()
+    if len(fields) < 20:
+        raise ValueError('short /proc stat record')
+    return fields[19], fields[3]
+
+def members():
+    opened = []
+    try:
+        for stat in pathlib.Path('/proc').glob('[0-9]*/stat'):
+            pidfd = None
+            try:
+                start, session = identity(stat)
+                if session != expected_session:
+                    continue
+                pidfd = os.pidfd_open(int(stat.parent.name))
+                if identity(stat) != (start, expected_session):
+                    os.close(pidfd); pidfd = None
+                    continue
+                opened.append(pidfd); pidfd = None
+            except (FileNotFoundError, ProcessLookupError):
+                pass
+            finally:
+                if pidfd is not None:
+                    os.close(pidfd)
+        return opened
+    except BaseException:
+        for pidfd in opened:
+            os.close(pidfd)
+        raise
+
+try:
+    leader_fd = os.pidfd_open(leader)
+    if identity(pathlib.Path('/proc', str(leader), 'stat')) != (expected_start, expected_session):
+        raise RuntimeError('leader identity mismatch')
+    for signal_name in ('TERM', 'KILL'):
+        for _ in range(25):
+            current = members()
+            if not current:
+                raise SystemExit(0)
+            try:
+                for pidfd in current:
+                    try:
+                        signal.pidfd_send_signal(pidfd, getattr(signal, f'SIG{signal_name}'))
+                    except ProcessLookupError:
+                        # Another signaled member may have already reaped this process.
+                        pass
+            finally:
+                for pidfd in current:
+                    os.close(pidfd)
+            time.sleep(0.2)
+    current = members()
+    try:
+        if current:
+            raise RuntimeError('owned session members survived SIGKILL')
+    finally:
+        for pidfd in current:
+            os.close(pidfd)
+except (AttributeError, FileNotFoundError, IndexError, OSError, ProcessLookupError,
+        RuntimeError, UnicodeError, ValueError) as exc:
+    print(f'FAIL cleanup: cannot terminate verified owned session: {exc}', file=sys.stderr)
+    raise SystemExit(1)
+finally:
+    if 'leader_fd' in locals():
+        os.close(leader_fd)
+PY
+}
+
 terminate_owned_process_group() {
   local pid="$1" expected_substr="$2" session survivors signal_status children
   [ -n "$pid" ] || return 0
@@ -132,26 +206,8 @@ PY_CHILDREN
     echo "FAIL cleanup: owned ${expected_substr} pre-session process survivor: ${pid}" >&2
     return 1
   fi
-  if ! pid_owned_by_this_run "$pid" "$expected_substr"; then
-    survivors="${session:+$(session_survivors "$session")}" 
-    [ -z "$survivors" ] && return 0
-    # The registered leader exited but descendants remain in its immutable session.
-    # A live process group cannot have its numeric id recycled; signal that original
-    # group, never the now-unrelated positive pid.
-    kill -TERM -- "-$pid" 2>/dev/null || true
-  fi
-  kill -TERM -- "-$pid" 2>/dev/null || true
-  for _ in $(seq 1 25); do
-    survivors="$(session_survivors "$session")"
-    [ -z "$survivors" ] && return 0
-    sleep 0.2
-  done
-  kill -KILL -- "-$pid" 2>/dev/null || true
-  for _ in $(seq 1 25); do
-    survivors="$(session_survivors "$session")"
-    [ -z "$survivors" ] && return 0
-    sleep 0.2
-  done
-  echo "FAIL cleanup: owned ${expected_substr} session survivor(s): ${survivors}" >&2
-  return 1
+  terminate_verified_owned_session "$pid" "${owned_pid_starttime[$pid]:-}" "$session" || {
+    echo "FAIL cleanup: could not terminate verified owned ${expected_substr} session" >&2
+    return 1
+  }
 }

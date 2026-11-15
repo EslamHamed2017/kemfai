@@ -11,6 +11,10 @@ pidfd_probe_pid=""
 leaf_violation_parent=""
 leaf_violation_child=""
 leaf_violation_file=""
+cross_group_parent=""
+cross_group_child=""
+cross_group_child_start=""
+cross_group_file=""
 private_home=""
 fixture_dir=""
 relay_dir=""
@@ -22,6 +26,9 @@ offline_cleanup() {
   [ -z "$leaf_violation_child" ] || kill -KILL -- "$leaf_violation_child" 2>/dev/null || true
   [ -z "$leaf_violation_parent" ] || kill -KILL -- "$leaf_violation_parent" 2>/dev/null || true
   [ -z "$leaf_violation_file" ] || rm -f -- "$leaf_violation_file"
+  [ -z "$cross_group_child" ] || signal_owned_pid "$cross_group_child" "$cross_group_child_start" KILL 2>/dev/null || true
+  [ -z "$cross_group_parent" ] || signal_owned_pid "$cross_group_parent" "${owned_pid_starttime[$cross_group_parent]:-}" KILL 2>/dev/null || true
+  [ -z "$cross_group_file" ] || rm -f -- "$cross_group_file"
   [ -z "$private_home" ] || rmdir "$private_home" 2>/dev/null || true
   [ -z "$fixture_dir" ] || rm -rf -- "$fixture_dir"
   [ -z "$relay_dir" ] || rm -rf -- "$relay_dir"
@@ -126,6 +133,39 @@ if pid_owned_by_this_run "$probe_pid" sleep; then fail "changed start time was a
 owned_pid_starttime["$probe_pid"]="$saved_start"
 terminate_owned_process_group "$probe_pid" sleep || fail "owned process session did not terminate"
 [ -z "$(session_survivors "${owned_pid_session[$probe_pid]}")" ] || fail "owned process-session survivor remained"
+probe_pid=""
+
+# Cleanup must terminate every member of the owned session, including descendants
+# that create a separate process group while remaining in that session.
+cross_group_file="$(mktemp)"
+python3 "$repo_dir/scripts/fixtures/t071_owned_session_exec.py" python3 -c '
+import os, pathlib, sys, time
+child = os.fork()
+if child == 0:
+    os.setpgid(0, 0)
+    time.sleep(30)
+else:
+    pathlib.Path(sys.argv[1]).write_text(str(child) + "\n")
+    os.waitpid(child, 0)
+' "$cross_group_file" &
+cross_group_parent=$!
+register_owned_process "$cross_group_parent" python3
+for _ in $(seq 1 50); do [ -s "$cross_group_file" ] && break; sleep .02; done
+[ -s "$cross_group_file" ] || fail "cross-process-group fixture did not start"
+read -r cross_group_child <"$cross_group_file"
+cross_group_child_identity="$(process_identity "$cross_group_child")"
+read -r cross_group_child_start _ <<<"$cross_group_child_identity"
+[ "$(ps -o sid= -p "$cross_group_child" | tr -d ' ')" = "${owned_pid_session[$cross_group_parent]}" ] \
+  || fail "cross-process-group child left the owned session"
+[ "$(ps -o pgid= -p "$cross_group_child" | tr -d ' ')" != "$cross_group_parent" ] \
+  || fail "cross-process-group child did not establish a distinct process group"
+terminate_owned_process_group "$cross_group_parent" python3 \
+  || fail "owned session with multiple process groups did not terminate"
+[ -z "$(session_survivors "${owned_pid_session[$cross_group_parent]}")" ] \
+  || fail "cross-process-group owned session survivor remained"
+wait "$cross_group_parent" 2>/dev/null || true
+cross_group_parent=""; cross_group_child=""; cross_group_child_start=""
+rm -f -- "$cross_group_file"; cross_group_file=""
 
 # Pre-session cleanup must use a stable kernel process reference. A mismatched pinned
 # start time must not signal the process; the matching identity must terminate it.
