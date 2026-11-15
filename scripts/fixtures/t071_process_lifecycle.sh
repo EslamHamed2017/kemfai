@@ -17,15 +17,19 @@ pid, expected_start, signal_name = int(sys.argv[1]), sys.argv[2], sys.argv[3]
 try:
     pidfd = os.pidfd_open(pid)
 except ProcessLookupError:
-    raise SystemExit(1)
+    raise SystemExit(3)
+except (AttributeError, OSError):
+    raise SystemExit(2)
 try:
     raw = pathlib.Path('/proc', str(pid), 'stat').read_text()
     fields = raw[raw.rfind(')') + 2:].split()
     if fields[19] != expected_start:
-        raise SystemExit(1)
+        raise SystemExit(3)
     signal.pidfd_send_signal(pidfd, getattr(signal, f'SIG{signal_name}'))
 except (FileNotFoundError, ProcessLookupError):
-    raise SystemExit(1)
+    raise SystemExit(3)
+except (AttributeError, OSError, ValueError):
+    raise SystemExit(2)
 finally:
     os.close(pidfd)
 PY
@@ -83,18 +87,44 @@ PY
 }
 
 terminate_owned_process_group() {
-  local pid="$1" expected_substr="$2" session survivors
+  local pid="$1" expected_substr="$2" session survivors signal_status children
   [ -n "$pid" ] || return 0
   session="${owned_pid_session[$pid]:-}"
   if [ -z "$session" ]; then
     # Registration pinned the start time but failed before setsid. Open a pidfd before
     # validating the pinned start time, then signal through that stable kernel reference;
     # never signal a reusable positive PID after a separate identity check.
+    children="$(python3 - "$pid" <<'PY_CHILDREN'
+import pathlib, sys
+try:
+    print(pathlib.Path('/proc', sys.argv[1], 'task', sys.argv[1], 'children').read_text().strip())
+except (FileNotFoundError, ProcessLookupError):
+    pass
+PY_CHILDREN
+)" || { echo "FAIL cleanup: cannot verify pre-session ${expected_substr} process is a leaf: ${pid}" >&2; return 1; }
+    if [ -n "$children" ]; then
+      echo "FAIL cleanup: pre-session ${expected_substr} process violated owned leaf-launch invariant: ${pid} -> ${children}" >&2
+      return 1
+    fi
     for _ in $(seq 1 25); do
-      signal_owned_pid "$pid" "${owned_pid_starttime[$pid]:-}" TERM || return 0
-      sleep 0.2
+      if signal_owned_pid "$pid" "${owned_pid_starttime[$pid]:-}" TERM; then
+        sleep 0.2
+        continue
+      else
+        signal_status=$?
+        [ "$signal_status" -eq 3 ] && return 0
+        echo "FAIL cleanup: cannot signal owned ${expected_substr} pre-session process: ${pid}" >&2
+        return 1
+      fi
     done
-    signal_owned_pid "$pid" "${owned_pid_starttime[$pid]:-}" KILL || return 0
+    if signal_owned_pid "$pid" "${owned_pid_starttime[$pid]:-}" KILL; then
+      :
+    else
+      signal_status=$?
+      [ "$signal_status" -eq 3 ] && return 0
+      echo "FAIL cleanup: cannot kill owned ${expected_substr} pre-session process: ${pid}" >&2
+      return 1
+    fi
     for _ in $(seq 1 25); do
       process_identity "$pid" >/dev/null 2>&1 || return 0
       sleep 0.2

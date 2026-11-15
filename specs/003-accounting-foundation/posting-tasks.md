@@ -6,7 +6,7 @@ This is a specification-only, internal, temporary commissioning artifact. It pro
 
 ## Commissioning baseline
 
-- Repository: `kemfai-recovery-20261027`
+- Repository: `EslamHamed2017/kemfai` (local commissioning checkout: `kemfai-recovery-20261027`)
 - Exact baseline: `f1ce348782af57a6731d0b0f3299a6dd10807d4d`
 - Normative specification: `specs/003-accounting-foundation/posting-addendum.md` v1.0, independently reviewed and specification-accepted only.
 - External prerequisites: accepted T151 (Finance Owner-approved Accounting Policy Matrix v1.0) and T152 (independently reviewed Story 4 posting addendum).

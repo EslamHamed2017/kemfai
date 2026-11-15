@@ -8,6 +8,9 @@ probe_pid=""
 delayed_probe_pid=""
 registration_failure_pid_file=""
 pidfd_probe_pid=""
+leaf_violation_parent=""
+leaf_violation_child=""
+leaf_violation_file=""
 private_home=""
 fixture_dir=""
 relay_dir=""
@@ -16,6 +19,9 @@ offline_cleanup() {
   [ -z "$delayed_probe_pid" ] || kill -KILL -- "-$delayed_probe_pid" 2>/dev/null || kill -KILL -- "$delayed_probe_pid" 2>/dev/null || true
   [ -z "$registration_failure_pid_file" ] || rm -f -- "$registration_failure_pid_file"
   [ -z "$pidfd_probe_pid" ] || kill -KILL -- "$pidfd_probe_pid" 2>/dev/null || true
+  [ -z "$leaf_violation_child" ] || kill -KILL -- "$leaf_violation_child" 2>/dev/null || true
+  [ -z "$leaf_violation_parent" ] || kill -KILL -- "$leaf_violation_parent" 2>/dev/null || true
+  [ -z "$leaf_violation_file" ] || rm -f -- "$leaf_violation_file"
   [ -z "$private_home" ] || rmdir "$private_home" 2>/dev/null || true
   [ -z "$fixture_dir" ] || rm -rf -- "$fixture_dir"
   [ -z "$relay_dir" ] || rm -rf -- "$relay_dir"
@@ -45,6 +51,8 @@ grep -qF 'register_owned_process "$api_pid"' "$stage" || fail "API process ident
 grep -qF 'register_owned_process "$frontend_pid"' "$stage" || fail "frontend process identity is not registered"
 grep -qF 'register_owned_process "$proxy_pid"' "$stage" || fail "proxy process identity is not registered"
 grep -qF 'source "$repo_dir/scripts/fixtures/t071_process_lifecycle.sh"' "$stage" || fail "generated lifecycle does not load the tested process helper"
+[ "$(grep -cF 't071_owned_session_exec.py' "$stage")" -eq 4 ] || fail "every owned host service must use the no-fork session launcher"
+grep -qF 'exec setsid ' "$stage" && fail "generated lifecycle retained a racy direct setsid launch"
 grep -qF 'session_survivors' "$repo_dir/scripts/fixtures/t071_process_lifecycle.sh" || fail "process helper does not prove session extinction"
 grep -qF '. "$repo_dir/scripts/lib_docker_test_cleanup.sh"' "$stage" \
   || fail "generated lifecycle does not load the shared exact-owned Docker cleanup helper"
@@ -108,7 +116,7 @@ grep -qE '^exec "\$stage"$' "$runner" && fail "wrapper exec bypasses its private
 # local process session (no sockets, Docker, or network).
 declare -A owned_pid_starttime=() owned_pid_session=()
 source "$repo_dir/scripts/fixtures/t071_process_lifecycle.sh"
-setsid sleep 30 &
+python3 "$repo_dir/scripts/fixtures/t071_owned_session_exec.py" sleep 30 &
 probe_pid=$!
 register_owned_process "$probe_pid" sleep
 pid_owned_by_this_run "$probe_pid" sleep || fail "registered process identity was not recognized"
@@ -136,9 +144,31 @@ terminate_owned_process_group "$pidfd_probe_pid" sleep \
 wait "$pidfd_probe_pid" 2>/dev/null || true
 pidfd_probe_pid=""
 
+# Pre-session cleanup is only safe for the no-fork launcher invariant. If a caller
+# violates it, cleanup must fail closed without signaling either the parent or child.
+leaf_violation_file="$(mktemp)"
+bash -c 'sleep 30 & printf "%s\n" "$!" >"$1"; wait' _ "$leaf_violation_file" &
+leaf_violation_parent=$!
+for _ in $(seq 1 50); do [ -s "$leaf_violation_file" ] && break; sleep .02; done
+[ -s "$leaf_violation_file" ] || fail "leaf-invariant fixture did not start"
+read -r leaf_violation_child <"$leaf_violation_file"
+leaf_violation_start="$(process_identity "$leaf_violation_parent")"
+read -r leaf_violation_start _ <<<"$leaf_violation_start"
+owned_pid_starttime["$leaf_violation_parent"]="$leaf_violation_start"
+owned_pid_session["$leaf_violation_parent"]=""
+if terminate_owned_process_group "$leaf_violation_parent" sleep; then
+  fail "pre-session cleanup accepted a process with descendants"
+fi
+kill -0 "$leaf_violation_parent" 2>/dev/null || fail "leaf-invariant failure signaled its parent"
+kill -0 "$leaf_violation_child" 2>/dev/null || fail "leaf-invariant failure signaled its child"
+kill -KILL -- "$leaf_violation_child" "$leaf_violation_parent" 2>/dev/null || true
+wait "$leaf_violation_parent" 2>/dev/null || true
+leaf_violation_parent=""; leaf_violation_child=""
+rm -f -- "$leaf_violation_file"; leaf_violation_file=""
+
 # Registration must tolerate the bounded fork-to-exec race: the background PID exists
 # before it becomes the leader of the new setsid session.
-bash -c 'sleep .2; exec setsid sleep 30' &
+bash -c 'sleep .2; exec python3 "$1" sleep 30' _ "$repo_dir/scripts/fixtures/t071_owned_session_exec.py" &
 delayed_probe_pid=$!
 register_owned_process "$delayed_probe_pid" sleep
 pid_owned_by_this_run "$delayed_probe_pid" sleep || fail "delayed exec process identity was not recognized"
