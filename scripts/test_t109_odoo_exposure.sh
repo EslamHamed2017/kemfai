@@ -299,7 +299,7 @@ run_frontend() {
 
   (
     cd "$REPO_ROOT/backend/api"
-    exec setsid env \
+    exec python3 "$SCRIPT_DIR/fixtures/t071_owned_session_exec.py" env \
       NODE_ENV=test \
       T109_FIXTURE_LABEL="$RESOURCE_LABEL" \
       T109_CONTROL_DB_OWNED=1 \
@@ -322,7 +322,7 @@ run_frontend() {
 
   (
     cd "$runtime_frontend"
-    exec setsid env \
+    exec python3 "$SCRIPT_DIR/fixtures/t071_owned_session_exec.py" env \
       NODE_ENV=production \
       NEXT_TELEMETRY_DISABLED=1 \
       NEXT_PUBLIC_API_URL="$api_url" \

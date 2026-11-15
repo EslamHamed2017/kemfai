@@ -405,4 +405,42 @@ grep -qF 'exec setsid python3 "$repo_dir/scripts/fixtures/t071_loopback_relay.py
   && fail "T074 relay reverted to the direct setsid launcher"
 echo "PASS: T074 relay uses the owned session supervisor"
 
+# Every production runner that imports the authenticated session cleanup helper
+# must launch each process immediately preceding its registration through the
+# supervisor. Discover callers so a future lifecycle user cannot escape this gate.
+python3 - "$repo_dir" <<'PY_SUPERVISED_CALLERS'
+import pathlib
+import sys
+
+scripts = pathlib.Path(sys.argv[1], "scripts")
+expected = {
+    "test_t071_live.sh",
+    "test_t072_live.sh",
+    "test_t074_live_browser.sh",
+    "test_t109_odoo_exposure.sh",
+    "test_t112_owned_fixture.sh",
+}
+callers = {
+    path.name: path.read_text()
+    for path in scripts.glob("*.sh")
+    if "t071_process_lifecycle.sh" in path.read_text()
+}
+if set(callers) != expected:
+    raise SystemExit(
+        "FAIL: shared lifecycle caller inventory mismatch: "
+        f"expected={sorted(expected)} discovered={sorted(callers)}"
+    )
+for name, source in callers.items():
+    registrations = source.count("register_owned_process ")
+    supervisors = source.count("t071_owned_session_exec.py")
+    if registrations == 0:
+        raise SystemExit(f"FAIL: shared lifecycle caller has no registration: {name}")
+    if supervisors != registrations:
+        raise SystemExit(
+            f"FAIL: every registered process requires one owned supervisor in {name}: "
+            f"supervisors={supervisors} registrations={registrations}"
+        )
+print("PASS: all discovered shared lifecycle callers supervise every registered process")
+PY_SUPERVISED_CALLERS
+
 echo "PASS: T071 harness stages safely, validates URLs exactly, and declares real-stack proof points."

@@ -250,7 +250,7 @@ class T097QuickstartTest(unittest.TestCase):
         self.assertRegex(t109, r'(?m)^  allocate_ports$')
         self.assertIn('-p "127.0.0.1:$PG_PORT:5432"', t109)
         self.assertIn('-p "127.0.0.1:$REDIS_PORT:6379"', t109)
-        self.assertEqual(t109.count("exec setsid env"), 2)
+        self.assertEqual(t109.count('t071_owned_session_exec.py" env'), 2)
         self.assertIn('terminate_owned_process_group "$NEXT_PID"', t109)
         self.assertIn('terminate_owned_process_group "$API_PID"', t109)
         self.assertIn('container_survivors=%s', t109)
