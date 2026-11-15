@@ -90,6 +90,7 @@ terminate_verified_owned_session() {
   python3 - "$1" "$2" "$3" <<'PY'
 import os, pathlib, signal, sys, time
 leader, expected_start, expected_session = int(sys.argv[1]), sys.argv[2], sys.argv[3]
+forced_kill = False
 
 def identity(path):
     raw = path.read_text()
@@ -131,7 +132,9 @@ try:
         for _ in range(25):
             current = members()
             if not current:
-                raise SystemExit(0)
+                raise SystemExit(10 if forced_kill else 0)
+            if signal_name == 'KILL':
+                forced_kill = True
             try:
                 for pidfd in current:
                     try:
@@ -150,6 +153,7 @@ try:
     finally:
         for pidfd in current:
             os.close(pidfd)
+    raise SystemExit(10 if forced_kill else 0)
 except (AttributeError, FileNotFoundError, IndexError, OSError, ProcessLookupError,
         RuntimeError, UnicodeError, ValueError) as exc:
     print(f'FAIL cleanup: cannot terminate verified owned session: {exc}', file=sys.stderr)
@@ -161,7 +165,18 @@ PY
 }
 
 terminate_owned_process_group() {
-  local pid="$1" expected_substr="$2" session survivors signal_status children
+  local pid="$1" expected_substr="$2" forced_kill_var="${3:-}" session survivors signal_status children declaration
+  if [ -n "$forced_kill_var" ]; then
+    if [[ ! "$forced_kill_var" =~ ^[a-zA-Z_][a-zA-Z0-9_]*$ ]] \
+      || ! declaration="$(declare -p "$forced_kill_var" 2>/dev/null)"; then
+      echo "FAIL cleanup: invalid forced-kill result variable" >&2
+      return 1
+    fi
+    case "$declaration" in
+      'declare -- '*|'declare -i '*) ;;
+      *) echo "FAIL cleanup: forced-kill result variable must be a writable scalar" >&2; return 1 ;;
+    esac
+  fi
   [ -n "$pid" ] || return 0
   session="${owned_pid_session[$pid]:-}"
   if [ -z "$session" ]; then
@@ -192,7 +207,7 @@ PY_CHILDREN
       fi
     done
     if signal_owned_pid "$pid" "${owned_pid_starttime[$pid]:-}" KILL; then
-      :
+      [ -z "$forced_kill_var" ] || printf -v "$forced_kill_var" '%s' 1
     else
       signal_status=$?
       [ "$signal_status" -eq 3 ] && return 0
@@ -206,8 +221,17 @@ PY_CHILDREN
     echo "FAIL cleanup: owned ${expected_substr} pre-session process survivor: ${pid}" >&2
     return 1
   fi
-  terminate_verified_owned_session "$pid" "${owned_pid_starttime[$pid]:-}" "$session" || {
+  if terminate_verified_owned_session "$pid" "${owned_pid_starttime[$pid]:-}" "$session"; then
+    signal_status=0
+  else
+    signal_status=$?
+  fi
+  if [ "$signal_status" -eq 10 ]; then
+    [ -z "$forced_kill_var" ] || printf -v "$forced_kill_var" '%s' 1
+    return 0
+  fi
+  if [ "$signal_status" -ne 0 ]; then
     echo "FAIL cleanup: could not terminate verified owned ${expected_substr} session" >&2
     return 1
-  }
+  fi
 }

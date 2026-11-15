@@ -299,7 +299,9 @@ run_frontend() {
 
   (
     cd "$REPO_ROOT/backend/api"
-    exec python3 "$SCRIPT_DIR/fixtures/t071_owned_session_exec.py" env \
+    exec python3 "$SCRIPT_DIR/fixtures/t071_owned_session_exec.py" \
+      --keep-env CONTROL_DB_HOST,CONTROL_DB_PORT,CONTROL_DB_USER,CONTROL_DB_PASSWORD,CONTROL_DB_NAME,REDIS_URL \
+      env \
       NODE_ENV=test \
       T109_FIXTURE_LABEL="$RESOURCE_LABEL" \
       T109_CONTROL_DB_OWNED=1 \

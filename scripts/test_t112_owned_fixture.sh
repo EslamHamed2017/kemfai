@@ -82,29 +82,6 @@ record_secret() {
   [ -z "$1" ] || printf '%s\0' "$1" >>"$secrets"
 }
 
-stop_owned_process() {
-  local pid="$1" marker="$2" session survivors
-  [ -n "$pid" ] || return 0
-  session="${owned_pid_session[$pid]:-}"
-  [ -n "$session" ] || return 1
-  if pid_owned_by_this_run "$pid" "$marker" || [ -n "$(session_survivors "$session")" ]; then
-    kill -TERM -- "-$pid" 2>/dev/null || true
-  fi
-  for _ in $(seq 1 50); do
-    survivors="$(session_survivors "$session")"
-    [ -z "$survivors" ] && return 0
-    sleep .1
-  done
-  forced_kill=1
-  kill -KILL -- "-$pid" 2>/dev/null || true
-  for _ in $(seq 1 50); do
-    survivors="$(session_survivors "$session")"
-    [ -z "$survivors" ] && return 1
-    sleep .1
-  done
-  return 1
-}
-
 exact_container_id() {
   local name="$1" id ownership
   id="$(docker ps -aq --no-trunc --filter "name=^/${name}$")" || return 3
@@ -205,10 +182,10 @@ cleanup() {
   trap - EXIT INT TERM
   set +e
 
-  stop_owned_process "$frontend_pid" 'next' || cleanup_failed=1
-  stop_owned_process "$api_pid" 'dist/main.js' || cleanup_failed=1
-  stop_owned_process "$fixture_pid" 't112-live-fixture.ts' || cleanup_failed=1
-  stop_owned_process "$port_keeper_pid" 'reserve_loopback_ports.py' || cleanup_failed=1
+  terminate_owned_process_group "$frontend_pid" 'next' forced_kill || cleanup_failed=1
+  terminate_owned_process_group "$api_pid" 'dist/main.js' forced_kill || cleanup_failed=1
+  terminate_owned_process_group "$fixture_pid" 't112-live-fixture.ts' forced_kill || cleanup_failed=1
+  terminate_owned_process_group "$port_keeper_pid" 'reserve_loopback_ports.py' forced_kill || cleanup_failed=1
   [ "$forced_kill" -eq 0 ] || cleanup_failed=1
 
   restore_flags || cleanup_failed=1
@@ -481,7 +458,7 @@ if [ "$mode" = backend ]; then
     test/integration/support-access-denial.integration-spec.ts \
     test/integration/entitlements-service.integration-spec.ts \
     --json --outputFile="$integration_json") >"$private_dir/backend-integration.raw.log" 2>&1
-  validate_jest_json "$integration_json" 3 77 \
+  validate_jest_json "$integration_json" 3 149 \
     test/integration/feature-flag-gating.integration-spec.ts \
     test/integration/support-access-denial.integration-spec.ts \
     test/integration/entitlements-service.integration-spec.ts \

@@ -443,4 +443,50 @@ for name, source in callers.items():
 print("PASS: all discovered shared lifecycle callers supervise every registered process")
 PY_SUPERVISED_CALLERS
 
+# The fallback before setsid is observed must report escalation too. Pin the exact
+# leaf identity as registration does, while intentionally keeping it pre-session.
+pre_session_forced_kill=0
+bash -c 'trap "" TERM; exec sleep 60' &
+pre_session_forced_pid=$!
+read -r pre_session_start _ < <(process_identity "$pre_session_forced_pid")
+owned_pid_starttime["$pre_session_forced_pid"]="$pre_session_start"
+owned_pid_session["$pre_session_forced_pid"]=""
+terminate_owned_process_group "$pre_session_forced_pid" sleep pre_session_forced_kill \
+  || fail "pre-session forced-kill reporting probe did not terminate"
+[ "$pre_session_forced_kill" -eq 1 ] \
+  || fail "pre-session cleanup did not report SIGKILL escalation"
+echo "PASS: pre-session cleanup reports SIGKILL escalation"
+
+# Callers that require graceful-only cleanup must be told when the shared helper
+# escalates to SIGKILL, while callers without an output variable retain compatibility.
+forced_kill_probe=0
+python3 "$repo_dir/scripts/fixtures/t071_owned_session_exec.py" python3 -c \
+  'import signal,time; signal.signal(signal.SIGTERM, signal.SIG_IGN); time.sleep(60) # t071-ignore-term' &
+forced_kill_probe_pid=$!
+register_owned_process "$forced_kill_probe_pid" t071-ignore-term
+sleep 0.2
+terminate_owned_process_group "$forced_kill_probe_pid" t071-ignore-term forced_kill_probe \
+  || fail "forced-kill reporting probe did not terminate"
+[ "$forced_kill_probe" -eq 1 ] \
+  || fail "shared lifecycle helper did not report SIGKILL escalation"
+echo "PASS: shared lifecycle helper reports SIGKILL escalation"
+
+# The T109 API supervisor deliberately starts from a minimal environment, so every
+# inherited disposable-service setting required by the child must be explicitly kept.
+t109_runner="$repo_dir/scripts/test_t109_odoo_exposure.sh"
+grep -qF -- '--keep-env CONTROL_DB_HOST,CONTROL_DB_PORT,CONTROL_DB_USER,CONTROL_DB_PASSWORD,CONTROL_DB_NAME,REDIS_URL' "$t109_runner" \
+  || fail "T109 API supervisor drops its owned database/Redis environment"
+echo "PASS: T109 API supervisor preserves owned database/Redis environment"
+
+# T112 must use the authenticated session-wide cleanup implementation. Its former
+# process-group-only wrapper leaked descendants that moved to another process group.
+t112_runner="$repo_dir/scripts/test_t112_owned_fixture.sh"
+grep -qF 'terminate_owned_process_group "$frontend_pid"' "$t112_runner" \
+  || fail "T112 frontend cleanup does not terminate the complete owned session"
+grep -qF 'terminate_owned_process_group "$api_pid"' "$t112_runner" \
+  || fail "T112 API cleanup does not terminate the complete owned session"
+grep -qF 'stop_owned_process()' "$t112_runner" \
+  && fail "T112 retains unsafe process-group-only cleanup"
+echo "PASS: T112 uses authenticated session-wide cleanup"
+
 echo "PASS: T071 harness stages safely, validates URLs exactly, and declares real-stack proof points."
