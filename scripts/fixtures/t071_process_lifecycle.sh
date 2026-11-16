@@ -161,28 +161,119 @@ terminate_verified_owned_session() {
 import os, pathlib, signal, sys, time
 leader, expected_start, expected_session = int(sys.argv[1]), sys.argv[2], sys.argv[3]
 forced_kill = False
+leader_exit_authorized = False
+
 
 def identity(path):
     raw = path.read_bytes()
     fields = raw[raw.rfind(b')') + 2:].split()
     if len(fields) < 20:
         raise ValueError('short /proc stat record')
-    return fields[19].decode('ascii'), fields[3].decode('ascii')
+    return (
+        fields[19].decode('ascii'),
+        fields[3].decode('ascii'),
+        int(fields[1]),
+    )
+
+
+def open_verified(pid, expected=None):
+    pidfd = os.pidfd_open(pid)
+    try:
+        current = identity(pathlib.Path('/proc', str(pid), 'stat'))
+        if expected is not None and current != expected:
+            raise ProcessLookupError('process identity changed')
+        return pidfd, current
+    except BaseException:
+        os.close(pidfd)
+        raise
+
 
 def members():
+    """Open pidfds by walking only revalidated kernel child relationships."""
+    opened = []
+    complete = True
+    try:
+        try:
+            leader_fd_local, leader_record = open_verified(leader)
+        except ProcessLookupError:
+            return [], False
+        if leader_record[:2] != (expected_start, expected_session):
+            os.close(leader_fd_local)
+            raise RuntimeError('leader identity mismatch')
+        opened.append((leader, leader_fd_local))
+        queue = [(leader, leader_record)]
+        seen = {leader}
+        while queue:
+            parent, parent_record = queue.pop(0)
+            parent_stat = pathlib.Path('/proc', str(parent), 'stat')
+            task_dir = pathlib.Path('/proc', str(parent), 'task')
+            children = set()
+            try:
+                if identity(parent_stat) != parent_record:
+                    complete = False
+                    continue
+                tasks = list(task_dir.glob('[0-9]*'))
+                if not tasks:
+                    complete = False
+                    continue
+            except (FileNotFoundError, ProcessLookupError):
+                complete = False
+                continue
+            for task in tasks:
+                try:
+                    if identity(parent_stat) != parent_record:
+                        complete = False
+                        break
+                    children.update((task / 'children').read_text().split())
+                    if identity(parent_stat) != parent_record:
+                        complete = False
+                        break
+                except (FileNotFoundError, ProcessLookupError):
+                    # A thread may exit while its process and other threads stay live.
+                    complete = False
+            for child_text in children:
+                child = int(child_text)
+                if child in seen:
+                    continue
+                child_fd = None
+                try:
+                    child_fd, child_record = open_verified(child)
+                    if child_record[2] != parent:
+                        os.close(child_fd); child_fd = None
+                        complete = False
+                        continue
+                    if identity(parent_stat) != parent_record:
+                        os.close(child_fd); child_fd = None
+                        complete = False
+                        continue
+                    opened.append((child, child_fd)); child_fd = None
+                    seen.add(child)
+                    queue.append((child, child_record))
+                except (FileNotFoundError, ProcessLookupError):
+                    complete = False
+                finally:
+                    if child_fd is not None:
+                        os.close(child_fd)
+        return opened, complete
+    except BaseException:
+        for _, pidfd in opened:
+            os.close(pidfd)
+        raise
+
+
+def extinct_session_survivors():
+    """Return authenticated same-session survivors after a missing leader."""
     opened = []
     try:
         for stat in pathlib.Path('/proc').glob('[0-9]*/stat'):
             pidfd = None
             try:
-                start, session = identity(stat)
-                if session != expected_session:
+                recorded = identity(stat)
+                if recorded[1] != expected_session:
                     continue
-                pidfd = os.pidfd_open(int(stat.parent.name))
-                if identity(stat) != (start, expected_session):
-                    os.close(pidfd); pidfd = None
-                    continue
-                opened.append(pidfd); pidfd = None
+                pid = int(stat.parent.name)
+                pidfd, current = open_verified(pid, recorded)
+                opened.append((pid, pidfd)); pidfd = None
             except (FileNotFoundError, ProcessLookupError):
                 pass
             finally:
@@ -190,53 +281,71 @@ def members():
                     os.close(pidfd)
         return opened
     except BaseException:
-        for pidfd in opened:
+        for _, pidfd in opened:
             os.close(pidfd)
         raise
+
+
+def close_all(opened):
+    for _, pidfd in opened:
+        os.close(pidfd)
+
 
 try:
     try:
         leader_fd = os.pidfd_open(leader)
     except ProcessLookupError:
-        current = members()
+        current = extinct_session_survivors()
         try:
             if current:
                 raise RuntimeError('owned session survived its authenticated leader')
         finally:
-            for pidfd in current:
-                os.close(pidfd)
-        raise SystemExit(0)
-    if identity(pathlib.Path('/proc', str(leader), 'stat')) != (expected_start, expected_session):
+            close_all(current)
+        raise RuntimeError(
+            'authenticated leader missing; process-tree extinction cannot be proven'
+        )
+    leader_identity = identity(pathlib.Path('/proc', str(leader), 'stat'))
+    if leader_identity[:2] != (expected_start, expected_session):
         raise RuntimeError('leader identity mismatch')
     for signal_name in ('TERM', 'KILL'):
         for _ in range(25):
-            current = members()
+            current, complete = members()
             if not current:
-                raise SystemExit(10 if forced_kill else 0)
+                if leader_exit_authorized:
+                    raise SystemExit(10 if forced_kill else 0)
+                raise RuntimeError(
+                    'authenticated leader disappeared during process-tree cleanup'
+                )
+            descendants = [item for item in current if item[0] != leader]
+            # Preserve the authenticated subreaper until all verified descendants
+            # are extinct. Only then may the supervisor itself receive a signal.
+            targets = descendants or (current if complete else [])
             if signal_name == 'KILL':
                 forced_kill = True
+            if complete and len(targets) == 1 and targets[0][0] == leader:
+                leader_exit_authorized = True
             try:
-                for pidfd in current:
+                for _, pidfd in targets:
                     try:
-                        signal.pidfd_send_signal(pidfd, getattr(signal, f'SIG{signal_name}'))
+                        signal.pidfd_send_signal(
+                            pidfd, getattr(signal, f'SIG{signal_name}')
+                        )
                     except ProcessLookupError:
                         # Another signaled member may have already reaped this process.
                         pass
             finally:
-                for pidfd in current:
-                    os.close(pidfd)
+                close_all(current)
             time.sleep(0.2)
-    current = members()
+    current, _ = members()
     try:
         if current:
-            raise RuntimeError('owned session members survived SIGKILL')
+            raise RuntimeError('owned process-tree members survived SIGKILL')
     finally:
-        for pidfd in current:
-            os.close(pidfd)
+        close_all(current)
     raise SystemExit(10 if forced_kill else 0)
 except (AttributeError, FileNotFoundError, IndexError, OSError, ProcessLookupError,
         RuntimeError, UnicodeError, ValueError) as exc:
-    print(f'FAIL cleanup: cannot terminate verified owned session: {exc}', file=sys.stderr)
+    print(f'FAIL cleanup: cannot terminate verified owned process tree: {exc}', file=sys.stderr)
     raise SystemExit(1)
 finally:
     if 'leader_fd' in locals():

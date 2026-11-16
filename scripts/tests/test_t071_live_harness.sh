@@ -19,6 +19,31 @@ cross_group_parent=""
 cross_group_child=""
 cross_group_child_start=""
 cross_group_file=""
+cross_session_leader=""
+cross_session_child=""
+cross_session_child_start=""
+cross_session_file=""
+lost_session_leader=""
+lost_session_leader_start=""
+lost_session_child=""
+lost_session_child_start=""
+lost_session_file=""
+thread_child_leader=""
+thread_child_pid=""
+thread_child_start=""
+thread_child_file=""
+adopted_zombie_leader=""
+adopted_zombie_pid=""
+adopted_zombie_start=""
+adopted_zombie_service=""
+adopted_zombie_service_start=""
+adopted_zombie_file=""
+reused_parent_leader=""
+reused_parent_service=""
+reused_parent_service_start=""
+reused_parent_guard_pid=""
+reused_parent_guard_start=""
+reused_parent_guard_dir=""
 exited_service_leader=""
 exited_service_child=""
 exited_service_child_start=""
@@ -53,6 +78,23 @@ offline_cleanup() {
   [ -z "$cross_group_child" ] || signal_owned_pid "$cross_group_child" "$cross_group_child_start" KILL 2>/dev/null || true
   [ -z "$cross_group_parent" ] || signal_owned_pid "$cross_group_parent" "${owned_pid_starttime[$cross_group_parent]:-}" KILL 2>/dev/null || true
   [ -z "$cross_group_file" ] || rm -f -- "$cross_group_file"
+  [ -z "$cross_session_child" ] || signal_owned_pid "$cross_session_child" "$cross_session_child_start" KILL 2>/dev/null || true
+  [ -z "$cross_session_leader" ] || signal_owned_pid "$cross_session_leader" "${owned_pid_starttime[$cross_session_leader]:-}" KILL 2>/dev/null || true
+  [ -z "$cross_session_file" ] || rm -f -- "$cross_session_file"
+  [ -z "$lost_session_child" ] || signal_owned_pid "$lost_session_child" "$lost_session_child_start" KILL 2>/dev/null || true
+  [ -z "$lost_session_leader" ] || signal_owned_pid "$lost_session_leader" "$lost_session_leader_start" KILL 2>/dev/null || true
+  [ -z "$lost_session_file" ] || rm -f -- "$lost_session_file"
+  [ -z "$thread_child_pid" ] || signal_owned_pid "$thread_child_pid" "$thread_child_start" KILL 2>/dev/null || true
+  [ -z "$thread_child_leader" ] || terminate_owned_process_group "$thread_child_leader" python3 2>/dev/null || signal_owned_pid "$thread_child_leader" "${owned_pid_starttime[$thread_child_leader]:-}" KILL 2>/dev/null || true
+  [ -z "$thread_child_file" ] || rm -f -- "$thread_child_file"
+  [ -z "$adopted_zombie_pid" ] || [ -z "$adopted_zombie_start" ] || signal_owned_pid "$adopted_zombie_pid" "$adopted_zombie_start" KILL 2>/dev/null || true
+  [ -z "$adopted_zombie_service" ] || signal_owned_pid "$adopted_zombie_service" "$adopted_zombie_service_start" KILL 2>/dev/null || true
+  [ -z "$adopted_zombie_leader" ] || terminate_owned_process_group "$adopted_zombie_leader" python3 2>/dev/null || signal_owned_pid "$adopted_zombie_leader" "${owned_pid_starttime[$adopted_zombie_leader]:-}" KILL 2>/dev/null || true
+  [ -z "$adopted_zombie_file" ] || rm -f -- "$adopted_zombie_file"
+  [ -z "$reused_parent_service" ] || signal_owned_pid "$reused_parent_service" "$reused_parent_service_start" KILL 2>/dev/null || true
+  [ -z "$reused_parent_leader" ] || terminate_owned_process_group "$reused_parent_leader" sleep 2>/dev/null || signal_owned_pid "$reused_parent_leader" "${owned_pid_starttime[$reused_parent_leader]:-}" KILL 2>/dev/null || true
+  [ -z "$reused_parent_guard_pid" ] || signal_owned_pid "$reused_parent_guard_pid" "$reused_parent_guard_start" KILL 2>/dev/null || true
+  [ -z "$reused_parent_guard_dir" ] || rm -rf -- "$reused_parent_guard_dir"
   [ -z "$exited_service_child" ] || signal_owned_pid "$exited_service_child" "$exited_service_child_start" KILL 2>/dev/null || true
   [ -z "$exited_service_leader" ] || signal_owned_pid "$exited_service_leader" "${owned_pid_starttime[$exited_service_leader]:-}" KILL 2>/dev/null || true
   [ -z "$exited_service_file" ] || rm -f -- "$exited_service_file"
@@ -180,8 +222,8 @@ terminate_owned_process_group "$probe_pid" sleep || fail "owned process session 
 [ -z "$(session_survivors "${owned_pid_session[$probe_pid]}")" ] || fail "owned process-session survivor remained"
 probe_pid=""
 
-# Cleanup is idempotent after the authenticated owned session has already exited
-# naturally. An absent leader is safe only when the recorded session has no survivors.
+# Once the authenticated supervisor is absent, an empty original session cannot prove
+# that no descendant escaped into another session. Post-hoc cleanup must fail closed.
 python3 "$repo_dir/scripts/fixtures/t071_owned_session_exec.py" sleep 1 &
 naturally_exited_leader=$!
 register_owned_process "$naturally_exited_leader" sleep
@@ -189,8 +231,9 @@ naturally_exited_session="${owned_pid_session[$naturally_exited_leader]}"
 wait "$naturally_exited_leader"
 [ -z "$(session_survivors "$naturally_exited_session")" ] \
   || fail "naturally exited owned session retained a survivor"
-terminate_owned_process_group "$naturally_exited_leader" sleep \
-  || fail "cleanup rejected an already-extinct owned session"
+if terminate_owned_process_group "$naturally_exited_leader" sleep; then
+  fail "cleanup accepted an extinct session after losing ancestry proof"
+fi
 
 # Kernel process names are byte strings. A non-UTF-8 comm must not disappear from
 # session membership or cleanup scans.
@@ -297,6 +340,242 @@ terminate_owned_process_group "$cross_group_parent" python3 \
 wait "$cross_group_parent" 2>/dev/null || true
 cross_group_parent=""; cross_group_child=""; cross_group_child_start=""
 rm -f -- "$cross_group_file"; cross_group_file=""
+
+# A service descendant may call setsid and leave the launch session. The supervisor
+# must retain kernel-backed descendant ownership, and authenticated cleanup must
+# terminate that descendant rather than reporting the original session extinct.
+cross_session_file="$(mktemp)"
+PROBE_FILE="$cross_session_file" \
+  python3 "$repo_dir/scripts/fixtures/t071_owned_session_exec.py" \
+    --keep-env PROBE_FILE python3 -c '
+import os, pathlib, time
+child = os.fork()
+if child == 0:
+    os.setsid()
+    pathlib.Path(os.environ["PROBE_FILE"]).write_text(str(os.getpid()) + "\n")
+    time.sleep(30)
+os._exit(0)
+' &
+cross_session_leader=$!
+register_owned_process "$cross_session_leader" python3
+for _ in $(seq 1 100); do [ -s "$cross_session_file" ] && break; sleep .02; done
+[ -s "$cross_session_file" ] || fail "cross-session fixture did not report its child"
+read -r cross_session_child <"$cross_session_file"
+cross_session_child_identity="$(process_identity "$cross_session_child")"
+read -r cross_session_child_start cross_session_child_session <<<"$cross_session_child_identity"
+[ "$cross_session_child_session" = "$cross_session_child" ] \
+  || fail "cross-session child did not establish a distinct session"
+sleep .1
+kill -0 "$cross_session_leader" 2>/dev/null \
+  || fail "owned supervisor lost a live descendant that created another session"
+terminate_owned_process_group "$cross_session_leader" python3 \
+  || fail "cleanup rejected an owned descendant in another session"
+for _ in $(seq 1 100); do
+  kill -0 "$cross_session_child" 2>/dev/null || break
+  sleep .01
+done
+if kill -0 "$cross_session_child" 2>/dev/null; then
+  fail "cross-session owned descendant survived cleanup"
+fi
+wait "$cross_session_leader" 2>/dev/null || true
+cross_session_leader=""; cross_session_child=""; cross_session_child_start=""
+rm -f -- "$cross_session_file"; cross_session_file=""
+echo "PASS: cross-session descendants remain supervised and cleanable"
+
+# Once the authenticated subreaper is lost, cross-session ancestry can no longer be
+# proven. Cleanup must fail closed rather than claim extinction while such a child lives.
+lost_session_file="$(mktemp)"
+LOST_SESSION_FILE="$lost_session_file" \
+  python3 "$repo_dir/scripts/fixtures/t071_owned_session_exec.py" \
+    --keep-env LOST_SESSION_FILE python3 -c '
+import os, pathlib, time
+child = os.fork()
+if child == 0:
+    os.setsid()
+    pathlib.Path(os.environ["LOST_SESSION_FILE"]).write_text(str(os.getpid())+"\n")
+    time.sleep(30)
+os._exit(0)
+' &
+lost_session_leader=$!
+register_owned_process "$lost_session_leader" python3
+lost_session_leader_start="${owned_pid_starttime[$lost_session_leader]}"
+for _ in $(seq 1 100); do [ -s "$lost_session_file" ] && break; sleep .02; done
+[ -s "$lost_session_file" ] || fail "lost-supervisor fixture did not report its child"
+read -r lost_session_child <"$lost_session_file"
+read -r lost_session_child_start _ < <(process_identity "$lost_session_child")
+signal_owned_pid "$lost_session_leader" "$lost_session_leader_start" KILL
+wait "$lost_session_leader" 2>/dev/null || true
+if terminate_owned_process_group "$lost_session_leader" python3; then
+  fail "cleanup accepted an unprovable tree after authenticated supervisor loss"
+fi
+kill -0 "$lost_session_child" 2>/dev/null \
+  || fail "lost-supervisor probe did not retain its cross-session child"
+signal_owned_pid "$lost_session_child" "$lost_session_child_start" KILL
+lost_session_child=""; lost_session_leader=""; lost_session_leader_start=""
+rm -f -- "$lost_session_file"; lost_session_file=""
+echo "PASS: missing supervisors fail closed for unprovable cross-session trees"
+
+# Children created by a non-leader thread appear only in that thread's procfs
+# children file. Graceful cleanup must discover and signal them before their service
+# parent exits; adoption after killing the parent is too late and forces SIGKILL.
+thread_child_file="$(mktemp)"
+THREAD_CHILD_FILE="$thread_child_file" \
+  python3 "$repo_dir/scripts/fixtures/t071_owned_session_exec.py" \
+    --keep-env THREAD_CHILD_FILE python3 -c '
+import os, pathlib, signal, subprocess, threading, time
+path = pathlib.Path(os.environ["THREAD_CHILD_FILE"])
+
+def worker():
+    child = subprocess.Popen([
+        "python3", "-c",
+        "import os,pathlib,signal,time; "
+        "p=pathlib.Path(os.environ[\"THREAD_CHILD_FILE\"]); "
+        "signal.signal(signal.SIGTERM, lambda *_: (p.write_text(p.read_text()+\"child-term\\n\"), exit(0))); "
+        "p.write_text(str(os.getpid())+\"\\n\"); time.sleep(30)",
+    ], env=os.environ)
+    child.wait()
+
+threading.Thread(target=worker, daemon=True).start()
+
+def stop_after_child(*_):
+    deadline = time.monotonic() + 2
+    while time.monotonic() < deadline:
+        if "child-term" in path.read_text():
+            raise SystemExit(0)
+        time.sleep(.02)
+    time.sleep(30)
+
+signal.signal(signal.SIGTERM, stop_after_child)
+time.sleep(30)
+' &
+thread_child_leader=$!
+register_owned_process "$thread_child_leader" python3
+for _ in $(seq 1 100); do [ -s "$thread_child_file" ] && break; sleep .02; done
+[ -s "$thread_child_file" ] || fail "thread-child fixture did not report its child"
+read -r thread_child_pid <"$thread_child_file"
+read -r thread_child_start _ < <(process_identity "$thread_child_pid")
+thread_child_forced=0
+terminate_owned_process_group "$thread_child_leader" python3 thread_child_forced \
+  || fail "cleanup rejected a child created by a non-leader thread"
+[ "$thread_child_forced" -eq 0 ] \
+  || fail "thread-created child was omitted from graceful process-tree cleanup"
+python3 - "$thread_child_file" <<'PY_THREAD_CHILD_ASSERT'
+import pathlib, sys
+if "child-term" not in pathlib.Path(sys.argv[1]).read_text():
+    raise SystemExit("thread-created child did not receive SIGTERM")
+PY_THREAD_CHILD_ASSERT
+wait "$thread_child_leader" 2>/dev/null || true
+thread_child_leader=""; thread_child_pid=""; thread_child_start=""
+rm -f -- "$thread_child_file"; thread_child_file=""
+echo "PASS: non-leader-thread children receive graceful owned cleanup"
+
+# The subreaper must collect adopted descendants while the direct service is still
+# alive. Otherwise a service that orphans short-lived workers accumulates zombies.
+adopted_zombie_file="$(mktemp)"
+ADOPTED_ZOMBIE_FILE="$adopted_zombie_file" \
+  python3 "$repo_dir/scripts/fixtures/t071_owned_session_exec.py" \
+    --keep-env ADOPTED_ZOMBIE_FILE python3 -c '
+import os, pathlib, time
+middle = os.fork()
+if middle == 0:
+    child = os.fork()
+    if child == 0:
+        pathlib.Path(os.environ["ADOPTED_ZOMBIE_FILE"]).write_text(str(os.getpid())+"\n")
+        os._exit(0)
+    os._exit(0)
+time.sleep(30)
+' &
+adopted_zombie_leader=$!
+register_owned_process "$adopted_zombie_leader" python3
+for _ in $(seq 1 100); do
+  adopted_zombie_service="$(python3 - "$adopted_zombie_leader" <<'PY_ADOPTED_SERVICE'
+import pathlib, sys
+try:
+    print(pathlib.Path('/proc', sys.argv[1], 'task', sys.argv[1], 'children').read_text().strip())
+except (FileNotFoundError, ProcessLookupError):
+    pass
+PY_ADOPTED_SERVICE
+)"
+  [ -n "$adopted_zombie_service" ] && break
+  sleep .01
+done
+[ -n "$adopted_zombie_service" ] || fail "adopted-zombie fixture has no direct service"
+read -r adopted_zombie_service_start _ < <(process_identity "$adopted_zombie_service")
+for _ in $(seq 1 100); do [ -s "$adopted_zombie_file" ] && break; sleep .02; done
+[ -s "$adopted_zombie_file" ] || fail "adopted-zombie fixture did not report its child"
+read -r adopted_zombie_pid <"$adopted_zombie_file"
+adopted_zombie_identity="$(process_identity "$adopted_zombie_pid" 2>/dev/null || true)"
+if [ -n "$adopted_zombie_identity" ]; then
+  read -r adopted_zombie_start _ <<<"$adopted_zombie_identity"
+fi
+for _ in $(seq 1 100); do
+  [ ! -e "/proc/$adopted_zombie_pid/stat" ] && break
+  sleep .02
+done
+[ ! -e "/proc/$adopted_zombie_pid/stat" ] \
+  || fail "subreaper left an adopted zombie while the service remained alive"
+terminate_owned_process_group "$adopted_zombie_leader" python3 \
+  || fail "adopted-zombie fixture cleanup failed"
+wait "$adopted_zombie_leader" 2>/dev/null || true
+adopted_zombie_leader=""; adopted_zombie_pid=""; adopted_zombie_start=""
+adopted_zombie_service=""; adopted_zombie_service_start=""
+rm -f -- "$adopted_zombie_file"; adopted_zombie_file=""
+echo "PASS: adopted descendants are reaped while the service remains alive"
+
+# A stale PID read from a task children file must never establish ownership. Inject
+# an unrelated live PID into the authenticated service's children snapshot; cleanup
+# must revalidate its actual PPID and leave the unrelated process untouched.
+python3 "$repo_dir/scripts/fixtures/t071_owned_session_exec.py" sleep 30 &
+reused_parent_leader=$!
+register_owned_process "$reused_parent_leader" sleep
+for _ in $(seq 1 100); do
+  reused_parent_service="$(python3 - "$reused_parent_leader" <<'PY_REUSED_PARENT_CHILD'
+import pathlib, sys
+try:
+    print(pathlib.Path('/proc', sys.argv[1], 'task', sys.argv[1], 'children').read_text().strip())
+except (FileNotFoundError, ProcessLookupError):
+    pass
+PY_REUSED_PARENT_CHILD
+)"
+  [ -n "$reused_parent_service" ] && break
+  sleep .01
+done
+[ -n "$reused_parent_service" ] || fail "PID-reuse guard fixture has no service child"
+read -r reused_parent_service_start _ < <(process_identity "$reused_parent_service")
+sleep 30 &
+reused_parent_guard_pid=$!
+read -r reused_parent_guard_start _ < <(process_identity "$reused_parent_guard_pid")
+reused_parent_guard_dir="$(mktemp -d)"
+cat >"$reused_parent_guard_dir/sitecustomize.py" <<'PY_REUSED_PARENT'
+import os
+import pathlib
+
+_original_read_text = pathlib.Path.read_text
+_target = os.environ["KEMFAI_REUSED_PARENT_TARGET"]
+_forged_child = os.environ["KEMFAI_REUSED_PARENT_PID"]
+
+def stale_child(path, *args, **kwargs):
+    text = _original_read_text(path, *args, **kwargs)
+    if str(path) == _target:
+        return text + " " + _forged_child
+    return text
+
+pathlib.Path.read_text = stale_child
+PY_REUSED_PARENT
+PYTHONPATH="$reused_parent_guard_dir" \
+KEMFAI_REUSED_PARENT_TARGET="/proc/$reused_parent_service/task/$reused_parent_service/children" \
+KEMFAI_REUSED_PARENT_PID="$reused_parent_guard_pid" \
+  terminate_owned_process_group "$reused_parent_leader" sleep \
+  || fail "PID-reuse guard cleanup failed"
+kill -0 "$reused_parent_guard_pid" 2>/dev/null \
+  || fail "cleanup signaled an unrelated process through a stale PPID edge"
+signal_owned_pid "$reused_parent_guard_pid" "$reused_parent_guard_start" KILL
+wait "$reused_parent_guard_pid" 2>/dev/null || true
+reused_parent_guard_pid=""; reused_parent_guard_start=""
+wait "$reused_parent_leader" 2>/dev/null || true
+reused_parent_leader=""; reused_parent_service=""; reused_parent_service_start=""
+rm -rf -- "$reused_parent_guard_dir"; reused_parent_guard_dir=""
+echo "PASS: stale or reused parent PIDs cannot confer process ownership"
 
 # The authenticated session leader must remain alive while any service descendant
 # survives, even when the directly executed service process exits first. Otherwise
