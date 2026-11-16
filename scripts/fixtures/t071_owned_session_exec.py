@@ -12,8 +12,8 @@ def session_members(session: int) -> list[int]:
     found: list[int] = []
     for stat in pathlib.Path("/proc").glob("[0-9]*/stat"):
         try:
-            raw = stat.read_text()
-            fields = raw[raw.rfind(")") + 2 :].split()
+            raw = stat.read_bytes()
+            fields = raw[raw.rfind(b")") + 2 :].split()
             if len(fields) >= 4 and int(fields[3]) == session:
                 found.append(int(stat.parent.name))
         except (FileNotFoundError, PermissionError, ProcessLookupError, ValueError):

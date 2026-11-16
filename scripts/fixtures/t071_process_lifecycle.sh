@@ -149,9 +149,9 @@ import pathlib, sys
 found = []
 for stat in pathlib.Path('/proc').glob('[0-9]*/stat'):
     try:
-        raw = stat.read_text(); fields = raw[raw.rfind(')') + 2:].split()
-        if fields[3] == sys.argv[1]: found.append(stat.parent.name)
-    except (FileNotFoundError, PermissionError, ProcessLookupError): pass
+        raw = stat.read_bytes(); fields = raw[raw.rfind(b')') + 2:].split()
+        if fields[3] == sys.argv[1].encode('ascii'): found.append(stat.parent.name)
+    except (FileNotFoundError, IndexError, PermissionError, ProcessLookupError, ValueError): pass
 print(' '.join(found))
 PY
 }
@@ -163,11 +163,11 @@ leader, expected_start, expected_session = int(sys.argv[1]), sys.argv[2], sys.ar
 forced_kill = False
 
 def identity(path):
-    raw = path.read_text()
-    fields = raw[raw.rfind(')') + 2:].split()
+    raw = path.read_bytes()
+    fields = raw[raw.rfind(b')') + 2:].split()
     if len(fields) < 20:
         raise ValueError('short /proc stat record')
-    return fields[19], fields[3]
+    return fields[19].decode('ascii'), fields[3].decode('ascii')
 
 def members():
     opened = []

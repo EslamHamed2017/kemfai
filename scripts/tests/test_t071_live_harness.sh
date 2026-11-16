@@ -35,6 +35,9 @@ post_leaf_race_child=""
 kill_boundary_race_dir=""
 kill_boundary_race_supervisor=""
 kill_boundary_race_child=""
+non_utf8_leader=""
+non_utf8_child=""
+non_utf8_file=""
 offline_cleanup() {
   [ -z "$probe_pid" ] || kill -KILL -- "-$probe_pid" 2>/dev/null || true
   [ -z "$delayed_probe_pid" ] || kill -KILL -- "-$delayed_probe_pid" 2>/dev/null || kill -KILL -- "$delayed_probe_pid" 2>/dev/null || true
@@ -65,6 +68,10 @@ offline_cleanup() {
   [ -z "$kill_boundary_race_child" ] || kill -KILL -- "$kill_boundary_race_child" 2>/dev/null || true
   [ -z "$kill_boundary_race_supervisor" ] || kill -KILL -- "$kill_boundary_race_supervisor" 2>/dev/null || true
   [ -z "$kill_boundary_race_dir" ] || rm -rf -- "$kill_boundary_race_dir"
+  if [ -n "$non_utf8_leader" ] && [ -n "${owned_pid_starttime[$non_utf8_leader]:-}" ]; then
+    terminate_owned_process_group "$non_utf8_leader" t071-non-utf8-descendant 2>/dev/null || true
+  fi
+  [ -z "$non_utf8_file" ] || rm -f -- "$non_utf8_file"
   rm -f -- "$stage"
 }
 trap offline_cleanup EXIT
@@ -172,6 +179,28 @@ owned_pid_starttime["$probe_pid"]="$saved_start"
 terminate_owned_process_group "$probe_pid" sleep || fail "owned process session did not terminate"
 [ -z "$(session_survivors "${owned_pid_session[$probe_pid]}")" ] || fail "owned process-session survivor remained"
 probe_pid=""
+
+# Kernel process names are byte strings. A non-UTF-8 comm must not disappear from
+# session membership or cleanup scans.
+non_utf8_file="$(mktemp)"
+PROBE_FILE="$non_utf8_file" python3 "$repo_dir/scripts/fixtures/t071_owned_session_exec.py" \
+  --keep-env PROBE_FILE python3 -c 'exec("import ctypes,os,time\npid=os.fork()\nif pid:\n open(os.environ[\"PROBE_FILE\"],\"w\").write(str(pid)+\"\\n\")\n time.sleep(.2)\n os._exit(0)\nctypes.CDLL(None).prctl(15, ctypes.c_char_p(b\"bad\\xffname\"), 0, 0, 0)\ntime.sleep(30) # t071-non-utf8-descendant")' &
+non_utf8_leader=$!
+register_owned_process "$non_utf8_leader" t071-non-utf8-descendant
+for _ in $(seq 1 100); do [ -s "$non_utf8_file" ] && break; sleep .02; done
+[ -s "$non_utf8_file" ] || fail "non-UTF-8 session fixture did not report its child"
+read -r non_utf8_child <"$non_utf8_file"
+sleep .3
+kill -0 "$non_utf8_leader" 2>/dev/null \
+  || fail "owned supervisor lost a live descendant with a non-UTF-8 process name"
+terminate_owned_process_group "$non_utf8_leader" t071-non-utf8-descendant \
+  || fail "cleanup rejected a non-UTF-8 owned-session member"
+[ -z "$(session_survivors "${owned_pid_session[$non_utf8_leader]}")" ] \
+  || fail "non-UTF-8 owned-session member survived cleanup"
+wait "$non_utf8_leader" 2>/dev/null || true
+non_utf8_leader=""; non_utf8_child=""
+rm -f -- "$non_utf8_file"; non_utf8_file=""
+echo "PASS: non-UTF-8 process names remain supervised and cleanable"
 
 # Termination during the fork-to-handler startup window must remain pending until
 # the supervisor can forward it. sitecustomize deterministically pauses pidfd_open
