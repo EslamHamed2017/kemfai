@@ -335,7 +335,9 @@ class AccountingFoundationCiStructureTests(unittest.TestCase):
         self.assertIn("accounting-foundation-owned-live", source)
         self.assertRegex(source, r"\bcurl\b")
         self.assertIn("https://api.github.com/", source)
-        self.assertNotRegex(source, r"(?i)authorization|GH_TOKEN|GITHUB_TOKEN")
+        self.assertIn("GITHUB_TOKEN", source)
+        self.assertIn("Authorization: Bearer", source)
+        self.assertEqual(step.get("env"), {"GITHUB_TOKEN": "${{ github.token }}"})
         mutation_pattern = (
             r"(?i)(?:--method|-X)[\"',\s]*(?:POST|PUT|PATCH|DELETE)\b|"
             r"\bgh\s+api\b[^\n]*(?:--input|-f|--field|--raw-field)\b|"
@@ -367,12 +369,14 @@ class AccountingFoundationCiStructureTests(unittest.TestCase):
 
     def _run_branch_protection_validator(
         self, payload: dict[str, Any], event: str = "pull_request"
-    ) -> tuple[subprocess.CompletedProcess[str], str]:
+    ) -> tuple[subprocess.CompletedProcess[str], str, str]:
         with tempfile.TemporaryDirectory(prefix="kemfai-af-gh-") as directory:
             fake_curl = Path(directory) / "curl"
             args_log = Path(directory) / "args.log"
+            config_log = Path(directory) / "config.log"
             fake_curl.write_text(
                 "#!/usr/bin/env bash\n"
+                "cat >\"$GH_CONFIG_LOG\"\n"
                 "printf '%s\\n' \"$GH_PAYLOAD\"\n"
                 "printf '%s\\n' \"$*\" >\"$GH_ARGS_LOG\"\n",
                 encoding="utf-8",
@@ -386,6 +390,8 @@ class AccountingFoundationCiStructureTests(unittest.TestCase):
                 "GITHUB_BASE_REF": "main",
                 "GH_PAYLOAD": json.dumps(payload),
                 "GH_ARGS_LOG": str(args_log),
+                "GH_CONFIG_LOG": str(config_log),
+                "GITHUB_TOKEN": "test-token-123",
             }
             result = subprocess.run(
                 [sys.executable, str(BRANCH_PROTECTION_VALIDATOR)],
@@ -396,10 +402,11 @@ class AccountingFoundationCiStructureTests(unittest.TestCase):
                 check=False,
             )
             arguments = args_log.read_text(encoding="utf-8") if args_log.exists() else ""
-            return result, arguments
+            config = config_log.read_text(encoding="utf-8") if config_log.exists() else ""
+            return result, arguments, config
 
     def test_branch_protection_validator_accepts_only_the_exact_required_check(self) -> None:
-        result, arguments = self._run_branch_protection_validator(
+        result, arguments, config = self._run_branch_protection_validator(
             {
                 "protected": True,
                 "protection": {
@@ -414,12 +421,13 @@ class AccountingFoundationCiStructureTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertEqual(
             arguments.strip(),
-            "--disable --fail --silent --show-error --proto =https --tlsv1.2 -H Accept: application/vnd.github+json -H User-Agent: kemfai-branch-protection-verifier https://api.github.com/repos/owner/repository/branches/main",
+            "--disable --fail --silent --show-error --proto =https --tlsv1.2 --config - -H Accept: application/vnd.github+json -H User-Agent: kemfai-branch-protection-verifier https://api.github.com/repos/owner/repository/branches/main",
         )
         self.assertNotRegex(arguments, r"(?i)(?:-X|--request|authorization|token|(?:^|\s)-L(?:\s|$)|--location)")
+        self.assertEqual(config, 'header = "Authorization: Bearer test-token-123"\n')
 
     def test_branch_protection_validator_fails_closed_when_check_is_missing(self) -> None:
-        result, _ = self._run_branch_protection_validator(
+        result, _, _ = self._run_branch_protection_validator(
             {
                 "protected": True,
                 "protection": {
@@ -432,16 +440,17 @@ class AccountingFoundationCiStructureTests(unittest.TestCase):
         self.assertIn("FAIL", result.stderr)
 
     def test_branch_protection_validator_fails_closed_when_branch_is_unprotected(self) -> None:
-        result, _ = self._run_branch_protection_validator(
+        result, _, _ = self._run_branch_protection_validator(
             {"protected": False, "protection": {"enabled": False}}
         )
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("FAIL", result.stderr)
 
     def test_branch_protection_validator_skips_lookup_outside_merge_events(self) -> None:
-        result, arguments = self._run_branch_protection_validator({}, event="push")
+        result, arguments, config = self._run_branch_protection_validator({}, event="push")
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertEqual(arguments, "")
+        self.assertEqual(config, "")
 
 
 if __name__ == "__main__":

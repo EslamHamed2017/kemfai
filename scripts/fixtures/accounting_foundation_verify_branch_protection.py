@@ -41,6 +41,9 @@ def main() -> int:
         return fail("GITHUB_REPOSITORY is absent or malformed")
     if re.fullmatch(r"[A-Za-z0-9._/-]+", branch) is None or ".." in branch:
         return fail("target branch is absent or malformed")
+    token = os.environ.get("GITHUB_TOKEN", "")
+    if not token or "\r" in token or "\n" in token:
+        return fail("GITHUB_TOKEN is absent or malformed")
     endpoint = f"https://api.github.com/repos/{repository}/branches/{quote(branch, safe='')}"
     result = subprocess.run(
         [
@@ -52,6 +55,8 @@ def main() -> int:
             "--proto",
             "=https",
             "--tlsv1.2",
+            "--config",
+            "-",
             "-H",
             "Accept: application/vnd.github+json",
             "-H",
@@ -59,6 +64,7 @@ def main() -> int:
             endpoint,
         ],
         text=True,
+        input=f'header = "Authorization: Bearer {token}"\n',
         capture_output=True,
         check=False,
     )
