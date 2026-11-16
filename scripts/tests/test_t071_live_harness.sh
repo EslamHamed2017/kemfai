@@ -48,6 +48,10 @@ exited_service_leader=""
 exited_service_child=""
 exited_service_child_start=""
 exited_service_file=""
+hold_cleanup_leader=""
+hold_cleanup_child=""
+hold_cleanup_child_start=""
+hold_cleanup_file=""
 private_home=""
 fixture_dir=""
 relay_dir=""
@@ -98,6 +102,9 @@ offline_cleanup() {
   [ -z "$exited_service_child" ] || signal_owned_pid "$exited_service_child" "$exited_service_child_start" KILL 2>/dev/null || true
   [ -z "$exited_service_leader" ] || signal_owned_pid "$exited_service_leader" "${owned_pid_starttime[$exited_service_leader]:-}" KILL 2>/dev/null || true
   [ -z "$exited_service_file" ] || rm -f -- "$exited_service_file"
+  [ -z "$hold_cleanup_child" ] || signal_owned_pid "$hold_cleanup_child" "$hold_cleanup_child_start" KILL 2>/dev/null || true
+  [ -z "$hold_cleanup_leader" ] || terminate_owned_process_group "$hold_cleanup_leader" python3 2>/dev/null || signal_owned_pid "$hold_cleanup_leader" "${owned_pid_starttime[$hold_cleanup_leader]:-}" KILL 2>/dev/null || true
+  [ -z "$hold_cleanup_file" ] || rm -f -- "$hold_cleanup_file"
   [ -z "$private_home" ] || rmdir "$private_home" 2>/dev/null || true
   [ -z "$fixture_dir" ] || rm -rf -- "$fixture_dir"
   [ -z "$relay_supervisor" ] || terminate_owned_process_group "$relay_supervisor" t071_loopback_relay.py 2>/dev/null || true
@@ -608,6 +615,29 @@ wait "$exited_service_leader" 2>/dev/null || true
 exited_service_leader=""; exited_service_child=""; exited_service_child_start=""
 rm -f -- "$exited_service_file"; exited_service_file=""
 
+# Authenticated hold-for-cleanup mode must hold the subreaper beyond its natural empty-tree
+# window until cleanup explicitly releases it. This makes scheduler delay harmless.
+hold_cleanup_file="$(mktemp)"
+PROBE_FILE="$hold_cleanup_file" python3 "$repo_dir/scripts/fixtures/t071_owned_session_exec.py" \
+  --hold-for-cleanup --keep-env PROBE_FILE python3 -c 'import os,pathlib,time; pathlib.Path(os.environ["PROBE_FILE"]).write_text(str(os.getpid())+"\n"); time.sleep(30)' &
+hold_cleanup_leader=$!
+register_owned_process "$hold_cleanup_leader" python3
+for _ in $(seq 1 100); do [ -s "$hold_cleanup_file" ] && break; sleep .01; done
+[ -s "$hold_cleanup_file" ] || fail "hold-for-cleanup fixture did not report its service"
+read -r hold_cleanup_child <"$hold_cleanup_file"
+hold_cleanup_child_identity="$(process_identity "$hold_cleanup_child")"
+read -r hold_cleanup_child_start _ <<<"$hold_cleanup_child_identity"
+signal_owned_pid "$hold_cleanup_child" "$hold_cleanup_child_start" TERM
+sleep 1
+kill -0 "$hold_cleanup_leader" 2>/dev/null \
+  || fail "hold-for-cleanup mode did not preserve authenticated ancestry proof"
+terminate_owned_process_group "$hold_cleanup_leader" python3 \
+  || fail "hold-for-cleanup owned session did not terminate"
+wait "$hold_cleanup_leader" 2>/dev/null || true
+hold_cleanup_leader=""; hold_cleanup_child=""; hold_cleanup_child_start=""
+rm -f -- "$hold_cleanup_file"; hold_cleanup_file=""
+echo "PASS: hold-for-cleanup mode preserves ancestry proof across scheduler delay"
+
 # The real relay readiness contract must expose the registered supervisor identity,
 # not the forked service PID, so the generated launcher can authenticate it.
 relay_dir="$(mktemp -d)"; chmod 700 "$relay_dir"
@@ -615,7 +645,7 @@ relay_config="$relay_dir/config.json"; relay_ready="$relay_dir/ready.json"
 printf '{"targetIp":"10.0.0.2","subnet":"10.0.0.0/24","targetPort":5432,"readyFile":"%s"}\n'   "$relay_ready" >"$relay_config"; chmod 600 "$relay_config"
 (
   export T071_RELAY_CONFIG="$relay_config"
-  exec python3 "$repo_dir/scripts/fixtures/t071_owned_session_exec.py"     --keep-env T071_RELAY_CONFIG python3 "$repo_dir/scripts/fixtures/t071_loopback_relay.py"
+  exec python3 "$repo_dir/scripts/fixtures/t071_owned_session_exec.py"     --hold-for-cleanup --keep-env T071_RELAY_CONFIG python3 "$repo_dir/scripts/fixtures/t071_loopback_relay.py"
 ) &
 relay_supervisor=$!
 register_owned_process "$relay_supervisor" t071_loopback_relay.py
@@ -1011,7 +1041,7 @@ if (!(expired >= 0 && fresh > expired && conflict > fresh)) {
 }
 NODE
 t074_runner="$repo_dir/scripts/test_t074_live_browser.sh"
-grep -qF 't071_owned_session_exec.py" --keep-env T071_RELAY_CONFIG python3 "$repo_dir/scripts/fixtures/t071_loopback_relay.py"' "$t074_runner" \
+grep -qF 't071_owned_session_exec.py" --hold-for-cleanup --keep-env T071_RELAY_CONFIG python3 "$repo_dir/scripts/fixtures/t071_loopback_relay.py"' "$t074_runner" \
   || fail "T074 relay does not use the owned session supervisor"
 grep -qF 'exec setsid python3 "$repo_dir/scripts/fixtures/t071_loopback_relay.py"' "$t074_runner" \
   && fail "T074 relay reverted to the direct setsid launcher"

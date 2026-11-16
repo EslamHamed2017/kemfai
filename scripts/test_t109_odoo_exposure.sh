@@ -299,7 +299,7 @@ run_frontend() {
 
   (
     cd "$REPO_ROOT/backend/api"
-    exec python3 "$SCRIPT_DIR/fixtures/t071_owned_session_exec.py" \
+    exec python3 "$SCRIPT_DIR/fixtures/t071_owned_session_exec.py" --hold-for-cleanup \
       --keep-env CONTROL_DB_HOST,CONTROL_DB_PORT,CONTROL_DB_USER,CONTROL_DB_PASSWORD,CONTROL_DB_NAME,REDIS_URL \
       env \
       NODE_ENV=test \
@@ -324,7 +324,7 @@ run_frontend() {
 
   (
     cd "$runtime_frontend"
-    exec python3 "$SCRIPT_DIR/fixtures/t071_owned_session_exec.py" env \
+    exec python3 "$SCRIPT_DIR/fixtures/t071_owned_session_exec.py" --hold-for-cleanup env \
       NODE_ENV=production \
       NEXT_TELEMETRY_DISABLED=1 \
       NEXT_PUBLIC_API_URL="$api_url" \

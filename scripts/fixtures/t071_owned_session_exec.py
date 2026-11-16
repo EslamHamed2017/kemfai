@@ -63,6 +63,10 @@ previous_signal_mask = signal.pthread_sigmask(signal.SIG_BLOCK, FORWARDED_SIGNAL
 os.setsid()
 enable_child_subreaper()
 args = sys.argv[1:]
+hold_for_cleanup = False
+if args and args[0] == "--hold-for-cleanup":
+    hold_for_cleanup = True
+    args = args[1:]
 keep = {"PATH", "HOME", "PLAYWRIGHT_BROWSERS_PATH"}
 if len(args) >= 2 and args[0] == "--keep-env":
     keep.update(filter(None, args[1].split(",")))
@@ -72,8 +76,8 @@ if len(args) >= 2 and args[0] == "--cwd":
     args = args[2:]
 if not args:
     raise SystemExit(
-        "usage: t071_owned_session_exec.py [--keep-env NAMES] "
-        "[--cwd DIR] COMMAND [ARG ...]"
+        "usage: t071_owned_session_exec.py [--hold-for-cleanup] "
+        "[--keep-env NAMES] [--cwd DIR] COMMAND [ARG ...]"
     )
 for name in tuple(os.environ):
     if name not in keep:
@@ -93,7 +97,12 @@ except ProcessLookupError:
     service_pidfd = None
 
 
+cleanup_release_requested = False
+
+
 def forward_service_signal(signum: int, _frame: object) -> None:
+    global cleanup_release_requested
+    cleanup_release_requested = True
     pidfd = service_pidfd
     if pidfd is None:
         return
@@ -123,8 +132,9 @@ if pidfd_to_close is not None:
 
 # As a child subreaper, the authenticated leader remains an ancestor of descendants
 # even if they create another session or their intermediate parent exits. Keep a
-# bounded empty-tree handoff window so authenticated cleanup can observe the leader
-# as the sole remaining member rather than racing its natural exit.
+# bounded empty-tree handoff window for ordinary commands. Owned long-lived launchers
+# select hold-for-cleanup at process start, retaining ancestry proof until their
+# authenticated cleanup sends the final release signal.
 empty_since = None
 while True:
     reap_adopted_children()
@@ -132,6 +142,9 @@ while True:
         empty_since = None
     elif empty_since is None:
         empty_since = time.monotonic()
+    elif hold_for_cleanup:
+        if cleanup_release_requested:
+            break
     elif time.monotonic() - empty_since >= 0.5:
         break
     time.sleep(0.05)

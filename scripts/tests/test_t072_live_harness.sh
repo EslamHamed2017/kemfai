@@ -26,7 +26,7 @@ required = (
     'chmod 600 "$state_file" "$log_file"',
     'pg_isready -h /var/run/postgresql -p 5432',
     "pg_readiness=\"$artifacts_dir/pg-readiness.log\"",
-    't071_owned_session_exec.py" --keep-env T071_RELAY_CONFIG',
+    't071_owned_session_exec.py" --hold-for-cleanup --keep-env T071_RELAY_CONFIG',
 )
 for marker in required:
     if marker not in text:
