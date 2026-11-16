@@ -195,7 +195,17 @@ def members():
         raise
 
 try:
-    leader_fd = os.pidfd_open(leader)
+    try:
+        leader_fd = os.pidfd_open(leader)
+    except ProcessLookupError:
+        current = members()
+        try:
+            if current:
+                raise RuntimeError('owned session survived its authenticated leader')
+        finally:
+            for pidfd in current:
+                os.close(pidfd)
+        raise SystemExit(0)
     if identity(pathlib.Path('/proc', str(leader), 'stat')) != (expected_start, expected_session):
         raise RuntimeError('leader identity mismatch')
     for signal_name in ('TERM', 'KILL'):

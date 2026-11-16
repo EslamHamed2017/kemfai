@@ -180,6 +180,18 @@ terminate_owned_process_group "$probe_pid" sleep || fail "owned process session 
 [ -z "$(session_survivors "${owned_pid_session[$probe_pid]}")" ] || fail "owned process-session survivor remained"
 probe_pid=""
 
+# Cleanup is idempotent after the authenticated owned session has already exited
+# naturally. An absent leader is safe only when the recorded session has no survivors.
+python3 "$repo_dir/scripts/fixtures/t071_owned_session_exec.py" sleep 1 &
+naturally_exited_leader=$!
+register_owned_process "$naturally_exited_leader" sleep
+naturally_exited_session="${owned_pid_session[$naturally_exited_leader]}"
+wait "$naturally_exited_leader"
+[ -z "$(session_survivors "$naturally_exited_session")" ] \
+  || fail "naturally exited owned session retained a survivor"
+terminate_owned_process_group "$naturally_exited_leader" sleep \
+  || fail "cleanup rejected an already-extinct owned session"
+
 # Kernel process names are byte strings. A non-UTF-8 comm must not disappear from
 # session membership or cleanup scans.
 non_utf8_file="$(mktemp)"
