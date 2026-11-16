@@ -8,6 +8,8 @@ probe_pid=""
 delayed_probe_pid=""
 registration_failure_pid_file=""
 pidfd_probe_pid=""
+freeze_failure_pid=""
+freeze_failure_dir=""
 transition_supervisor=""
 transition_child=""
 leaf_violation_parent=""
@@ -27,11 +29,19 @@ relay_dir=""
 relay_supervisor=""
 startup_signal_dir=""
 startup_signal_supervisor=""
+post_leaf_race_dir=""
+post_leaf_race_supervisor=""
+post_leaf_race_child=""
+kill_boundary_race_dir=""
+kill_boundary_race_supervisor=""
+kill_boundary_race_child=""
 offline_cleanup() {
   [ -z "$probe_pid" ] || kill -KILL -- "-$probe_pid" 2>/dev/null || true
   [ -z "$delayed_probe_pid" ] || kill -KILL -- "-$delayed_probe_pid" 2>/dev/null || kill -KILL -- "$delayed_probe_pid" 2>/dev/null || true
   [ -z "$registration_failure_pid_file" ] || rm -f -- "$registration_failure_pid_file"
   [ -z "$pidfd_probe_pid" ] || kill -KILL -- "$pidfd_probe_pid" 2>/dev/null || true
+  [ -z "$freeze_failure_pid" ] || kill -KILL -- "$freeze_failure_pid" 2>/dev/null || true
+  [ -z "$freeze_failure_dir" ] || rm -rf -- "$freeze_failure_dir"
   [ -z "$transition_child" ] || kill -KILL -- "$transition_child" 2>/dev/null || true
   [ -z "$transition_supervisor" ] || kill -KILL -- "$transition_supervisor" 2>/dev/null || true
   [ -z "$leaf_violation_child" ] || kill -KILL -- "$leaf_violation_child" 2>/dev/null || true
@@ -49,6 +59,12 @@ offline_cleanup() {
   [ -z "$relay_dir" ] || rm -rf -- "$relay_dir"
   [ -z "$startup_signal_supervisor" ] || terminate_owned_process_group "$startup_signal_supervisor" sleep 2>/dev/null || true
   [ -z "$startup_signal_dir" ] || rm -rf -- "$startup_signal_dir"
+  [ -z "$post_leaf_race_child" ] || kill -KILL -- "$post_leaf_race_child" 2>/dev/null || true
+  [ -z "$post_leaf_race_supervisor" ] || kill -KILL -- "$post_leaf_race_supervisor" 2>/dev/null || true
+  [ -z "$post_leaf_race_dir" ] || rm -rf -- "$post_leaf_race_dir"
+  [ -z "$kill_boundary_race_child" ] || kill -KILL -- "$kill_boundary_race_child" 2>/dev/null || true
+  [ -z "$kill_boundary_race_supervisor" ] || kill -KILL -- "$kill_boundary_race_supervisor" 2>/dev/null || true
+  [ -z "$kill_boundary_race_dir" ] || rm -rf -- "$kill_boundary_race_dir"
   rm -f -- "$stage"
 }
 trap offline_cleanup EXIT
@@ -309,6 +325,54 @@ terminate_owned_process_group "$pidfd_probe_pid" sleep \
 wait "$pidfd_probe_pid" 2>/dev/null || true
 pidfd_probe_pid=""
 
+# If authenticated inspection fails after SIGSTOP, cleanup must return failure only
+# after restoring SIGCONT so the caller never inherits a stranded stopped process.
+freeze_failure_dir="$(mktemp -d)"
+cat >"$freeze_failure_dir/sitecustomize.py" <<'PY_FREEZE_FAILURE'
+import os
+import pathlib
+
+_original_read_text = pathlib.Path.read_text
+_target = os.environ["KEMFAI_FREEZE_FAILURE_STAT"]
+_reads = 0
+
+def fail_second_stat_read(path, *args, **kwargs):
+    global _reads
+    if str(path) == _target:
+        _reads += 1
+        if _reads == 2:
+            raise OSError("injected post-stop stat failure")
+    return _original_read_text(path, *args, **kwargs)
+
+pathlib.Path.read_text = fail_second_stat_read
+PY_FREEZE_FAILURE
+sleep 30 &
+freeze_failure_pid=$!
+freeze_failure_identity="$(process_identity "$freeze_failure_pid")"
+read -r freeze_failure_start _ <<<"$freeze_failure_identity"
+if PYTHONPATH="$freeze_failure_dir" KEMFAI_FREEZE_FAILURE_STAT="/proc/$freeze_failure_pid/stat" \
+  kill_frozen_owned_pre_session "$freeze_failure_pid" "$freeze_failure_start"; then
+  fail "freeze failure injection unexpectedly succeeded"
+fi
+for _ in $(seq 1 100); do
+  freeze_failure_state="$(python3 - "$freeze_failure_pid" <<'PY_FREEZE_STATE'
+import pathlib, sys
+try:
+    raw = pathlib.Path('/proc', sys.argv[1], 'stat').read_text()
+    print(raw[raw.rfind(')') + 2:].split()[0])
+except (FileNotFoundError, ProcessLookupError):
+    pass
+PY_FREEZE_STATE
+)"
+  [ "$freeze_failure_state" != T ] && [ "$freeze_failure_state" != t ] && break
+  sleep .01
+done
+[ "$freeze_failure_state" != T ] && [ "$freeze_failure_state" != t ] \
+  || fail "failed frozen cleanup left its authenticated process stopped"
+kill -KILL -- "$freeze_failure_pid" 2>/dev/null || true
+wait "$freeze_failure_pid" 2>/dev/null || true
+freeze_failure_pid=""; rm -rf -- "$freeze_failure_dir"; freeze_failure_dir=""
+
 # Cleanup can begin after the pinned launcher has completed setsid/fork but before
 # registration records the session. It must authenticate that transition and clean
 # the whole newly owned session rather than treating its child as a leaf violation.
@@ -337,6 +401,145 @@ terminate_owned_process_group "$transition_supervisor" sleep   || fail "cleanup 
 [ -z "$(session_survivors "$transition_supervisor")" ]   || fail "transitioned owned session survivor remained"
 wait "$transition_supervisor" 2>/dev/null || true
 transition_supervisor=""; transition_child=""
+
+# A launcher can complete setsid/fork after the pre-session leaf check but before the
+# first signal. Cleanup must adopt that late session transition instead of killing only
+# its authenticated leader and leaving a TERM-resistant service child behind.
+post_leaf_race_dir="$(mktemp -d)"
+cat >"$post_leaf_race_dir/sitecustomize.py" <<'PY_POST_LEAF_RACE'
+import os
+import pathlib
+import time
+
+_original_setsid = os.setsid
+_marker = pathlib.Path(os.environ["KEMFAI_POST_LEAF_RACE_MARKER"])
+
+def paused_setsid():
+    _marker.write_text(str(os.getpid()) + "\n")
+    release = _marker.with_suffix(".release")
+    for _ in range(3000):
+        if release.exists():
+            return _original_setsid()
+        time.sleep(0.01)
+    raise TimeoutError("post-leaf transition test was not released")
+
+os.setsid = paused_setsid
+PY_POST_LEAF_RACE
+post_leaf_race_marker="$post_leaf_race_dir/paused"
+PYTHONPATH="$post_leaf_race_dir" KEMFAI_POST_LEAF_RACE_MARKER="$post_leaf_race_marker" \
+  python3 "$repo_dir/scripts/fixtures/t071_owned_session_exec.py" python3 -c \
+    'import signal,time; signal.signal(signal.SIGTERM, signal.SIG_IGN); time.sleep(30)' &
+post_leaf_race_supervisor=$!
+for _ in $(seq 1 500); do [ -s "$post_leaf_race_marker" ] && break; sleep .01; done
+[ -s "$post_leaf_race_marker" ] || fail "post-leaf transition fixture did not pause before setsid"
+post_leaf_race_identity="$(process_identity "$post_leaf_race_supervisor")"
+read -r post_leaf_race_start _ <<<"$post_leaf_race_identity"
+owned_pid_starttime["$post_leaf_race_supervisor"]="$post_leaf_race_start"
+owned_pid_session["$post_leaf_race_supervisor"]=""
+original_signal_owned_pid_definition="$(declare -f signal_owned_pid)"
+eval "${original_signal_owned_pid_definition/signal_owned_pid ()/post_leaf_race_signal_owned_pid ()}"
+post_leaf_race_released=0
+signal_owned_pid() {
+  if [ "$post_leaf_race_released" -eq 0 ]; then
+    post_leaf_race_released=1
+    : >"$post_leaf_race_marker.release"
+    for _ in $(seq 1 500); do
+      post_leaf_race_identity="$(process_identity "$post_leaf_race_supervisor" 2>/dev/null || true)"
+      post_leaf_race_child="$(python3 - "$post_leaf_race_supervisor" <<'PY_POST_LEAF_CHILD'
+import pathlib, sys
+try:
+    print(pathlib.Path('/proc', sys.argv[1], 'task', sys.argv[1], 'children').read_text().strip())
+except (FileNotFoundError, ProcessLookupError):
+    pass
+PY_POST_LEAF_CHILD
+)"
+      read -r _ post_leaf_race_session <<<"$post_leaf_race_identity"
+      [ "$post_leaf_race_session" = "$post_leaf_race_supervisor" ] && [ -n "$post_leaf_race_child" ] && break
+      sleep .01
+    done
+    [ "$post_leaf_race_session" = "$post_leaf_race_supervisor" ] && [ -n "$post_leaf_race_child" ] \
+      || fail "post-leaf transition fixture did not establish its owned child"
+  fi
+  post_leaf_race_signal_owned_pid "$@"
+}
+terminate_owned_process_group "$post_leaf_race_supervisor" python3 \
+  || fail "cleanup rejected the post-leaf owned-session transition"
+[ -z "$(session_survivors "$post_leaf_race_supervisor")" ] \
+  || fail "post-leaf owned-session transition left a service survivor"
+eval "$original_signal_owned_pid_definition"
+wait "$post_leaf_race_supervisor" 2>/dev/null || true
+post_leaf_race_supervisor=""; post_leaf_race_child=""
+rm -rf -- "$post_leaf_race_dir"; post_leaf_race_dir=""
+
+# The same transition at the final frozen-KILL boundary must be adopted safely.
+kill_boundary_race_dir="$(mktemp -d)"
+cat >"$kill_boundary_race_dir/sitecustomize.py" <<'PY_KILL_BOUNDARY_RACE'
+import os
+import pathlib
+import time
+
+_original_setsid = os.setsid
+_marker = pathlib.Path(os.environ["KEMFAI_KILL_BOUNDARY_RACE_MARKER"])
+
+def paused_setsid():
+    _marker.write_text(str(os.getpid()) + "\n")
+    release = _marker.with_suffix(".release")
+    for _ in range(3000):
+        if release.exists():
+            return _original_setsid()
+        time.sleep(0.01)
+    raise TimeoutError("kill-boundary transition test was not released")
+
+os.setsid = paused_setsid
+PY_KILL_BOUNDARY_RACE
+kill_boundary_race_marker="$kill_boundary_race_dir/paused"
+PYTHONPATH="$kill_boundary_race_dir" KEMFAI_KILL_BOUNDARY_RACE_MARKER="$kill_boundary_race_marker" \
+  python3 "$repo_dir/scripts/fixtures/t071_owned_session_exec.py" python3 -c \
+    'import signal,time; signal.signal(signal.SIGTERM, signal.SIG_IGN); time.sleep(30)' &
+kill_boundary_race_supervisor=$!
+for _ in $(seq 1 500); do [ -s "$kill_boundary_race_marker" ] && break; sleep .01; done
+[ -s "$kill_boundary_race_marker" ] || fail "kill-boundary transition fixture did not pause before setsid"
+kill_boundary_race_identity="$(process_identity "$kill_boundary_race_supervisor")"
+read -r kill_boundary_race_start _ <<<"$kill_boundary_race_identity"
+owned_pid_starttime["$kill_boundary_race_supervisor"]="$kill_boundary_race_start"
+owned_pid_session["$kill_boundary_race_supervisor"]=""
+original_kill_boundary_signal_definition="$(declare -f signal_owned_pid)"
+eval "${original_kill_boundary_signal_definition/signal_owned_pid ()/kill_boundary_race_signal_owned_pid ()}"
+signal_owned_pid() {
+  [ "$3" = TERM ] && return 0
+  kill_boundary_race_signal_owned_pid "$@"
+}
+original_kill_frozen_definition="$(declare -f kill_frozen_owned_pre_session)"
+eval "${original_kill_frozen_definition/kill_frozen_owned_pre_session ()/kill_boundary_race_frozen_kill ()}"
+kill_frozen_owned_pre_session() {
+  : >"$kill_boundary_race_marker.release"
+  for _ in $(seq 1 500); do
+    kill_boundary_race_identity="$(process_identity "$kill_boundary_race_supervisor" 2>/dev/null || true)"
+    kill_boundary_race_child="$(python3 - "$kill_boundary_race_supervisor" <<'PY_KILL_BOUNDARY_CHILD'
+import pathlib, sys
+try:
+    print(pathlib.Path('/proc', sys.argv[1], 'task', sys.argv[1], 'children').read_text().strip())
+except (FileNotFoundError, ProcessLookupError):
+    pass
+PY_KILL_BOUNDARY_CHILD
+)"
+    read -r _ kill_boundary_race_session <<<"$kill_boundary_race_identity"
+    [ "$kill_boundary_race_session" = "$kill_boundary_race_supervisor" ] && [ -n "$kill_boundary_race_child" ] && break
+    sleep .01
+  done
+  [ "$kill_boundary_race_session" = "$kill_boundary_race_supervisor" ] && [ -n "$kill_boundary_race_child" ] \
+    || fail "kill-boundary transition fixture did not establish its owned child: identity=${kill_boundary_race_identity:-missing} child=${kill_boundary_race_child:-missing}"
+  kill_boundary_race_frozen_kill "$@"
+}
+terminate_owned_process_group "$kill_boundary_race_supervisor" python3 \
+  || fail "cleanup rejected the KILL-boundary owned-session transition"
+[ -z "$(session_survivors "$kill_boundary_race_supervisor")" ] \
+  || fail "KILL-boundary owned-session transition left a service survivor"
+eval "$original_kill_frozen_definition"
+eval "$original_kill_boundary_signal_definition"
+wait "$kill_boundary_race_supervisor" 2>/dev/null || true
+kill_boundary_race_supervisor=""; kill_boundary_race_child=""
+rm -rf -- "$kill_boundary_race_dir"; kill_boundary_race_dir=""
 
 # Pre-session cleanup is only safe for the no-fork launcher invariant. If a caller
 # violates it, cleanup must fail closed without signaling either the parent or child.

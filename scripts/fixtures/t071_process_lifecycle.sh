@@ -10,6 +10,14 @@ print(fields[19], fields[3])
 PY
 }
 
+adopt_owned_session_transition() {
+  local pid="$1" expected_start="$2" identity start session
+  identity="$(process_identity "$pid" 2>/dev/null)" || return 1
+  read -r start session <<<"$identity"
+  [ "$start" = "$expected_start" ] && [ "$session" = "$pid" ] || return 1
+  printf '%s\n' "$session"
+}
+
 signal_owned_pid() {
   python3 - "$1" "$2" "$3" <<'PY'
 import os, pathlib, signal, sys
@@ -31,6 +39,68 @@ except (FileNotFoundError, ProcessLookupError):
 except (AttributeError, OSError, ValueError):
     raise SystemExit(2)
 finally:
+    os.close(pidfd)
+PY
+}
+
+kill_frozen_owned_pre_session() {
+  python3 - "$1" "$2" <<'PY'
+import os, pathlib, signal, sys, time
+pid, expected_start = int(sys.argv[1]), sys.argv[2]
+stat = pathlib.Path('/proc', str(pid), 'stat')
+
+def identity():
+    raw = stat.read_text()
+    fields = raw[raw.rfind(')') + 2:].split()
+    if len(fields) < 20:
+        raise ValueError('short /proc stat record')
+    return fields[19], fields[3], fields[0]
+
+try:
+    pidfd = os.pidfd_open(pid)
+except ProcessLookupError:
+    raise SystemExit(3)
+except (AttributeError, OSError):
+    raise SystemExit(1)
+resume_needed = False
+try:
+    start, _, _ = identity()
+    if start != expected_start:
+        raise RuntimeError('leader identity mismatch')
+    signal.pidfd_send_signal(pidfd, signal.SIGSTOP)
+    resume_needed = True
+    for _ in range(500):
+        try:
+            start, session, state = identity()
+        except (FileNotFoundError, ProcessLookupError):
+            raise SystemExit(3)
+        if start != expected_start:
+            raise RuntimeError('leader identity changed while freezing')
+        if state in ('T', 't'):
+            if session == str(pid):
+                signal.pidfd_send_signal(pidfd, signal.SIGCONT)
+                resume_needed = False
+                raise SystemExit(10)
+            children = pathlib.Path(
+                '/proc', str(pid), 'task', str(pid), 'children'
+            ).read_text().strip()
+            if children:
+                raise RuntimeError(f'pre-session process is not a leaf: {children}')
+            signal.pidfd_send_signal(pidfd, signal.SIGKILL)
+            resume_needed = False
+            raise SystemExit(0)
+        time.sleep(0.01)
+    raise RuntimeError('timed out freezing pre-session process')
+except (AttributeError, FileNotFoundError, OSError, ProcessLookupError,
+        RuntimeError, UnicodeError, ValueError) as exc:
+    print(f'FAIL cleanup: cannot freeze and kill owned pre-session process: {exc}', file=sys.stderr)
+    raise SystemExit(1)
+finally:
+    if resume_needed:
+        try:
+            signal.pidfd_send_signal(pidfd, signal.SIGCONT)
+        except (AttributeError, OSError, ProcessLookupError):
+            pass
     os.close(pidfd)
 PY
 }
@@ -181,16 +251,10 @@ terminate_owned_process_group() {
   session="${owned_pid_session[$pid]:-}"
   if [ -z "$session" ]; then
     # Registration can time out just before the pinned launcher completes setsid/fork.
-    # Re-read its immutable identity at cleanup time and adopt the owned session if that
-    # transition has completed; otherwise retain the strict pre-session leaf invariant.
-    identity="$(process_identity "$pid" 2>/dev/null)" || true
-    if [ -n "$identity" ]; then
-      read -r start current_session <<<"$identity"
-      if [ "$start" = "${owned_pid_starttime[$pid]:-}" ] && [ "$current_session" = "$pid" ]; then
-        session="$current_session"
-        owned_pid_session["$pid"]="$current_session"
-      fi
-    fi
+    # Re-authenticate around every signal boundary: setsid/fork can happen after any
+    # earlier identity or leaf check, and a leader-only signal must never orphan a child.
+    session="$(adopt_owned_session_transition "$pid" "${owned_pid_starttime[$pid]:-}" 2>/dev/null)" || session=""
+    [ -z "$session" ] || owned_pid_session["$pid"]="$session"
     if [ -z "$session" ]; then
       # Registration pinned the start time but failed before setsid. Open a pidfd before
       # validating the pinned start time, then signal through that stable kernel reference;
@@ -203,33 +267,62 @@ except (FileNotFoundError, ProcessLookupError):
     pass
 PY_CHILDREN
 )" || { echo "FAIL cleanup: cannot verify pre-session ${expected_substr} process is a leaf: ${pid}" >&2; return 1; }
-    if [ -n "$children" ]; then
-      echo "FAIL cleanup: pre-session ${expected_substr} process violated owned leaf-launch invariant: ${pid} -> ${children}" >&2
-      return 1
+      if [ -n "$children" ]; then
+        session="$(adopt_owned_session_transition "$pid" "${owned_pid_starttime[$pid]:-}" 2>/dev/null)" || session=""
+        if [ -z "$session" ]; then
+          echo "FAIL cleanup: pre-session ${expected_substr} process violated owned leaf-launch invariant: ${pid} -> ${children}" >&2
+          return 1
+        fi
+        owned_pid_session["$pid"]="$session"
+      fi
     fi
-    for _ in $(seq 1 25); do
-      if signal_owned_pid "$pid" "${owned_pid_starttime[$pid]:-}" TERM; then
-        sleep 0.2
-        continue
+    if [ -z "$session" ]; then
+      for _ in $(seq 1 25); do
+        session="$(adopt_owned_session_transition "$pid" "${owned_pid_starttime[$pid]:-}" 2>/dev/null)" || session=""
+        if [ -n "$session" ]; then
+          owned_pid_session["$pid"]="$session"
+          break
+        fi
+        if signal_owned_pid "$pid" "${owned_pid_starttime[$pid]:-}" TERM; then
+          session="$(adopt_owned_session_transition "$pid" "${owned_pid_starttime[$pid]:-}" 2>/dev/null)" || session=""
+          if [ -n "$session" ]; then
+            owned_pid_session["$pid"]="$session"
+            break
+          fi
+          sleep 0.2
+          continue
+        else
+          signal_status=$?
+          [ "$signal_status" -eq 3 ] && return 0
+          echo "FAIL cleanup: cannot signal owned ${expected_substr} pre-session process: ${pid}" >&2
+          return 1
+        fi
+      done
+    fi
+    if [ -z "$session" ]; then
+      if kill_frozen_owned_pre_session "$pid" "${owned_pid_starttime[$pid]:-}"; then
+        signal_status=0
       else
         signal_status=$?
-        [ "$signal_status" -eq 3 ] && return 0
-        echo "FAIL cleanup: cannot signal owned ${expected_substr} pre-session process: ${pid}" >&2
-        return 1
       fi
-    done
-    if signal_owned_pid "$pid" "${owned_pid_starttime[$pid]:-}" KILL; then
-      [ -z "$forced_kill_var" ] || printf -v "$forced_kill_var" '%s' 1
-    else
-      signal_status=$?
-      [ "$signal_status" -eq 3 ] && return 0
-      echo "FAIL cleanup: cannot kill owned ${expected_substr} pre-session process: ${pid}" >&2
-      return 1
+      case "$signal_status" in
+        0) [ -z "$forced_kill_var" ] || printf -v "$forced_kill_var" '%s' 1 ;;
+        3) return 0 ;;
+        10)
+          session="$pid"
+          owned_pid_session["$pid"]="$session"
+          ;;
+        *)
+          echo "FAIL cleanup: cannot kill owned ${expected_substr} pre-session process: ${pid}" >&2
+          return 1
+          ;;
+      esac
     fi
-    for _ in $(seq 1 25); do
-      process_identity "$pid" >/dev/null 2>&1 || return 0
-      sleep 0.2
-    done
+    if [ -z "$session" ]; then
+      for _ in $(seq 1 25); do
+        process_identity "$pid" >/dev/null 2>&1 || return 0
+        sleep 0.2
+      done
       echo "FAIL cleanup: owned ${expected_substr} pre-session process survivor: ${pid}" >&2
       return 1
     fi
