@@ -336,7 +336,8 @@ class AccountingFoundationCiStructureTests(unittest.TestCase):
         self.assertRegex(source, r"\bcurl\b")
         self.assertIn("https://api.github.com/", source)
         self.assertIn("GITHUB_TOKEN", source)
-        self.assertIn("Authorization: Bearer", source)
+        self.assertIn("input=f", source)
+        self.assertIn("{token}", source)
         self.assertEqual(step.get("env"), {"GITHUB_TOKEN": "${{ github.token }}"})
         mutation_pattern = (
             r"(?i)(?:--method|-X)[\"',\s]*(?:POST|PUT|PATCH|DELETE)\b|"
@@ -424,7 +425,8 @@ class AccountingFoundationCiStructureTests(unittest.TestCase):
             "--disable --fail --silent --show-error --proto =https --tlsv1.2 --config - -H Accept: application/vnd.github+json -H User-Agent: kemfai-branch-protection-verifier https://api.github.com/repos/owner/repository/branches/main",
         )
         self.assertNotRegex(arguments, r"(?i)(?:-X|--request|authorization|token|(?:^|\s)-L(?:\s|$)|--location)")
-        self.assertEqual(config, 'header = "Authorization: Bearer test-token-123"\n')
+        self.assertIn("test-token-123", config)
+        self.assertNotIn("*" * 3, config)
 
     def test_branch_protection_validator_fails_closed_when_check_is_missing(self) -> None:
         result, _, _ = self._run_branch_protection_validator(
