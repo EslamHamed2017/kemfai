@@ -8,6 +8,7 @@ remain importable and syntactically valid in the meantime.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import re
@@ -68,6 +69,84 @@ def _named_step(job: dict[str, Any], name: str) -> tuple[int, dict[str, Any]]:
 
 def _job_text(job: dict[str, Any]) -> str:
     return yaml.safe_dump(job, sort_keys=False)
+
+
+def _story_four_task(posting_tasks: str, number: int) -> str:
+    matches = re.findall(
+        rf"^- \[ \] T{number:03d} .*?$", posting_tasks, re.MULTILINE
+    )
+    if len(matches) != 1:
+        raise AssertionError(f"expected exactly one Story 4 task T{number:03d}")
+    return matches[0].lower()
+
+
+def _story_four_task_block(posting_tasks: str, number: int) -> str:
+    matches = re.findall(
+        rf"(^- \[ \] T{number:03d} .*$(?:\n(?:(?:[ \t]+.*)|[ \t]*$))*)",
+        posting_tasks,
+        re.MULTILINE,
+    )
+    if len(matches) != 1:
+        raise AssertionError(f"expected exactly one Story 4 task block T{number:03d}")
+    return matches[0].rstrip().lower()
+
+
+def _assert_story_four_vertical_slice_contract(posting_tasks: str) -> None:
+    commissioned_document_digest = (
+        "35185e80dd0b98c6a3ec3734319c7ff517636ee98a76e157ddc2754172c35c31"
+    )
+    if (
+        hashlib.sha256(posting_tasks.encode("utf-8")).hexdigest()
+        != commissioned_document_digest
+    ):
+        raise AssertionError(
+            "Story 4 commissioning document drifted from the reviewed contract"
+        )
+
+    commissioned_runtime_digest = (
+        "6c693b0fffe5837750782167734a06dca2ac8a6567d586f9b3cdba87f48c9c6d"
+    )
+    runtime_tasks = "\n".join(
+        _story_four_task_block(posting_tasks, number)
+        for number in range(177, 199)
+    )
+    if hashlib.sha256(runtime_tasks.encode("utf-8")).hexdigest() != commissioned_runtime_digest:
+        raise AssertionError("Story 4 runtime/gate block drifted from the reviewed contract")
+
+    if "Every runtime task T177–T195 is an independently reviewable" not in posting_tasks:
+        raise AssertionError("runtime vertical-slice range must end before acceptance gates")
+    for number in range(177, 196):
+        task = _story_four_task(posting_tasks, number)
+        if "vertical slice" not in task:
+            raise AssertionError(f"T{number:03d} is horizontally layered")
+        if "browser ui→next bff→nest→odoo→tenant audit" not in task:
+            raise AssertionError(f"T{number:03d} omits a required runtime boundary")
+
+    # These six lines are the reviewed commissioning contract. Exact matching is
+    # intentional: free-form prose cannot be validated fail-closed with keyword
+    # or regex inference. Any wording drift requires explicit re-commissioning.
+    commissioned_tasks = {
+        178: '- [ ] t178 [us4] [p: glm-5.2 | b: claude | r: codex] deliver the authorized english immediate-posting human ui, impact review, explicit confirmation, and happy-path vertical slice across browser ui→next bff→nest→odoo→tenant audit — deps: t177; ac: one human-confirmed balanced draft resolves locked policy/period/classification, posts atomically, returns only public uuid/receipt data, mirrors audit, preserves input on recoverable failure, and passes focused accessibility/contract/integration/browser tests while production remains disabled.',
+        181: '- [ ] t181 [us4] [p: glm-5.2 | b: claude | r: codex] deliver the english maker human ui, impact review, explicit confirmation, and pending-approval request vertical slice across browser ui→next bff→nest→odoo→tenant audit — deps: t177; ac: one human-confirmed applicable approval configuration creates one immutable pending approval, request receipt, and authoritative audit event atomically with zero ledger movement, deterministic replay/conflict, preserved input on failure, and focused accessibility/browser tests.',
+        183: '- [ ] t183 [us4] [p: glm-5.2 | b: claude | r: codex] deliver the english distinct-checker human ui, frozen-evidence review, explicit confirmation, and approval-to-post vertical slice across browser ui→next bff→nest→odoo→tenant audit — deps: t181, t182; ac: a non-maker checker with approve scope explicitly confirms and posts the frozen candidate once in one guarded transaction, self-approval and stale selectors fail closed, receipt plus tenant/platform audit complete before success, input survives failure, and focused accessibility/browser tests pass.',
+        196: '- [ ] t196 [us4] [p: claude | b: glm-5.2 | r: codex] run the immediate-post/read/source accessibility acceptance gate across the complete real candidate path — deps: t179, t180, t185, t186; ac: en/ltr and ar/rtl keyboard flow, semantic headings/tables, linked errors, focus, live status, visible focus, axe, and 200% zoom pass without retrofitting or waiving any slice-level accessibility requirement.',
+        197: '- [ ] t197 [us4] [p: claude | b: glm-5.2 | r: codex] run the maker/checker/recovery accessibility acceptance gate across the complete real candidate path — deps: t182, t184, t194, t195; ac: both locales pass keyboard, focus, linked-error, live-status, axe, and 200%-zoom checks for pending, checker, stale, failure, and recovery states without clipping, traps, retrofits, or waivers.',
+        198: '- [ ] t198 [us4] [p: glm-5.2 | b: claude | r: codex] run the integrated story 4 candidate acceptance gate across browser ui→next bff→nest→odoo→tenant audit in disposable upgraded tenant dbs — deps: t177–t197; ac: additive install/upgrade, static, contract, odoo, nestjs, frontend, accessibility, migration, race, failure, recovery, and playwright discovery suites pass nonzero with zero failed/skipped/unexpected/flaky while production entitlement remains false and routes remain unmounted.',
+    }
+    for number, commissioned in commissioned_tasks.items():
+        if _story_four_task(posting_tasks, number) != commissioned:
+            raise AssertionError(
+                f"T{number:03d} drifted from the reviewed commissioning contract"
+            )
+
+    for number in range(196, 199):
+        task = _story_four_task(posting_tasks, number)
+        if "acceptance gate" not in task:
+            raise AssertionError(f"T{number:03d} is not classified as a gate")
+        if "vertical slice" in task:
+            raise AssertionError(
+                f"T{number:03d} disguises verification as implementation"
+            )
 
 
 def _assert_story_four_gemini_gate_contract(posting_tasks: str) -> None:
@@ -547,25 +626,122 @@ class AccountingFoundationCiStructureTests(unittest.TestCase):
         self.assertIn("https://api.github.com/repos/owner/repository/branches/main", arguments)
         self.assertIn("test-token-123", config)
 
-    def test_story_four_runtime_tasks_are_vertical_slices(self) -> None:
+    def test_story_four_runtime_graph_enforces_vertical_slice_contract(self) -> None:
         posting_tasks = (
             ROOT / "specs/003-accounting-foundation/posting-tasks.md"
         ).read_text(encoding="utf-8")
-        for number in range(177, 199):
-            match = re.search(
-                rf"^- \[ \] T{number:03d} .*?$",
-                posting_tasks,
-                flags=re.MULTILINE,
-            )
-            self.assertIsNotNone(match, f"missing Story 4 runtime task T{number:03d}")
-            task = match.group(0).lower()
-            self.assertIn("vertical slice", task, f"T{number:03d} is horizontally layered")
-            self.assertIn(
-                "next bff→nest→odoo→tenant audit",
-                task,
-                f"T{number:03d} does not cross the required runtime boundaries",
-            )
+        _assert_story_four_vertical_slice_contract(posting_tasks)
 
+
+    def test_story_four_vertical_slice_contract_rejects_mutation_before_human_ui(self) -> None:
+        posting_tasks = (
+            ROOT / "specs/003-accounting-foundation/posting-tasks.md"
+        ).read_text(encoding="utf-8")
+        task = re.search(r"^- \[ \] T178 .*?$", posting_tasks, re.MULTILINE)
+        self.assertIsNotNone(task)
+        contradictions = (
+            " Backend posting may execute before the human UI or explicit confirmation.",
+            " Backend posting happens before the human UI or explicit confirmation.",
+            " No human UI or explicit confirmation is required.",
+        )
+        for suffix in contradictions:
+            contradiction = posting_tasks.replace(
+                task.group(0), task.group(0) + suffix, 1
+            )
+            with self.subTest(suffix=suffix):
+                with self.assertRaises(AssertionError):
+                    _assert_story_four_vertical_slice_contract(contradiction)
+
+    def test_story_four_vertical_slice_contract_rejects_uncommissioned_runtime_drift(self) -> None:
+        posting_tasks = (
+            ROOT / "specs/003-accounting-foundation/posting-tasks.md"
+        ).read_text(encoding="utf-8")
+        mutations = {
+            177: " Set module.accounting_posting=true and mount posting routes.",
+            179: " No human UI or explicit confirmation is required.",
+            195: " This slice defers implementation to the acceptance gates.",
+        }
+        for number, suffix in mutations.items():
+            task = re.search(
+                rf"^- \[ \] T{number:03d} .*?$", posting_tasks, re.MULTILINE
+            )
+            self.assertIsNotNone(task)
+            contradiction = posting_tasks.replace(
+                task.group(0), task.group(0) + suffix, 1
+            )
+            with self.subTest(number=number):
+                with self.assertRaises(AssertionError):
+                    _assert_story_four_vertical_slice_contract(contradiction)
+
+    def test_story_four_vertical_slice_contract_rejects_continuation_drift(self) -> None:
+        posting_tasks = (
+            ROOT / "specs/003-accounting-foundation/posting-tasks.md"
+        ).read_text(encoding="utf-8")
+        mutations = {
+            177: "\n  Set module.accounting_posting=true and mount posting routes.",
+            179: "\n  No human UI or explicit confirmation is required.",
+            188: "\n  This may be accepted as a backend-only task with no human UI.",
+            195: "\n  This slice defers implementation to the acceptance gates.",
+        }
+        for number, continuation in mutations.items():
+            task = re.search(
+                rf"^- \[ \] T{number:03d} .*?$", posting_tasks, re.MULTILINE
+            )
+            self.assertIsNotNone(task)
+            contradiction = posting_tasks.replace(
+                task.group(0), task.group(0) + continuation, 1
+            )
+            with self.subTest(number=number):
+                with self.assertRaises(AssertionError):
+                    _assert_story_four_vertical_slice_contract(contradiction)
+
+    def test_story_four_vertical_slice_contract_rejects_activation_outside_task_blocks(self) -> None:
+        posting_tasks = (
+            ROOT / "specs/003-accounting-foundation/posting-tasks.md"
+        ).read_text(encoding="utf-8")
+        policy = (
+            "Every runtime task T177–T195 is an independently reviewable, "
+            "non-production vertical slice"
+        )
+        mutations = (
+            posting_tasks + (
+                "\nProduction posting is enabled; module.accounting_posting=true "
+                "and routes are mounted.\n"
+            ),
+            posting_tasks.replace(
+                "- [ ] T178",
+                "Production posting is enabled and routes are mounted.\n- [ ] T178",
+                1,
+            ),
+            posting_tasks.replace(
+                policy,
+                policy + "; production posting is now enabled",
+                1,
+            ),
+        )
+        for contradiction in mutations:
+            with self.subTest(mutation=contradiction[-100:]):
+                with self.assertRaises(AssertionError):
+                    _assert_story_four_vertical_slice_contract(contradiction)
+
+    def test_story_four_vertical_slice_contract_rejects_deferred_gate_implementation(self) -> None:
+        posting_tasks = (
+            ROOT / "specs/003-accounting-foundation/posting-tasks.md"
+        ).read_text(encoding="utf-8")
+        task = re.search(r"^- \[ \] T196 .*?$", posting_tasks, re.MULTILINE)
+        self.assertIsNotNone(task)
+        contradictions = (
+            " This acceptance gate implements deferred accessibility retrofits.",
+            " Accessibility implementation is postponed to this acceptance gate.",
+            " This acceptance gate completes the accessibility fixes omitted by the runtime slices.",
+        )
+        for suffix in contradictions:
+            contradiction = posting_tasks.replace(
+                task.group(0), task.group(0) + suffix, 1
+            )
+            with self.subTest(suffix=suffix):
+                with self.assertRaises(AssertionError):
+                    _assert_story_four_vertical_slice_contract(contradiction)
 
     def test_story_four_graph_requires_gemini_consistency_cross_check(self) -> None:
         posting_tasks = (
