@@ -91,6 +91,81 @@ def _story_four_task_block(posting_tasks: str, number: int) -> str:
     return matches[0].rstrip().lower()
 
 
+def _assert_story_four_graph_structure(posting_tasks: str) -> None:
+    task_lines: dict[int, str] = {}
+    for match in re.finditer(r"^- \[ \] T(\d{3}) (.*?)$", posting_tasks, re.MULTILINE):
+        number = int(match.group(1))
+        if number in task_lines:
+            raise AssertionError(f"duplicate Story 4 task T{number:03d}")
+        task_lines[number] = match.group(0)
+
+    expected = list(range(159, 212))
+    if sorted(task_lines) != expected or list(task_lines) != expected:
+        raise AssertionError("Story 4 task IDs must be exactly T159–T211 in sequence")
+
+    dependency_graph: dict[int, set[int]] = {}
+    for number, line in task_lines.items():
+        match = re.search(r"— Deps: (.*?); AC:", line)
+        if match is None:
+            raise AssertionError(f"T{number:03d} has no parseable dependency list")
+        dependencies: set[int] = set()
+        for token in (part.strip() for part in match.group(1).split(",")):
+            range_match = re.fullmatch(r"T(\d{3})[–-]T?(\d{3})", token)
+            single_match = re.fullmatch(r"T(\d{3})", token)
+            if range_match:
+                start, end = map(int, range_match.groups())
+                if start > end:
+                    raise AssertionError(f"T{number:03d} has a reversed dependency range")
+                dependencies.update(range(start, end + 1))
+            elif single_match:
+                dependencies.add(int(single_match.group(1)))
+            else:
+                raise AssertionError(f"T{number:03d} has an invalid dependency token: {token}")
+        dependency_graph[number] = {dependency for dependency in dependencies if dependency >= 159}
+        future = sorted(dependency for dependency in dependency_graph[number] if dependency >= number)
+        if future:
+            raise AssertionError(
+                f"T{number:03d} has nonpreceding dependency T{future[0]:03d}"
+            )
+
+    if dependency_graph[177] != set(range(159, 177)):
+        raise AssertionError("T177 must depend on the complete T159–T176 barrier")
+
+    visiting: set[int] = set()
+    visited: set[int] = set()
+
+    def visit(number: int) -> None:
+        if number in visiting:
+            raise AssertionError(f"Story 4 dependency cycle includes T{number:03d}")
+        if number in visited:
+            return
+        visiting.add(number)
+        for dependency in dependency_graph[number]:
+            if dependency not in dependency_graph:
+                raise AssertionError(f"T{number:03d} depends on missing T{dependency:03d}")
+            visit(dependency)
+        visiting.remove(number)
+        visited.add(number)
+
+    for number in expected:
+        visit(number)
+
+
+def _assert_story_four_replay_audit_contract(posting_tasks: str) -> None:
+    requirements = {
+        166: ("each exact replay correlation", "one deduplicated `posting.replayed` platform event", "no second tenant mutation event"),
+        175: ("per-correlation replay-event counts", "no second tenant mutation event"),
+        190: ("each exact replay correlation", "one deduplicated `posting.replayed` platform event", "no second tenant mutation event"),
+        200: ("per-correlation replay-event counts", "no second tenant mutation event"),
+        205: ("per-correlation replay-event counts", "no second tenant mutation event"),
+    }
+    for number, phrases in requirements.items():
+        task = _story_four_task_block(posting_tasks, number)
+        for phrase in phrases:
+            if phrase.lower() not in task:
+                raise AssertionError(f"T{number:03d} omits replay audit requirement: {phrase}")
+
+
 def _assert_story_four_vertical_slice_semantics(posting_tasks: str) -> None:
     if "Every runtime task T177–T195 is an independently reviewable" not in posting_tasks:
         raise AssertionError("runtime vertical-slice range must end before acceptance gates")
@@ -129,8 +204,10 @@ def _assert_story_four_vertical_slice_semantics(posting_tasks: str) -> None:
 
 
 def _assert_story_four_vertical_slice_contract(posting_tasks: str) -> None:
+    _assert_story_four_graph_structure(posting_tasks)
+    _assert_story_four_replay_audit_contract(posting_tasks)
     commissioned_document_digest = (
-        "e7d89d86004c8f587003cbed6718829fb9a9546e45b5939236307a120f69cdbe"
+        "f049a3bb9f9ff98ddd913782020035b3d7ae167ea1b8805498abc05345b21b23"
     )
     if (
         hashlib.sha256(posting_tasks.encode("utf-8")).hexdigest()
@@ -141,7 +218,7 @@ def _assert_story_four_vertical_slice_contract(posting_tasks: str) -> None:
         )
 
     commissioned_runtime_digest = (
-        "6c693b0fffe5837750782167734a06dca2ac8a6567d586f9b3cdba87f48c9c6d"
+        "ad6d121b543201ae22ffc79f835ba12b0c68ffd7b208240ff9766cb374f415fe"
     )
     runtime_tasks = "\n".join(
         _story_four_task_block(posting_tasks, number)
@@ -163,7 +240,7 @@ def _assert_story_four_vertical_slice_contract(posting_tasks: str) -> None:
     # intentional: free-form prose cannot be validated fail-closed with keyword
     # or regex inference. Any wording drift requires explicit re-commissioning.
     commissioned_tasks = {
-        178: '- [ ] t178 [us4] [p: glm-5.2 | b: claude | r: codex] deliver the authorized english immediate-posting human ui, impact review, explicit confirmation, and happy-path vertical slice across browser ui→next bff→nest→odoo→tenant audit — deps: t177; ac: one human-confirmed balanced draft resolves locked policy/period/classification, posts atomically, returns only public uuid/receipt data, mirrors audit, preserves input on recoverable failure, and passes focused accessibility/contract/integration/browser tests while production remains disabled.',
+        178: '- [ ] t178 [us4] [p: glm-5.2 | b: claude | r: codex] deliver the authorized english immediate-posting command happy-path vertical slice across browser ui→next bff→nest→odoo→tenant audit — deps: t177; ac: one balanced draft shows the minimum impact summary and unselected explicit confirmation, then resolves locked policy/period/classification, posts atomically, returns only public uuid/receipt data, mirrors audit, and passes focused accessibility/contract/integration/browser tests while production remains disabled.',
         181: '- [ ] t181 [us4] [p: glm-5.2 | b: claude | r: codex] deliver the english maker human ui, impact review, explicit confirmation, and pending-approval request vertical slice across browser ui→next bff→nest→odoo→tenant audit — deps: t177; ac: one human-confirmed applicable approval configuration creates one immutable pending approval, request receipt, and authoritative audit event atomically with zero ledger movement, deterministic replay/conflict, preserved input on failure, and focused accessibility/browser tests.',
         183: '- [ ] t183 [us4] [p: glm-5.2 | b: claude | r: codex] deliver the english distinct-checker human ui, frozen-evidence review, explicit confirmation, and approval-to-post vertical slice across browser ui→next bff→nest→odoo→tenant audit — deps: t181, t182; ac: a non-maker checker with approve scope explicitly confirms and posts the frozen candidate once in one guarded transaction, self-approval and stale selectors fail closed, receipt plus tenant/platform audit complete before success, input survives failure, and focused accessibility/browser tests pass.',
         196: '- [ ] t196 [us4] [p: claude | b: glm-5.2 | r: codex] run the immediate-post/read/source accessibility acceptance gate across the complete real candidate path — deps: t179, t180, t185, t186; ac: en/ltr and ar/rtl keyboard flow, semantic headings/tables, linked errors, focus, live status, visible focus, axe, and 200% zoom pass without retrofitting or waiving any slice-level accessibility requirement.',
@@ -709,6 +786,46 @@ class AccountingFoundationCiStructureTests(unittest.TestCase):
         self.assertIn("https://api.github.com/repos/owner/repository/branches/main", arguments)
         self.assertIn("test-token-123", config)
 
+
+    def test_story_four_graph_structure_rejects_missing_ids(self) -> None:
+        posting_tasks = (
+            ROOT / "specs/003-accounting-foundation/posting-tasks.md"
+        ).read_text(encoding="utf-8")
+        missing = re.sub(r"^- \[ \] T180 .*?\n", "", posting_tasks, count=1, flags=re.MULTILINE)
+        with self.assertRaisesRegex(AssertionError, "exactly T159–T211"):
+            _assert_story_four_graph_structure(missing)
+
+    def test_story_four_graph_structure_rejects_nonpreceding_dependencies(self) -> None:
+        posting_tasks = (
+            ROOT / "specs/003-accounting-foundation/posting-tasks.md"
+        ).read_text(encoding="utf-8")
+        future_dependency = posting_tasks.replace(
+            "— Deps: T177; AC: One balanced",
+            "— Deps: T179; AC: One balanced",
+            1,
+        )
+        with self.assertRaisesRegex(AssertionError, "nonpreceding dependency"):
+            _assert_story_four_graph_structure(future_dependency)
+
+    def test_story_four_graph_structure_rejects_cycles(self) -> None:
+        posting_tasks = (
+            ROOT / "specs/003-accounting-foundation/posting-tasks.md"
+        ).read_text(encoding="utf-8")
+        cycle = posting_tasks.replace(
+            "— Deps: T177; AC: One balanced",
+            "— Deps: T179; AC: One balanced",
+            1,
+        )
+        with self.assertRaisesRegex(AssertionError, "cycle|nonpreceding dependency"):
+            _assert_story_four_graph_structure(cycle)
+
+    def test_story_four_graph_structure_requires_complete_t177_barrier(self) -> None:
+        posting_tasks = (
+            ROOT / "specs/003-accounting-foundation/posting-tasks.md"
+        ).read_text(encoding="utf-8")
+        incomplete = posting_tasks.replace("— Deps: T159–T176; AC:", "— Deps: T159–T175; AC:", 1)
+        with self.assertRaisesRegex(AssertionError, "T177.*T159–T176"):
+            _assert_story_four_graph_structure(incomplete)
 
     def test_story_four_commissioning_evidence_contract_is_unambiguous(self) -> None:
         posting_tasks = (
