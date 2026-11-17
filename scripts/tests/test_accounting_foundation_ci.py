@@ -93,7 +93,7 @@ def _story_four_task_block(posting_tasks: str, number: int) -> str:
 
 def _assert_story_four_vertical_slice_contract(posting_tasks: str) -> None:
     commissioned_document_digest = (
-        "35185e80dd0b98c6a3ec3734319c7ff517636ee98a76e157ddc2754172c35c31"
+        "3e2dc84cb5f3e99930d8ac37446e37060d68ae472626b25dc0f05040472f8dfb"
     )
     if (
         hashlib.sha256(posting_tasks.encode("utf-8")).hexdigest()
@@ -225,6 +225,42 @@ def _assert_story_four_gemini_gate_contract(posting_tasks: str) -> None:
         raise AssertionError("T176 weakens production-disable safety")
     if "production remains disabled" not in tasks[209]:
         raise AssertionError("T209 weakens production-disable safety")
+
+
+def _assert_story_four_commissioning_evidence_contract(posting_tasks: str) -> None:
+    required_document_text = (
+        "This document is a specification-only",
+        "The commissioning PR also contains executable CI lifecycle repairs and graph-lock meta-tests",
+        "Base main SHA:",
+        "Commissioned graph identity:",
+        "committed Git blob OID and SHA-256 digest",
+        "Implementation candidate head:",
+        "Only base-main drift or graph-content drift requires rebase, re-review, and re-commissioning",
+        "Expected implementation commits that do not alter those inputs are not commissioning drift",
+        "fail-closed red-evidence manifest",
+        "task ID and test path",
+        "exact command",
+        "graph blob OID and SHA-256 digest",
+        "exit status",
+        "discovered test count",
+        "expected failure assertion and observed failure reason",
+    )
+    for requirement in required_document_text:
+        if requirement not in posting_tasks:
+            raise AssertionError(
+                f"Story 4 commissioning evidence contract omits: {requirement}"
+            )
+
+    t176 = re.findall(r"^- \[ \] T176 .*?$", posting_tasks, re.MULTILINE)
+    if len(t176) != 1:
+        raise AssertionError(f"expected exactly one T176 gate, got {len(t176)}")
+    for requirement in (
+        "complete fail-closed red-evidence manifest",
+        "placeholder, already-green, undiscovered, or wrong-reason failures block",
+        "base main SHA, commissioned graph blob OID and SHA-256 digest",
+    ):
+        if requirement not in t176[0]:
+            raise AssertionError(f"T176 omits: {requirement}")
 
 
 class AccountingFoundationCiStructureTests(unittest.TestCase):
@@ -625,6 +661,13 @@ class AccountingFoundationCiStructureTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn("https://api.github.com/repos/owner/repository/branches/main", arguments)
         self.assertIn("test-token-123", config)
+
+
+    def test_story_four_commissioning_evidence_contract_is_unambiguous(self) -> None:
+        posting_tasks = (
+            ROOT / "specs/003-accounting-foundation/posting-tasks.md"
+        ).read_text(encoding="utf-8")
+        _assert_story_four_commissioning_evidence_contract(posting_tasks)
 
     def test_story_four_runtime_graph_enforces_vertical_slice_contract(self) -> None:
         posting_tasks = (
