@@ -91,9 +91,46 @@ def _story_four_task_block(posting_tasks: str, number: int) -> str:
     return matches[0].rstrip().lower()
 
 
+def _assert_story_four_vertical_slice_semantics(posting_tasks: str) -> None:
+    if "Every runtime task T177–T195 is an independently reviewable" not in posting_tasks:
+        raise AssertionError("runtime vertical-slice range must end before acceptance gates")
+    for number in range(177, 196):
+        task = _story_four_task(posting_tasks, number)
+        if "vertical slice" not in task:
+            raise AssertionError(f"T{number:03d} is horizontally layered")
+        if "browser ui→next bff→nest→odoo→tenant audit" not in task:
+            raise AssertionError(f"T{number:03d} omits a required runtime boundary")
+
+    for number in range(196, 199):
+        task = _story_four_task(posting_tasks, number)
+        if "acceptance gate" not in task:
+            raise AssertionError(f"T{number:03d} is not classified as a gate")
+        if "vertical slice" in task:
+            raise AssertionError(
+                f"T{number:03d} disguises verification as implementation"
+            )
+
+    forbidden_semantics = (
+        r"production posting is (?:now )?enabled",
+        r"module\.accounting_posting=true",
+        r"routes are mounted",
+        r"backend posting (?:may execute|happens) before the human ui",
+        r"no human ui or explicit confirmation is required",
+        r"defers implementation to the acceptance gates",
+        r"accepted as a backend-only task",
+        r"acceptance gate implements deferred",
+        r"accessibility implementation is postponed",
+        r"acceptance gate completes the accessibility fixes",
+    )
+    lowered = posting_tasks.lower()
+    for pattern in forbidden_semantics:
+        if re.search(pattern, lowered):
+            raise AssertionError(f"contradictory Story 4 semantics: {pattern}")
+
+
 def _assert_story_four_vertical_slice_contract(posting_tasks: str) -> None:
     commissioned_document_digest = (
-        "3e2dc84cb5f3e99930d8ac37446e37060d68ae472626b25dc0f05040472f8dfb"
+        "e7d89d86004c8f587003cbed6718829fb9a9546e45b5939236307a120f69cdbe"
     )
     if (
         hashlib.sha256(posting_tasks.encode("utf-8")).hexdigest()
@@ -148,6 +185,8 @@ def _assert_story_four_vertical_slice_contract(posting_tasks: str) -> None:
                 f"T{number:03d} disguises verification as implementation"
             )
 
+    _assert_story_four_vertical_slice_semantics(posting_tasks)
+
 
 def _assert_story_four_gemini_gate_contract(posting_tasks: str) -> None:
     contradiction_patterns = (
@@ -186,7 +225,7 @@ def _assert_story_four_gemini_gate_contract(posting_tasks: str) -> None:
 
     expected_roles = {
         174: "[P: Claude | B: GLM-5.2 | R: Gemini + Codex]",
-        176: "[P: GPT-5.6 Sol | B: Claude | R: Codex]",
+        176: "[P: GPT-5.6 Sol | B: Claude | R: Gemini + Codex]",
         209: "[P: GPT-5.6 Sol | B: Claude | R: Codex]",
     }
     for number, roles in expected_roles.items():
@@ -235,12 +274,16 @@ def _assert_story_four_commissioning_evidence_contract(posting_tasks: str) -> No
         "Commissioned graph identity:",
         "committed Git blob OID and SHA-256 digest",
         "Implementation candidate head:",
-        "Only base-main drift or graph-content drift requires rebase, re-review, and re-commissioning",
+        "Base-main, graph-content, normative-addendum, Accounting Policy Matrix, or T151/T152 acceptance-record drift requires rebase, re-review, and re-commissioning",
         "Expected implementation commits that do not alter those inputs are not commissioning drift",
         "fail-closed red-evidence manifest",
         "task ID and test path",
         "exact command",
         "graph blob OID and SHA-256 digest",
+        "posting addendum blob OID and SHA-256 digest",
+        "Accounting Policy Matrix blob OID and SHA-256 digest",
+        "T151/T152 acceptance-record blob OID and SHA-256 digest",
+        "cross-checker identity, independence, scope, findings, decision, and time",
         "exit status",
         "discovered test count",
         "expected failure assertion and observed failure reason",
@@ -258,6 +301,10 @@ def _assert_story_four_commissioning_evidence_contract(posting_tasks: str) -> No
         "complete fail-closed red-evidence manifest",
         "placeholder, already-green, undiscovered, or wrong-reason failures block",
         "base main SHA, commissioned graph blob OID and SHA-256 digest",
+        "posting addendum blob OID and SHA-256 digest",
+        "Accounting Policy Matrix blob OID and SHA-256 digest",
+        "T151/T152 acceptance-record blob OID and SHA-256 digest",
+        "cross-checker identity, independence, scope, findings, decision, and time",
     ):
         if requirement not in t176[0]:
             raise AssertionError(f"T176 omits: {requirement}")
@@ -693,7 +740,7 @@ class AccountingFoundationCiStructureTests(unittest.TestCase):
             )
             with self.subTest(suffix=suffix):
                 with self.assertRaises(AssertionError):
-                    _assert_story_four_vertical_slice_contract(contradiction)
+                    _assert_story_four_vertical_slice_semantics(contradiction)
 
     def test_story_four_vertical_slice_contract_rejects_uncommissioned_runtime_drift(self) -> None:
         posting_tasks = (
@@ -714,7 +761,7 @@ class AccountingFoundationCiStructureTests(unittest.TestCase):
             )
             with self.subTest(number=number):
                 with self.assertRaises(AssertionError):
-                    _assert_story_four_vertical_slice_contract(contradiction)
+                    _assert_story_four_vertical_slice_semantics(contradiction)
 
     def test_story_four_vertical_slice_contract_rejects_continuation_drift(self) -> None:
         posting_tasks = (
@@ -736,7 +783,7 @@ class AccountingFoundationCiStructureTests(unittest.TestCase):
             )
             with self.subTest(number=number):
                 with self.assertRaises(AssertionError):
-                    _assert_story_four_vertical_slice_contract(contradiction)
+                    _assert_story_four_vertical_slice_semantics(contradiction)
 
     def test_story_four_vertical_slice_contract_rejects_activation_outside_task_blocks(self) -> None:
         posting_tasks = (
@@ -765,7 +812,7 @@ class AccountingFoundationCiStructureTests(unittest.TestCase):
         for contradiction in mutations:
             with self.subTest(mutation=contradiction[-100:]):
                 with self.assertRaises(AssertionError):
-                    _assert_story_four_vertical_slice_contract(contradiction)
+                    _assert_story_four_vertical_slice_semantics(contradiction)
 
     def test_story_four_vertical_slice_contract_rejects_deferred_gate_implementation(self) -> None:
         posting_tasks = (
@@ -784,7 +831,7 @@ class AccountingFoundationCiStructureTests(unittest.TestCase):
             )
             with self.subTest(suffix=suffix):
                 with self.assertRaises(AssertionError):
-                    _assert_story_four_vertical_slice_contract(contradiction)
+                    _assert_story_four_vertical_slice_semantics(contradiction)
 
     def test_story_four_graph_requires_gemini_consistency_cross_check(self) -> None:
         posting_tasks = (
@@ -819,14 +866,24 @@ class AccountingFoundationCiStructureTests(unittest.TestCase):
         posting_tasks = (
             ROOT / "specs/003-accounting-foundation/posting-tasks.md"
         ).read_text(encoding="utf-8")
-        role_mutations = {
-            "[P: Claude | B: GLM-5.2 | R: Gemini + Codex]":
+        role_mutations = (
+            (
+                "[P: Claude | B: GLM-5.2 | R: Gemini + Codex]",
                 "[P: Gemini | B: GLM-5.2 | R: Gemini + Codex]",
-            "[P: GPT-5.6 Sol | B: Claude | R: Codex]":
+                (174,),
+            ),
+            (
+                "[P: GPT-5.6 Sol | B: Claude | R: Gemini + Codex]",
                 "[P: Gemini | B: Claude | R: Gemini + Codex]",
-        }
-        for original, self_reviewed in role_mutations.items():
-            matching_tasks = (174,) if original.startswith("[P: Claude") else (176, 209)
+                (176,),
+            ),
+            (
+                "[P: GPT-5.6 Sol | B: Claude | R: Codex]",
+                "[P: Gemini | B: Claude | R: Gemini + Codex]",
+                (209,),
+            ),
+        )
+        for original, self_reviewed, matching_tasks in role_mutations:
             for number in matching_tasks:
                 task_pattern = rf"(^- \[ \] T{number:03d} .*?$)"
                 task = re.search(task_pattern, posting_tasks, re.MULTILINE)
