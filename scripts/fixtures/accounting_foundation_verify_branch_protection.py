@@ -12,8 +12,6 @@ from typing import Any
 from urllib.parse import quote
 
 REQUIRED_CHECK = "accounting-foundation-owned-live"
-READ_EVENTS = {"pull_request", "pull_request_target", "merge_group"}
-
 
 def fail(message: str) -> int:
     print(f"FAIL: {message}", file=sys.stderr)
@@ -31,10 +29,6 @@ def required_contexts(payload: Any) -> set[str]:
 
 
 def main() -> int:
-    event = os.environ.get("GITHUB_EVENT_NAME", "")
-    if event not in READ_EVENTS:
-        print(f"PASS: branch-protection lookup is not required for event {event or 'local'}")
-        return 0
     repository = os.environ.get("GITHUB_REPOSITORY", "")
     branch = os.environ.get("GITHUB_BASE_REF") or os.environ.get("KEMFAI_BRANCH_PROTECTION_BRANCH", "")
     if re.fullmatch(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+", repository) is None:

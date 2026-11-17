@@ -338,7 +338,13 @@ class AccountingFoundationCiStructureTests(unittest.TestCase):
         self.assertIn("GITHUB_TOKEN", source)
         self.assertIn("input=f", source)
         self.assertIn("{token}", source)
-        self.assertEqual(step.get("env"), {"GITHUB_TOKEN": "${{ github.token }}"})
+        self.assertEqual(
+            step.get("env"),
+            {
+                "GITHUB_TOKEN": "${{ github.token }}",
+                "KEMFAI_BRANCH_PROTECTION_BRANCH": "main",
+            },
+        )
         mutation_pattern = (
             r"(?i)(?:--method|-X)[\"',\s]*(?:POST|PUT|PATCH|DELETE)\b|"
             r"\bgh\s+api\b[^\n]*(?:--input|-f|--field|--raw-field)\b|"
@@ -448,11 +454,39 @@ class AccountingFoundationCiStructureTests(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("FAIL", result.stderr)
 
-    def test_branch_protection_validator_skips_lookup_outside_merge_events(self) -> None:
-        result, arguments, config = self._run_branch_protection_validator({}, event="push")
+    def test_branch_protection_validator_checks_push_events(self) -> None:
+        result, arguments, config = self._run_branch_protection_validator(
+            {
+                "protected": True,
+                "protection": {
+                    "enabled": True,
+                    "required_status_checks": {"contexts": [JOB_NAME]},
+                },
+            },
+            event="push",
+        )
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        self.assertEqual(arguments, "")
-        self.assertEqual(config, "")
+        self.assertIn("https://api.github.com/repos/owner/repository/branches/main", arguments)
+        self.assertIn("test-token-123", config)
+
+    def test_story_four_runtime_tasks_are_vertical_slices(self) -> None:
+        posting_tasks = (
+            ROOT / "specs/003-accounting-foundation/posting-tasks.md"
+        ).read_text(encoding="utf-8")
+        for number in range(177, 199):
+            match = re.search(
+                rf"^- \[ \] T{number:03d} .*?$",
+                posting_tasks,
+                flags=re.MULTILINE,
+            )
+            self.assertIsNotNone(match, f"missing Story 4 runtime task T{number:03d}")
+            task = match.group(0).lower()
+            self.assertIn("vertical slice", task, f"T{number:03d} is horizontally layered")
+            self.assertIn(
+                "next bff→nest→odoo→tenant audit",
+                task,
+                f"T{number:03d} does not cross the required runtime boundaries",
+            )
 
 
 if __name__ == "__main__":
