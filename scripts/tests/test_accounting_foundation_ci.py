@@ -70,6 +70,84 @@ def _job_text(job: dict[str, Any]) -> str:
     return yaml.safe_dump(job, sort_keys=False)
 
 
+def _assert_story_four_gemini_gate_contract(posting_tasks: str) -> None:
+    contradiction_patterns = (
+        r"gemini(?: cross-checks?)?.{0,32}(?:prohibited|forbidden|not required|not mandatory|need not)",
+        r"(?:cross-check|result).{0,24}(?:optional|advisory and never blocks)",
+        r"findings.{0,20}(?:need not clear|may remain uncleared)",
+        r"production(?: activation| go-live)?.{0,24}(?:is authorized|may be activated|can be activated|is permitted)",
+    )
+    lowered = posting_tasks.lower()
+    for pattern in contradiction_patterns:
+        if re.search(pattern, lowered):
+            raise AssertionError(f"contradictory Gemini gate language: {pattern}")
+
+    ownership = (
+        "| Tests, frontend, evidence | Claude | GLM-5.2 | Codex, plus Gemini "
+        "for Constitution/Spec/Plan/Tasks consistency cross-checks |"
+    )
+    ownership_rows = [
+        line
+        for line in posting_tasks.splitlines()
+        if line.startswith("| Tests, frontend, evidence |")
+    ]
+    if ownership_rows != [ownership]:
+        raise AssertionError("Gemini consistency ownership must be exact and unique")
+
+    tasks: dict[int, str] = {}
+    for number in (174, 176, 209):
+        matches = re.findall(
+            rf"^- \[ \] T{number:03d} .*?$", posting_tasks, re.MULTILINE
+        )
+        if len(matches) != 1:
+            raise AssertionError(
+                f"expected exactly one consistency gate T{number:03d}, got {len(matches)}"
+            )
+        tasks[number] = matches[0]
+
+    expected_roles = {
+        174: "[P: Claude | B: GLM-5.2 | R: Gemini + Codex]",
+        176: "[P: GPT-5.6 Sol | B: Claude | R: Codex]",
+        209: "[P: GPT-5.6 Sol | B: Claude | R: Codex]",
+    }
+    for number, roles in expected_roles.items():
+        if roles not in tasks[number]:
+            raise AssertionError(
+                f"T{number:03d} must keep Gemini cross-check independent of implementers"
+            )
+    if "Constitution/Spec/Plan/Tasks consistency" not in tasks[174]:
+        raise AssertionError("T174 omits mandatory consistency scope")
+    if (
+        "Gemini cross-checker and Codex reviewer are independent of the primary and backup"
+        not in tasks[174]
+    ):
+        raise AssertionError("T174 does not explicitly prohibit self-review")
+
+    required_gate_text = {
+        176: (
+            "passed Gemini Constitution/Spec/Plan/Tasks consistency cross-check "
+            "bound to the exact commissioning baseline"
+        ),
+        209: (
+            "passed Gemini Constitution/Spec/Plan/Tasks consistency cross-check "
+            "bound to the exact T208 head"
+        ),
+    }
+    for number, requirement in required_gate_text.items():
+        gate = tasks[number]
+        if requirement not in gate:
+            raise AssertionError(f"T{number:03d} lacks positive exact-head semantics")
+        if "The cross-check is mandatory and blocking" not in gate:
+            raise AssertionError(f"T{number:03d} permits an optional/advisory cross-check")
+        if "missing, stale, non-passed, or uncleared cross-check evidence blocks" not in gate:
+            raise AssertionError(f"T{number:03d} does not fail closed")
+
+    if "cannot mutate production entitlement/routes" not in tasks[176]:
+        raise AssertionError("T176 weakens production-disable safety")
+    if "production remains disabled" not in tasks[209]:
+        raise AssertionError("T209 weakens production-disable safety")
+
+
 class AccountingFoundationCiStructureTests(unittest.TestCase):
     maxDiff = None
 
@@ -487,6 +565,77 @@ class AccountingFoundationCiStructureTests(unittest.TestCase):
                 task,
                 f"T{number:03d} does not cross the required runtime boundaries",
             )
+
+
+    def test_story_four_graph_requires_gemini_consistency_cross_check(self) -> None:
+        posting_tasks = (
+            ROOT / "specs/003-accounting-foundation/posting-tasks.md"
+        ).read_text(encoding="utf-8")
+        _assert_story_four_gemini_gate_contract(posting_tasks)
+
+    def test_story_four_gemini_gate_rejects_contradictory_language(self) -> None:
+        posting_tasks = (
+            ROOT / "specs/003-accounting-foundation/posting-tasks.md"
+        ).read_text(encoding="utf-8")
+        mutations = (
+            "Gemini cross-checks are prohibited",
+            "Gemini cross-checks are forbidden",
+            "Gemini need not run or pass",
+            "Gemini is not required to run or pass",
+            "The cross-check is optional",
+            "The result is advisory and never blocks",
+            "Findings need not clear",
+            "Production activation is authorized",
+            "Production may be activated",
+            "Production go-live is permitted",
+        )
+        for mutation in mutations:
+            with self.subTest(mutation=mutation):
+                with self.assertRaises(AssertionError):
+                    _assert_story_four_gemini_gate_contract(
+                        posting_tasks + "\n" + mutation
+                    )
+
+    def test_story_four_gemini_gate_rejects_self_review(self) -> None:
+        posting_tasks = (
+            ROOT / "specs/003-accounting-foundation/posting-tasks.md"
+        ).read_text(encoding="utf-8")
+        role_mutations = {
+            "[P: Claude | B: GLM-5.2 | R: Gemini + Codex]":
+                "[P: Gemini | B: GLM-5.2 | R: Gemini + Codex]",
+            "[P: GPT-5.6 Sol | B: Claude | R: Codex]":
+                "[P: Gemini | B: Claude | R: Gemini + Codex]",
+        }
+        for original, self_reviewed in role_mutations.items():
+            matching_tasks = (174,) if original.startswith("[P: Claude") else (176, 209)
+            for number in matching_tasks:
+                task_pattern = rf"(^- \[ \] T{number:03d} .*?$)"
+                task = re.search(task_pattern, posting_tasks, re.MULTILINE)
+                self.assertIsNotNone(task)
+                mutated_task = task.group(0).replace(original, self_reviewed, 1)
+                self_review = posting_tasks.replace(task.group(0), mutated_task, 1)
+                with self.subTest(number=number):
+                    with self.assertRaises(AssertionError):
+                        _assert_story_four_gemini_gate_contract(self_review)
+
+    def test_story_four_gemini_gate_rejects_conflicting_duplicates(self) -> None:
+        posting_tasks = (
+            ROOT / "specs/003-accounting-foundation/posting-tasks.md"
+        ).read_text(encoding="utf-8")
+        duplicate_task = (
+            posting_tasks
+            + "\n- [ ] T174 [US4] [P: Gemini | B: GLM-5.2 | R: Gemini + Codex] "
+            + "Conflicting self-reviewed task.\n"
+        )
+        conflicting_owner = (
+            posting_tasks
+            + "\n| Tests, frontend, evidence | Gemini | GLM-5.2 | Gemini |\n"
+        )
+        for mutation in (duplicate_task, conflicting_owner):
+            with self.subTest(mutation=mutation[-120:]):
+                with self.assertRaises(AssertionError):
+                    _assert_story_four_gemini_gate_contract(mutation)
+
 
 
 if __name__ == "__main__":
