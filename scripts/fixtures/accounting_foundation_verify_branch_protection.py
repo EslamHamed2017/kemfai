@@ -30,7 +30,7 @@ def required_contexts(payload: Any) -> set[str]:
 
 def main() -> int:
     repository = os.environ.get("GITHUB_REPOSITORY", "")
-    branch = os.environ.get("GITHUB_BASE_REF") or os.environ.get("KEMFAI_BRANCH_PROTECTION_BRANCH", "")
+    branch = os.environ.get("KEMFAI_BRANCH_PROTECTION_BRANCH") or os.environ.get("GITHUB_BASE_REF", "")
     if re.fullmatch(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+", repository) is None:
         return fail("GITHUB_REPOSITORY is absent or malformed")
     if re.fullmatch(r"[A-Za-z0-9._/-]+", branch) is None or ".." in branch:

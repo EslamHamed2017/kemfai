@@ -692,7 +692,11 @@ class AccountingFoundationCiStructureTests(unittest.TestCase):
 
 
     def _run_branch_protection_validator(
-        self, payload: dict[str, Any], event: str = "pull_request"
+        self,
+        payload: dict[str, Any],
+        event: str = "pull_request",
+        base_ref: str = "main",
+        configured_branch: str | None = None,
     ) -> tuple[subprocess.CompletedProcess[str], str, str]:
         with tempfile.TemporaryDirectory(prefix="kemfai-af-gh-") as directory:
             fake_curl = Path(directory) / "curl"
@@ -711,12 +715,16 @@ class AccountingFoundationCiStructureTests(unittest.TestCase):
                 "PATH": f"{directory}:{os.environ.get('PATH', '')}",
                 "GITHUB_EVENT_NAME": event,
                 "GITHUB_REPOSITORY": "owner/repository",
-                "GITHUB_BASE_REF": "main",
+                "GITHUB_BASE_REF": base_ref,
                 "GH_PAYLOAD": json.dumps(payload),
                 "GH_ARGS_LOG": str(args_log),
                 "GH_CONFIG_LOG": str(config_log),
                 "GITHUB_TOKEN": "test-token-123",
             }
+            if configured_branch is not None:
+                env["KEMFAI_BRANCH_PROTECTION_BRANCH"] = configured_branch
+            else:
+                env.pop("KEMFAI_BRANCH_PROTECTION_BRANCH", None)
             result = subprocess.run(
                 [sys.executable, str(BRANCH_PROTECTION_VALIDATOR)],
                 cwd=ROOT,
@@ -750,6 +758,25 @@ class AccountingFoundationCiStructureTests(unittest.TestCase):
         self.assertNotRegex(arguments, r"(?i)(?:-X|--request|authorization|token|(?:^|\s)-L(?:\s|$)|--location)")
         self.assertIn("test-token-123", config)
         self.assertNotIn("*" * 3, config)
+
+    def test_branch_protection_validator_prefers_explicit_branch_over_pr_base(self) -> None:
+        result, arguments, _ = self._run_branch_protection_validator(
+            {
+                "protected": True,
+                "protection": {
+                    "enabled": True,
+                    "required_status_checks": {"contexts": [JOB_NAME]},
+                },
+            },
+            base_ref="develop",
+            configured_branch="main",
+        )
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn(
+            "https://api.github.com/repos/owner/repository/branches/main",
+            arguments,
+        )
+        self.assertNotIn("/branches/develop", arguments)
 
     def test_branch_protection_validator_fails_closed_when_check_is_missing(self) -> None:
         result, _, _ = self._run_branch_protection_validator(
