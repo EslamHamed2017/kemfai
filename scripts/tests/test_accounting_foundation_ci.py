@@ -134,6 +134,7 @@ def _assert_story_four_graph_structure(posting_tasks: str) -> None:
     semantic_prerequisites = {
         180: {179},  # Arabic/RTL slice consumes T179 receipt and recovery semantics.
         189: {178},  # Rounding happy path consumes the immediate-posting command path.
+        193: {187, 188},  # Selector-change races consume both selector-lock slices.
     }
     for number, required in semantic_prerequisites.items():
         missing = sorted(required - dependency_graph[number])
@@ -218,7 +219,7 @@ def _assert_story_four_vertical_slice_contract(posting_tasks: str) -> None:
     _assert_story_four_graph_structure(posting_tasks)
     _assert_story_four_replay_audit_contract(posting_tasks)
     commissioned_document_digest = (
-        "7d79aa4449fd67af9dd7aa9bbd44d0c2ac8f050ba1bcf70a5961e73461b970aa"
+        "01ae63a5a091c746fd85e51fa964a3ab56a030709ab8a660f2b925ceb23ab5ed"
     )
     if (
         hashlib.sha256(posting_tasks.encode("utf-8")).hexdigest()
@@ -229,7 +230,7 @@ def _assert_story_four_vertical_slice_contract(posting_tasks: str) -> None:
         )
 
     commissioned_runtime_digest = (
-        "26f6c076bc46412b0f90080db4e73e29e2b4f0c3d8d304e627e1b142ec17299a"
+        "2eca33dca6348e58e48865365feaa4ae340c8656ffd8e3f1d7b780edf1fad521"
     )
     runtime_tasks = "\n".join(
         _story_four_task_block(posting_tasks, number)
