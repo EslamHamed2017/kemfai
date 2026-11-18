@@ -207,7 +207,7 @@ def _assert_story_four_vertical_slice_contract(posting_tasks: str) -> None:
     _assert_story_four_graph_structure(posting_tasks)
     _assert_story_four_replay_audit_contract(posting_tasks)
     commissioned_document_digest = (
-        "5564a4e93a42033e89e4c2d819dfc8a00e1ae37189177e76909289d185408b03"
+        "f22738ce872fb3a3695668ec9913416b2173739c50d2c9ea2a06118c186f3668"
     )
     if (
         hashlib.sha256(posting_tasks.encode("utf-8")).hexdigest()
@@ -218,7 +218,7 @@ def _assert_story_four_vertical_slice_contract(posting_tasks: str) -> None:
         )
 
     commissioned_runtime_digest = (
-        "c080f241d8dc90d761e4d2ad4aa73a5e3b25a03e1996eb5601f28c0cb89602c5"
+        "4d75cad30036c927e200cc974a630666969eb27fcb138c715fd82f8107fbdca8"
     )
     runtime_tasks = "\n".join(
         _story_four_task_block(posting_tasks, number)
@@ -349,6 +349,10 @@ def _assert_story_four_rounding_contract(posting_tasks: str) -> None:
             "within-tolerance configured rounding",
             "transparent rounding line",
             "exact amount, account, rule version, actor, and original totals",
+            "official currency precision",
+            "applicable company/currency rounding configuration",
+            "configured rounding account",
+            "never silently truncates or transforms",
         ),
         168: (
             "rounding line if any",
@@ -357,6 +361,10 @@ def _assert_story_four_rounding_contract(posting_tasks: str) -> None:
         175: (
             "within-tolerance configured rounding",
             "above-tolerance rejection",
+            "official currency precision",
+            "applicable company/currency rounding configuration",
+            "configured rounding account",
+            "never silently truncates or transforms",
         ),
         189: (
             "within configured minor-unit tolerance",
@@ -364,10 +372,18 @@ def _assert_story_four_rounding_contract(posting_tasks: str) -> None:
             "exact amount, account, rule version, actor, and original totals",
             "previewed before human confirmation",
             "missing configuration, representational loss, or a difference above tolerance is rejected",
+            "official currency precision",
+            "applicable company/currency rounding configuration",
+            "configured rounding account",
+            "never silently truncates or transforms",
         ),
         200: (
             "configured-rounding success",
             "rounding-line preview",
+            "official currency precision",
+            "applicable company/currency rounding configuration",
+            "configured rounding account",
+            "never silently truncates or transforms",
         ),
     }
     for number, requirements in required_by_task.items():
