@@ -246,7 +246,7 @@ fi
 # session membership or cleanup scans.
 non_utf8_file="$(mktemp)"
 PROBE_FILE="$non_utf8_file" python3 "$repo_dir/scripts/fixtures/t071_owned_session_exec.py" \
-  --keep-env PROBE_FILE python3 -c 'exec("import ctypes,os,time\npid=os.fork()\nif pid:\n open(os.environ[\"PROBE_FILE\"],\"w\").write(str(pid)+\"\\n\")\n time.sleep(.2)\n os._exit(0)\nctypes.CDLL(None).prctl(15, ctypes.c_char_p(b\"bad\\xffname\"), 0, 0, 0)\ntime.sleep(30) # t071-non-utf8-descendant")' &
+  --hold-for-cleanup --keep-env PROBE_FILE python3 -c 'exec("import ctypes,os,time\npid=os.fork()\nif pid:\n open(os.environ[\"PROBE_FILE\"],\"w\").write(str(pid)+\"\\n\")\n time.sleep(.2)\n os._exit(0)\nctypes.CDLL(None).prctl(15, ctypes.c_char_p(b\"bad\\xffname\"), 0, 0, 0)\ntime.sleep(30) # t071-non-utf8-descendant")' &
 non_utf8_leader=$!
 register_owned_process "$non_utf8_leader" t071-non-utf8-descendant
 for _ in $(seq 1 100); do [ -s "$non_utf8_file" ] && break; sleep .02; done
@@ -354,7 +354,7 @@ rm -f -- "$cross_group_file"; cross_group_file=""
 cross_session_file="$(mktemp)"
 PROBE_FILE="$cross_session_file" \
   python3 "$repo_dir/scripts/fixtures/t071_owned_session_exec.py" \
-    --keep-env PROBE_FILE python3 -c '
+    --hold-for-cleanup --keep-env PROBE_FILE python3 -c '
 import os, pathlib, time
 child = os.fork()
 if child == 0:
@@ -481,7 +481,7 @@ echo "PASS: non-leader-thread children receive graceful owned cleanup"
 adopted_zombie_file="$(mktemp)"
 ADOPTED_ZOMBIE_FILE="$adopted_zombie_file" \
   python3 "$repo_dir/scripts/fixtures/t071_owned_session_exec.py" \
-    --keep-env ADOPTED_ZOMBIE_FILE python3 -c '
+    --hold-for-cleanup --keep-env ADOPTED_ZOMBIE_FILE python3 -c '
 import os, pathlib, time
 middle = os.fork()
 if middle == 0:
