@@ -207,7 +207,7 @@ def _assert_story_four_vertical_slice_contract(posting_tasks: str) -> None:
     _assert_story_four_graph_structure(posting_tasks)
     _assert_story_four_replay_audit_contract(posting_tasks)
     commissioned_document_digest = (
-        "f049a3bb9f9ff98ddd913782020035b3d7ae167ea1b8805498abc05345b21b23"
+        "5564a4e93a42033e89e4c2d819dfc8a00e1ae37189177e76909289d185408b03"
     )
     if (
         hashlib.sha256(posting_tasks.encode("utf-8")).hexdigest()
@@ -218,7 +218,7 @@ def _assert_story_four_vertical_slice_contract(posting_tasks: str) -> None:
         )
 
     commissioned_runtime_digest = (
-        "ad6d121b543201ae22ffc79f835ba12b0c68ffd7b208240ff9766cb374f415fe"
+        "c080f241d8dc90d761e4d2ad4aa73a5e3b25a03e1996eb5601f28c0cb89602c5"
     )
     runtime_tasks = "\n".join(
         _story_four_task_block(posting_tasks, number)
@@ -341,6 +341,42 @@ def _assert_story_four_gemini_gate_contract(posting_tasks: str) -> None:
         raise AssertionError("T176 weakens production-disable safety")
     if "production remains disabled" not in tasks[209]:
         raise AssertionError("T209 weakens production-disable safety")
+
+
+def _assert_story_four_rounding_contract(posting_tasks: str) -> None:
+    required_by_task = {
+        164: (
+            "within-tolerance configured rounding",
+            "transparent rounding line",
+            "exact amount, account, rule version, actor, and original totals",
+        ),
+        168: (
+            "rounding line if any",
+            "before unselected human confirmation",
+        ),
+        175: (
+            "within-tolerance configured rounding",
+            "above-tolerance rejection",
+        ),
+        189: (
+            "within configured minor-unit tolerance",
+            "one transparent rounding line",
+            "exact amount, account, rule version, actor, and original totals",
+            "previewed before human confirmation",
+            "missing configuration, representational loss, or a difference above tolerance is rejected",
+        ),
+        200: (
+            "configured-rounding success",
+            "rounding-line preview",
+        ),
+    }
+    for number, requirements in required_by_task.items():
+        task = _story_four_task(posting_tasks, number)
+        for requirement in requirements:
+            if requirement not in task:
+                raise AssertionError(
+                    f"T{number:03d} omits locked rounding behavior: {requirement}"
+                )
 
 
 def _assert_story_four_commissioning_evidence_contract(posting_tasks: str) -> None:
@@ -865,6 +901,12 @@ class AccountingFoundationCiStructureTests(unittest.TestCase):
             ROOT / "specs/003-accounting-foundation/posting-tasks.md"
         ).read_text(encoding="utf-8")
         _assert_story_four_vertical_slice_contract(posting_tasks)
+
+    def test_story_four_graph_preserves_locked_rounding_contract(self) -> None:
+        posting_tasks = (
+            ROOT / "specs/003-accounting-foundation/posting-tasks.md"
+        ).read_text(encoding="utf-8")
+        _assert_story_four_rounding_contract(posting_tasks)
 
 
     def test_story_four_vertical_slice_contract_rejects_mutation_before_human_ui(self) -> None:
