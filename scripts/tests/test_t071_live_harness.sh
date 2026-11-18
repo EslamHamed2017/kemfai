@@ -56,6 +56,7 @@ private_home=""
 fixture_dir=""
 relay_dir=""
 relay_supervisor=""
+startup_env_dir=""
 startup_signal_dir=""
 startup_signal_supervisor=""
 post_leaf_race_dir=""
@@ -109,6 +110,7 @@ offline_cleanup() {
   [ -z "$fixture_dir" ] || rm -rf -- "$fixture_dir"
   [ -z "$relay_supervisor" ] || terminate_owned_process_group "$relay_supervisor" t071_loopback_relay.py 2>/dev/null || true
   [ -z "$relay_dir" ] || rm -rf -- "$relay_dir"
+  [ -z "$startup_env_dir" ] || rm -rf -- "$startup_env_dir"
   [ -z "$startup_signal_supervisor" ] || terminate_owned_process_group "$startup_signal_supervisor" sleep 2>/dev/null || true
   [ -z "$startup_signal_dir" ] || rm -rf -- "$startup_signal_dir"
   [ -z "$post_leaf_race_child" ] || kill -KILL -- "$post_leaf_race_child" 2>/dev/null || true
@@ -207,6 +209,51 @@ NODE
 grep -qF 'wait "$staged_pid"' "$runner" || fail "wrapper does not retain ownership while the staged child runs"
 grep -qF 'forward_stage_signal' "$runner" || fail "wrapper does not forward termination to its staged child"
 grep -qE '^exec "\$stage"$' "$runner" && fail "wrapper exec bypasses its private-directory cleanup trap"
+
+# Every production-owned supervisor must start Python in isolated mode so inherited
+# PYTHON* variables cannot execute startup hooks before the supervisor allowlist runs.
+python3 - "$repo_dir" <<'PY_ISOLATED_SUPERVISORS'
+import pathlib
+import re
+import sys
+
+scripts = pathlib.Path(sys.argv[1], "scripts")
+callers = [
+    scripts / "test_t071_live.sh",
+    scripts / "test_t072_live.sh",
+    scripts / "test_t074_live_browser.sh",
+    scripts / "test_t109_odoo_exposure.sh",
+    scripts / "test_t112_owned_fixture.sh",
+]
+unsafe = []
+for path in callers:
+    for line_number, line in enumerate(path.read_text().splitlines(), 1):
+        if "t071_owned_session_exec.py" in line and not re.search(
+            r"python3\s+-I\s+[^\n]*t071_owned_session_exec\.py", line
+        ):
+            unsafe.append(f"{path.name}:{line_number}")
+if unsafe:
+    raise SystemExit(
+        "FAIL: production supervisor launch does not isolate Python startup: "
+        + ", ".join(unsafe)
+    )
+print("PASS: production supervisors isolate Python startup")
+PY_ISOLATED_SUPERVISORS
+
+startup_env_dir="$(mktemp -d)"
+startup_env_marker="$startup_env_dir/executed"
+cat >"$startup_env_dir/sitecustomize.py" <<'PY_STARTUP_ENV'
+import os
+import pathlib
+pathlib.Path(os.environ["KEMFAI_STARTUP_ENV_MARKER"]).write_text("executed\n")
+PY_STARTUP_ENV
+PYTHONPATH="$startup_env_dir" KEMFAI_STARTUP_ENV_MARKER="$startup_env_marker" \
+  python3 -I "$repo_dir/scripts/fixtures/t071_owned_session_exec.py" \
+    python3 -c 'import os; assert "PYTHONPATH" not in os.environ; assert "KEMFAI_STARTUP_ENV_MARKER" not in os.environ'
+[ ! -e "$startup_env_marker" ] \
+  || fail "isolated supervisor executed inherited sitecustomize before sanitization"
+rm -rf -- "$startup_env_dir"; startup_env_dir=""; startup_env_marker=""
+echo "PASS: isolated supervisor rejects inherited Python startup injection"
 
 # Exercise the same lifecycle helper used by the generated launcher with a disposable
 # local process session (no sockets, Docker, or network).
