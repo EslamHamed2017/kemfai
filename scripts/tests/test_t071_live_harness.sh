@@ -530,34 +530,30 @@ ADOPTED_ZOMBIE_FILE="$adopted_zombie_file" \
   python3 "$repo_dir/scripts/fixtures/t071_owned_session_exec.py" \
     --hold-for-cleanup --keep-env ADOPTED_ZOMBIE_FILE python3 -c '
 import os, pathlib, time
+identity_file = pathlib.Path(os.environ["ADOPTED_ZOMBIE_FILE"])
+identity_file.write_text(str(os.getpid())+"\n")
 middle = os.fork()
 if middle == 0:
     child = os.fork()
     if child == 0:
-        pathlib.Path(os.environ["ADOPTED_ZOMBIE_FILE"]).write_text(str(os.getpid())+"\n")
+        with identity_file.open("a") as stream:
+            stream.write(str(os.getpid())+"\n")
         os._exit(0)
     os._exit(0)
-time.sleep(30)
-' &
+time.sleep(30)' &
 adopted_zombie_leader=$!
 register_owned_process "$adopted_zombie_leader" python3
 for _ in $(seq 1 100); do
-  adopted_zombie_service="$(python3 - "$adopted_zombie_leader" <<'PY_ADOPTED_SERVICE'
-import pathlib, sys
-try:
-    print(pathlib.Path('/proc', sys.argv[1], 'task', sys.argv[1], 'children').read_text().strip())
-except (FileNotFoundError, ProcessLookupError):
-    pass
-PY_ADOPTED_SERVICE
-)"
-  [ -n "$adopted_zombie_service" ] && break
-  sleep .01
+  [ "$(wc -l <"$adopted_zombie_file" 2>/dev/null || true)" -ge 2 ] && break
+  sleep .02
 done
-[ -n "$adopted_zombie_service" ] || fail "adopted-zombie fixture has no direct service"
+[ "$(wc -l <"$adopted_zombie_file" 2>/dev/null || true)" -ge 2 ] \
+  || fail "adopted-zombie fixture did not report service and child identities"
+{
+  read -r adopted_zombie_service
+  read -r adopted_zombie_pid
+} <"$adopted_zombie_file"
 read -r adopted_zombie_service_start _ < <(process_identity "$adopted_zombie_service")
-for _ in $(seq 1 100); do [ -s "$adopted_zombie_file" ] && break; sleep .02; done
-[ -s "$adopted_zombie_file" ] || fail "adopted-zombie fixture did not report its child"
-read -r adopted_zombie_pid <"$adopted_zombie_file"
 adopted_zombie_identity="$(process_identity "$adopted_zombie_pid" 2>/dev/null || true)"
 if [ -n "$adopted_zombie_identity" ]; then
   read -r adopted_zombie_start _ <<<"$adopted_zombie_identity"
