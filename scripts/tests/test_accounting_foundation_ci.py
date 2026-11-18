@@ -131,6 +131,17 @@ def _assert_story_four_graph_structure(posting_tasks: str) -> None:
     if dependency_graph[177] != set(range(159, 177)):
         raise AssertionError("T177 must depend on the complete T159–T176 barrier")
 
+    semantic_prerequisites = {
+        180: {179},  # Arabic/RTL slice consumes T179 receipt and recovery semantics.
+        189: {178},  # Rounding happy path consumes the immediate-posting command path.
+    }
+    for number, required in semantic_prerequisites.items():
+        missing = sorted(required - dependency_graph[number])
+        if missing:
+            raise AssertionError(
+                f"T{number:03d} omits semantic prerequisite T{missing[0]:03d}"
+            )
+
     visiting: set[int] = set()
     visited: set[int] = set()
 
@@ -207,7 +218,7 @@ def _assert_story_four_vertical_slice_contract(posting_tasks: str) -> None:
     _assert_story_four_graph_structure(posting_tasks)
     _assert_story_four_replay_audit_contract(posting_tasks)
     commissioned_document_digest = (
-        "f22738ce872fb3a3695668ec9913416b2173739c50d2c9ea2a06118c186f3668"
+        "7d79aa4449fd67af9dd7aa9bbd44d0c2ac8f050ba1bcf70a5961e73461b970aa"
     )
     if (
         hashlib.sha256(posting_tasks.encode("utf-8")).hexdigest()
@@ -218,7 +229,7 @@ def _assert_story_four_vertical_slice_contract(posting_tasks: str) -> None:
         )
 
     commissioned_runtime_digest = (
-        "4d75cad30036c927e200cc974a630666969eb27fcb138c715fd82f8107fbdca8"
+        "26f6c076bc46412b0f90080db4e73e29e2b4f0c3d8d304e627e1b142ec17299a"
     )
     runtime_tasks = "\n".join(
         _story_four_task_block(posting_tasks, number)
