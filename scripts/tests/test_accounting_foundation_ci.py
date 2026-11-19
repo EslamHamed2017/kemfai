@@ -172,6 +172,13 @@ def _assert_story_four_replay_audit_contract(posting_tasks: str) -> None:
         205: ("per-correlation replay-event counts", "no second tenant mutation event"),
     }
     quantified_posting_replay_tasks = (175, 190, 200, 205)
+    replay_corpus_requirements = (
+        "at least 100 distinct posting operations",
+        "each replayed with its original operation identifier",
+        "persisted unique operation identifiers and replay counts",
+        "one financial result per distinct operation",
+        "altered-payload reuse rejection for every operation",
+    )
     for number, phrases in requirements.items():
         task = _story_four_task_block(posting_tasks, number)
         for phrase in phrases:
@@ -179,10 +186,11 @@ def _assert_story_four_replay_audit_contract(posting_tasks: str) -> None:
                 raise AssertionError(f"T{number:03d} omits replay audit requirement: {phrase}")
     for number in quantified_posting_replay_tasks:
         task = _story_four_task_block(posting_tasks, number)
-        if "at least 100 posting-operation replays" not in task:
-            raise AssertionError(
-                f"T{number:03d} omits the SC-003 posting replay corpus minimum"
-            )
+        for phrase in replay_corpus_requirements:
+            if phrase not in task:
+                raise AssertionError(
+                    f"T{number:03d} omits SC-003 replay corpus requirement: {phrase}"
+                )
 
 
 def _assert_story_four_approval_revalidation_and_usability_contract(
@@ -266,7 +274,7 @@ def _assert_story_four_vertical_slice_contract(posting_tasks: str) -> None:
     _assert_story_four_replay_audit_contract(posting_tasks)
     _assert_story_four_approval_revalidation_and_usability_contract(posting_tasks)
     commissioned_document_digest = (
-        "173f861f59b7fed3c2ddbf67ac8b317813db160715c23a10372d0017349cf4ae"
+        "b0cb71e6121d3c80c7529b9bf7e253973346acf1223fe5540b2c84af4cdab047"
     )
     if (
         hashlib.sha256(posting_tasks.encode("utf-8")).hexdigest()
@@ -277,7 +285,7 @@ def _assert_story_four_vertical_slice_contract(posting_tasks: str) -> None:
         )
 
     commissioned_runtime_digest = (
-        "02c6f6b760df8d87bf6b22128e64ac7eec248946b96dd52c4ec31eacafe3d72a"
+        "5817ba555ab85c8c8f0a0964cc47068bd2178c04637a9896b05266b18b11f450"
     )
     runtime_tasks = "\n".join(
         _story_four_task_block(posting_tasks, number)
