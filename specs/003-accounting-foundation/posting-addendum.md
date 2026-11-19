@@ -1,11 +1,11 @@
 # Story 4 Addendum — Authorized Double-Entry Posting
 
 **Feature:** `003-accounting-foundation`
-**Addendum version:** 1.0
-**Status:** INDEPENDENTLY REVIEWED — specification accepted; no implementation or production activation authorized
+**Addendum version:** 1.1
+**Status:** SPECIFICATION AMENDMENT CANDIDATE — exact-content independent re-review and protected PR approval required; no implementation or production activation authorized
 **Policy authority:** `accounting-policy-matrix.md` v1.0, approved 2026-11-07
 **Scope:** User Story 4 only: approval-aware posting of an existing KEMFAI journal draft
-**Independent review:** Codex — ACCEPT; verified against T152, matrix v1.0, Story 4, and repository guardrails
+**Review binding:** v1.0 was independently accepted under T152; v1.1 must be independently reviewed as exact content at the graph-review head, and any amendment invalidates that evidence
 
 ## 1. Purpose and gate
 
@@ -30,11 +30,12 @@ Story 5 reversal/correction, Story 6 opening balances, and Story 7 period mainte
 
 All customer calls follow browser → Next.js BFF → NestJS → guarded Odoo ORM → exact tenant DB. Public identifiers are UUIDs; native model names, integer IDs, database names, RPC details, and Odoo URLs never cross the API boundary.
 
-A future additive OpenAPI contract may expose only these Story 4 commands:
+A future additive OpenAPI contract may expose only these five Story 4 operations:
 
 | Method and path | Purpose | Success |
 |---|---|---|
 | `POST /v1/accounting/drafts/{draftId}/post` | Human requests posting of one exact draft version. It either posts immediately or creates/replays a required approval request. | `201` posted; `202` approval required; `200` exact replay |
+| `GET /v1/accounting/posting-approvals/{approvalId}` | Authorized maker or distinct in-scope checker reads the immutable frozen candidate and current non-mutating preview evidence required for review; this operation never claims, approves, posts, or mutates the candidate. | `200` |
 | `POST /v1/accounting/posting-approvals/{approvalId}/approve` | Distinct authorized checker approves and atomically posts the frozen candidate. | `201` posted; `200` exact replay |
 | `GET /v1/accounting/posted-entries/{entryId}` | Read immutable KEMFAI entry, source, dimensions, policy and audit links within scope. | `200` |
 | `GET /v1/accounting/sources/{sourceId}/posted-entries` | Resolve an authorized KEMFAI source UUID to immutable posted-entry links; the draft UUID is always a valid canonical source. | `200` |
@@ -191,7 +192,7 @@ Rate lookup, realized FX and revaluation are outside this addendum. Posting cons
 
 The existing draft composer gains a posting-impact review only when capability is enabled. It shows exact lines, base/transaction totals, dimensions, source, period result, matrix v1.0, rounding line if any, approval requirement, and explicit irreversible-posting language. The user must actively confirm; no preselected or AI-triggered confirmation exists.
 
-EN/LTR and AR/RTL flows require keyboard-complete grid/review/dialog operation, visible focus, semantic headings/tables, error summary linked to line fields, announced pending/success/failure status, duplicate-submit prevention, 200% zoom, and localized empty/loading/recoverable-error states. Input is preserved on failure. Approval inbox and decisions expose the same evidence and clearly identify maker/checker separation.
+EN/LTR and AR/RTL flows require keyboard-complete grid/review/dialog operation, visible focus, semantic headings/tables, error summary linked to line fields, announced pending/success/failure status, duplicate-submit prevention, 200% zoom, and localized empty/loading/recoverable-error states. Input is preserved on failure. Approval inbox and decisions use the authorized non-mutating approval-detail read operation to expose the same evidence and clearly identify maker/checker separation. Checker-visible totals and rounding are preview computations only. After explicit checker confirmation, the approval command performs the final recomputation under the guarded transaction locks; it posts only if that final evidence exactly matches the checker-confirmed preview, otherwise it marks the candidate stale with zero ledger effect and requires a new review.
 
 ## 9. Test-first implementation gate
 

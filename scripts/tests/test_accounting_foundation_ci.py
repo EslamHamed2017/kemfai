@@ -193,6 +193,46 @@ def _assert_story_four_replay_audit_contract(posting_tasks: str) -> None:
                 )
 
 
+def _assert_story_four_checker_review_contract(posting_tasks: str) -> None:
+    requirements = {
+        159: (
+            "the five exact story 4 routes",
+            "get /v1/accounting/posting-approvals/{approvalid}",
+        ),
+        167: (
+            "approval detail/inbox read",
+            "without mutation",
+        ),
+        168: (
+            "non-mutating checker preview",
+            "final locked recomputation",
+        ),
+        182: (
+            "authorized approval detail/inbox read",
+            "without mutation",
+        ),
+        183: (
+            "final locked recomputation exactly matches the checker-confirmed preview",
+            "marks the candidate stale",
+            "zero ledger effect",
+        ),
+        189: (
+            "preview computation",
+            "final locked recomputation",
+            "exactly matches the checker-confirmed preview",
+            "marks the candidate stale",
+            "zero ledger effect",
+        ),
+    }
+    for number, phrases in requirements.items():
+        task = _story_four_task_block(posting_tasks, number)
+        for phrase in phrases:
+            if phrase not in task:
+                raise AssertionError(
+                    f"T{number:03d} omits checker review contract: {phrase}"
+                )
+
+
 def _assert_story_four_approval_revalidation_and_usability_contract(
     posting_tasks: str,
 ) -> None:
@@ -272,9 +312,10 @@ def _assert_story_four_vertical_slice_semantics(posting_tasks: str) -> None:
 def _assert_story_four_vertical_slice_contract(posting_tasks: str) -> None:
     _assert_story_four_graph_structure(posting_tasks)
     _assert_story_four_replay_audit_contract(posting_tasks)
+    _assert_story_four_checker_review_contract(posting_tasks)
     _assert_story_four_approval_revalidation_and_usability_contract(posting_tasks)
     commissioned_document_digest = (
-        "6b8db2553cdc36a7d389c0f5df8ca5e2665db7b5904900199a8630d8ccf18fbc"
+        "195db53251d2e581fb44430c95704286134adb489506efed8d4550ee01f833a9"
     )
     if (
         hashlib.sha256(posting_tasks.encode("utf-8")).hexdigest()
@@ -285,7 +326,7 @@ def _assert_story_four_vertical_slice_contract(posting_tasks: str) -> None:
         )
 
     commissioned_runtime_digest = (
-        "cd03ee773c33af8a773200fb791e56f300c2cfba055226f78d926d4d989591e9"
+        "059e91b863c89c0f5c2702ad02fbd1600d70fb97e123aa178cecdc4703efe87b"
     )
     runtime_tasks = "\n".join(
         _story_four_task_block(posting_tasks, number)
@@ -309,7 +350,7 @@ def _assert_story_four_vertical_slice_contract(posting_tasks: str) -> None:
     commissioned_tasks = {
         178: '- [ ] t178 [us4] [p: glm-5.2 | b: claude | r: codex] deliver the authorized english immediate-posting command happy-path vertical slice across browser ui→next bff→nest→odoo→tenant audit — deps: t177; ac: one balanced draft shows the minimum impact summary and unselected explicit confirmation, then resolves locked policy/period/classification, posts atomically, returns only public uuid/receipt data, mirrors audit, and passes focused accessibility/contract/integration/browser tests while production remains disabled.',
         181: '- [ ] t181 [us4] [p: glm-5.2 | b: claude | r: codex] deliver the english maker human ui, impact review, explicit confirmation, and pending-approval request vertical slice across browser ui→next bff→nest→odoo→tenant audit — deps: t177; ac: one human-confirmed applicable approval configuration creates one immutable pending approval, request receipt, and authoritative audit event atomically with zero ledger movement, deterministic replay/conflict, preserved input on failure, and focused accessibility/browser tests.',
-        183: "- [ ] t183 [us4] [p: glm-5.2 | b: claude | r: codex] deliver the english distinct-checker human ui, frozen-evidence review, explicit confirmation, and approval-to-post vertical slice across browser ui→next bff→nest→odoo→tenant audit — deps: t181, t182; ac: a non-maker checker with approve scope explicitly confirms and posts the frozen candidate once in one guarded transaction that revalidates the maker's post authority/scope, checker authority/scope, exact draft/candidate integrity, and company-scoped policy, period, posting masters, dimensions, source, fx, rounding, and approval facts; self-approval or an unauthorized checker fails closed without changing the still-pending candidate; only changed draft/candidate or invalidated execution facts mark it stale without ledger effect, receipt plus tenant/platform audit complete before success, input survives failure, and focused accessibility/browser tests pass.",
+        183: "- [ ] t183 [us4] [p: glm-5.2 | b: claude | r: codex] deliver the english distinct-checker human ui, frozen-evidence review, explicit confirmation, and approval-to-post vertical slice across browser ui→next bff→nest→odoo→tenant audit — deps: t181, t182; ac: a non-maker checker with approve scope explicitly confirms and posts the frozen candidate once in one guarded transaction that revalidates the maker's post authority/scope, checker authority/scope, exact draft/candidate integrity, and company-scoped policy, period, posting masters, dimensions, source, fx, rounding, and approval facts; the final locked recomputation exactly matches the checker-confirmed preview or marks the candidate stale with zero ledger effect; self-approval or an unauthorized checker fails closed without changing the still-pending candidate; only changed draft/candidate or invalidated execution facts mark it stale without ledger effect, receipt plus tenant/platform audit complete before success, input survives failure, and focused accessibility/browser tests pass.",
         196: '- [ ] t196 [us4] [p: claude | b: glm-5.2 | r: codex] run the immediate-post/read/source accessibility acceptance gate across the complete real candidate path — deps: t179, t180, t185, t186; ac: en/ltr and ar/rtl keyboard flow, semantic headings/tables, linked errors, focus, live status, visible focus, axe, and 200% zoom pass without retrofitting or waiving any slice-level accessibility requirement.',
         197: '- [ ] t197 [us4] [p: claude | b: glm-5.2 | r: codex] run the maker/checker/recovery accessibility acceptance gate across the complete real candidate path — deps: t182, t184, t194, t195; ac: both locales pass keyboard, focus, linked-error, live-status, axe, and 200%-zoom checks for pending, checker, stale, failure, and recovery states without clipping, traps, retrofits, or waivers.',
         198: '- [ ] t198 [us4] [p: glm-5.2 | b: claude | r: codex] run the integrated story 4 candidate acceptance gate across browser ui→next bff→nest→odoo→tenant audit in disposable upgraded tenant dbs — deps: t177–t197; ac: additive install/upgrade, static, contract, odoo, nestjs, frontend, accessibility, migration, race, failure, recovery, and playwright discovery suites pass nonzero with zero failed/skipped/unexpected/flaky while production entitlement remains false and routes remain unmounted.',
@@ -425,7 +466,8 @@ def _assert_story_four_rounding_contract(posting_tasks: str) -> None:
             "rounding line if any",
             "immediate and maker-checker paths",
             "before unselected maker confirmation",
-            "again to the checker after approval-time recomputation",
+            "non-mutating checker preview",
+            "final locked recomputation",
         ),
         175: (
             "within-tolerance configured rounding",
@@ -442,7 +484,10 @@ def _assert_story_four_rounding_contract(posting_tasks: str) -> None:
             "exact amount, account, rule version, actor, and original totals",
             "previewed before human confirmation",
             "both maker and checker",
-            "recomputed from current approval-time facts",
+            "non-mutating preview computation",
+            "final locked recomputation",
+            "exactly matches the checker-confirmed preview",
+            "marks the candidate stale with zero ledger effect",
             "missing configuration, representational loss, or a difference above tolerance is rejected",
             "official currency precision",
             "applicable company/currency rounding configuration",
@@ -996,6 +1041,38 @@ class AccountingFoundationCiStructureTests(unittest.TestCase):
             ROOT / "specs/003-accounting-foundation/posting-tasks.md"
         ).read_text(encoding="utf-8")
         _assert_story_four_rounding_contract(posting_tasks)
+
+    def test_story_four_normative_addendum_identity_matches_current_content(self) -> None:
+        posting_tasks = (
+            ROOT / "specs/003-accounting-foundation/posting-tasks.md"
+        ).read_text(encoding="utf-8")
+        addendum_bytes = (
+            ROOT / "specs/003-accounting-foundation/posting-addendum.md"
+        ).read_bytes()
+        blob_oid = hashlib.sha1(
+            f"blob {len(addendum_bytes)}\0".encode("ascii") + addendum_bytes
+        ).hexdigest()
+        digest = hashlib.sha256(addendum_bytes).hexdigest()
+        self.assertIn(f"Git blob OID `{blob_oid}`", posting_tasks)
+        self.assertIn(f"SHA-256 digest `{digest}`", posting_tasks)
+        self.assertIn("at the independently reviewed graph-review head", posting_tasks)
+
+    def test_story_four_checker_review_contract_is_non_mutating_and_revalidated(self) -> None:
+        posting_tasks = (
+            ROOT / "specs/003-accounting-foundation/posting-tasks.md"
+        ).read_text(encoding="utf-8")
+        _assert_story_four_checker_review_contract(posting_tasks)
+        posting_addendum = (
+            ROOT / "specs/003-accounting-foundation/posting-addendum.md"
+        ).read_text(encoding="utf-8")
+        for phrase in (
+            "GET /v1/accounting/posting-approvals/{approvalId}",
+            "non-mutating preview evidence",
+            "final recomputation under the guarded transaction locks",
+            "exactly matches the checker-confirmed preview",
+            "marks the candidate stale with zero ledger effect",
+        ):
+            self.assertIn(phrase, posting_addendum)
 
     def test_story_four_rounding_contract_rejects_generic_impact_line(self) -> None:
         posting_tasks = (

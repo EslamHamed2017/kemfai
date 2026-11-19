@@ -177,9 +177,10 @@ class AccountingFoundationTaskGraphTests(unittest.TestCase):
             ROOT / "specs/003-accounting-foundation/plan.md"
         ).read_text(encoding="utf-8")
 
-        self.assertIn("**Addendum version:** 1.0", posting_addendum)
-        self.assertIn("**Status:** INDEPENDENTLY REVIEWED", posting_addendum)
-        self.assertIn("**Independent review:** Codex — ACCEPT", posting_addendum)
+        self.assertIn("**Addendum version:** 1.1", posting_addendum)
+        self.assertIn("**Status:** SPECIFICATION AMENDMENT CANDIDATE", posting_addendum)
+        self.assertIn("exact-content independent re-review", posting_addendum)
+        self.assertIn("any amendment invalidates that evidence", posting_addendum)
         for stale_claim in (
             "If the Finance Owner later approves the matrix",
             "create a new reviewed contract/model/quickstart addendum",
