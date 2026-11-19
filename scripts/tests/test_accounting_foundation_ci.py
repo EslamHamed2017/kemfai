@@ -274,7 +274,7 @@ def _assert_story_four_vertical_slice_contract(posting_tasks: str) -> None:
     _assert_story_four_replay_audit_contract(posting_tasks)
     _assert_story_four_approval_revalidation_and_usability_contract(posting_tasks)
     commissioned_document_digest = (
-        "b0cb71e6121d3c80c7529b9bf7e253973346acf1223fe5540b2c84af4cdab047"
+        "6b8db2553cdc36a7d389c0f5df8ca5e2665db7b5904900199a8630d8ccf18fbc"
     )
     if (
         hashlib.sha256(posting_tasks.encode("utf-8")).hexdigest()
@@ -285,7 +285,7 @@ def _assert_story_four_vertical_slice_contract(posting_tasks: str) -> None:
         )
 
     commissioned_runtime_digest = (
-        "5817ba555ab85c8c8f0a0964cc47068bd2178c04637a9896b05266b18b11f450"
+        "cd03ee773c33af8a773200fb791e56f300c2cfba055226f78d926d4d989591e9"
     )
     runtime_tasks = "\n".join(
         _story_four_task_block(posting_tasks, number)
@@ -423,7 +423,9 @@ def _assert_story_four_rounding_contract(posting_tasks: str) -> None:
         ),
         168: (
             "rounding line if any",
-            "before unselected human confirmation",
+            "immediate and maker-checker paths",
+            "before unselected maker confirmation",
+            "again to the checker after approval-time recomputation",
         ),
         175: (
             "within-tolerance configured rounding",
@@ -432,12 +434,15 @@ def _assert_story_four_rounding_contract(posting_tasks: str) -> None:
             "applicable company/currency rounding configuration",
             "configured rounding account",
             "never silently truncates or transforms",
+            "maker-to-checker preview and approval-time recomputation",
         ),
         189: (
             "within configured minor-unit tolerance",
             "one transparent rounding line",
             "exact amount, account, rule version, actor, and original totals",
             "previewed before human confirmation",
+            "both maker and checker",
+            "recomputed from current approval-time facts",
             "missing configuration, representational loss, or a difference above tolerance is rejected",
             "official currency precision",
             "applicable company/currency rounding configuration",
@@ -451,6 +456,7 @@ def _assert_story_four_rounding_contract(posting_tasks: str) -> None:
             "applicable company/currency rounding configuration",
             "configured rounding account",
             "never silently truncates or transforms",
+            "maker-to-checker preview and recomputation",
         ),
     }
     for number, requirements in required_by_task.items():
@@ -990,6 +996,15 @@ class AccountingFoundationCiStructureTests(unittest.TestCase):
             ROOT / "specs/003-accounting-foundation/posting-tasks.md"
         ).read_text(encoding="utf-8")
         _assert_story_four_rounding_contract(posting_tasks)
+
+    def test_story_four_rounding_contract_rejects_generic_impact_line(self) -> None:
+        posting_tasks = (
+            ROOT / "specs/003-accounting-foundation/posting-tasks.md"
+        ).read_text(encoding="utf-8")
+        weakened = posting_tasks.replace("rounding line if any", "impact line if any", 1)
+        self.assertNotEqual(weakened, posting_tasks)
+        with self.assertRaisesRegex(AssertionError, "T168.*rounding line if any"):
+            _assert_story_four_rounding_contract(weakened)
 
 
     def test_story_four_vertical_slice_contract_rejects_mutation_before_human_ui(self) -> None:
