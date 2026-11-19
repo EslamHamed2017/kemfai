@@ -30,11 +30,12 @@ Story 5 reversal/correction, Story 6 opening balances, and Story 7 period mainte
 
 All customer calls follow browser → Next.js BFF → NestJS → guarded Odoo ORM → exact tenant DB. Public identifiers are UUIDs; native model names, integer IDs, database names, RPC details, and Odoo URLs never cross the API boundary.
 
-A future additive OpenAPI contract may expose only these six Story 4 operations:
+A future additive OpenAPI contract may expose only these seven Story 4 operations:
 
 | Method and path | Purpose | Success |
 |---|---|---|
-| `POST /v1/accounting/drafts/{draftId}/post` | Human requests posting of one exact draft version. It either posts immediately or creates/replays a required approval request. | `201` posted; `202` approval required; `200` exact replay |
+| `GET /v1/accounting/drafts/{draftId}/posting-preview?validationRunId={validationRunId}` | Authorized maker reads a non-mutating, server-rendered posting-impact preview for one exact draft version/validation run, with the exact strong draft ETag and canonical `previewDigest`; it never posts, creates an approval, or mutates the draft. | `200` |
+| `POST /v1/accounting/drafts/{draftId}/post` | Human requests posting of one exact preview-bound draft version. It either posts immediately or creates/replays a required approval request. | `201` posted; `202` approval required; `200` exact replay |
 | `GET /v1/accounting/posting-approvals?status=pending` | An authorized checker discovers only pending approvals within their tenant, selected company, `Approve` permission, and amount scope; results contain public UUIDs and summary evidence only, use stable cursor pagination, and never claim or mutate an approval. | `200` |
 | `GET /v1/accounting/posting-approvals/{approvalId}` | Authorized maker or distinct in-scope checker reads the immutable frozen candidate and current non-mutating preview evidence required for review; this operation never claims, approves, posts, or mutates the candidate. | `200` |
 | `POST /v1/accounting/posting-approvals/{approvalId}/approve` | Distinct authorized checker approves and atomically posts the frozen candidate. | `201` posted; `200` exact replay |
@@ -45,7 +46,7 @@ No generic native action endpoint is permitted. There is no posted-entry PUT/PAT
 
 ### 3.1 Command headers
 
-Mutation commands require authenticated user context, `X-KEMFAI-Company-Id`, `Idempotency-Key`, `If-Match` with the exact strong draft or approval ETag, and correlation context. The server derives tenant and actor. Wildcard preconditions are rejected. The strong approval ETag covers the preview digest inputs and every mutable policy, period, approval-configuration, master-data, dimension, source, FX, rounding, candidate, and authority version used to produce the checker-visible preview.
+Mutation commands require authenticated user context, `X-KEMFAI-Company-Id`, `Idempotency-Key`, `If-Match` with the exact strong draft or approval ETag, and correlation context. The server derives tenant and actor. Wildcard preconditions are rejected. The strong approval ETag covers the preview digest inputs and every mutable policy, period, approval-configuration, master-data, dimension, source, FX, rounding, candidate, selector, and authority version used to produce the checker-visible preview. The strong draft ETag covers the corresponding digest inputs and mutable versions used to produce the maker-visible immediate-post preview.
 
 ### 3.2 Post request
 
@@ -53,10 +54,11 @@ The body contains only:
 
 - `draftVersion`: exact integer version duplicated for explicit signing/fingerprinting;
 - `validationRunId`: immutable validation result for that draft version;
+- `previewDigest`: exact opaque canonical digest returned with the server-rendered posting-impact review for that draft version and validation run;
 - `confirmation`: literal `POST` supplied by the human confirmation UI;
 - `reason`: required when the effective period rule or configured approval rule requires one.
 
-Client-supplied matrix versions, Odoo IDs, calculated totals, permission claims, approval decisions, or period states are rejected. The server resolves and snapshots them.
+Client-supplied matrix versions, Odoo IDs, calculated totals, permission claims, approval decisions, or period states are rejected. The server resolves and snapshots them. The post request body includes the exact `previewDigest`; the immediate-post preview and confirmation use the same domain-separated, contract-versioned canonical serialization as approval review, covering the complete human-visible preview and every mutable input/version that can affect posting. Under the guarded transaction, the server first compares the submitted `If-Match` and `previewDigest` with the immutable server-issued preview record reconstructed from the exact draft version, validation run, and ETag-bound version vector. Only a mismatch at that client-binding step returns `412`. After those preconditions match, the server acquires the shared selector locks, re-resolves current facts, and recomputes the preview and digest: changed but still valid preview inputs return `409` and require a fresh preview; invalid execution facts return `422` with ordered validation issues; every outcome creates zero ledger state. This ordering is normative, so a current-state drift is never reclassified as a client-binding mismatch. Exact replay returns only the original terminal outcome.
 
 ### 3.3 Approval review and command binding
 
@@ -69,7 +71,7 @@ The approval command body includes the exact `previewDigest` returned by the det
 - `401/403`: unauthenticated or unauthorized, with opaque foreign-resource behavior.
 - `404`: absent or out-of-scope public resource; no existence disclosure.
 - `409`: idempotency fingerprint conflict, stale/non-current validation, already terminal draft, duplicate approval chain, or immutable-state conflict.
-- `412`: ETag mismatch.
+- `412`: exact strong ETag or canonical `previewDigest` mismatch.
 - `422`: complete ordered validation issues, including unbalanced base totals, non-posting/inactive account, inactive journal/currency, missing/invalid dimensions, incomplete FX provenance, excess-scale/rounding policy failure, disallowed period, unavailable policy, maker-checker self-approval, or source-scope failure.
 - `503`: authoritative mutation or audit completion cannot be proven; success is withheld and recovery remains safe.
 
@@ -140,7 +142,7 @@ Posting consumes two fail-closed interfaces:
 
 Entry classification is data-driven: a versioned company configuration maps the draft `transactionTypeKey` to `routine` or `adjustment`, with an adjustment permission key and approved workflow key. Unknown or overlapping mappings block. Open accepts either class subject to ordinary posting authority. Soft Close accepts only `adjustment` plus the mapped specific permission and a reason. Finance Review accepts only `adjustment` plus that permission, reason, and a completed maker-checker approval under the mapped workflow. Hard Close always blocks. No transaction type is hard-coded as an adjustment.
 
-This addendum does not define who may transition or reopen periods; it only consumes the locked, versioned result above.
+This addendum does not define who may transition or reopen periods; it only consumes the locked, versioned result above. Every posting-path resolution uses shared mutation-compatible selector/version locks for policy, period, classification, approval, rounding, FX, dimension, source, master-data, and authority selectors. Every mutation that can change one of those resolved inputs acquires the same applicable lock and increments its selector/version before commit. The locking protocol prevents phantom or overlapping configuration rows and authority/configuration drift: either the mutation wins and posting re-resolves the new version before any ledger write, or posting wins with the locked immutable versions; serializable/predicate-conflict losers retry resolution before mutation.
 
 ## 6. Posting transaction and recovery
 
@@ -152,9 +154,9 @@ NestJS claims a company/draft/action-scoped idempotency handoff using the canoni
 
 When maker-checker applies, the initial post request runs one guarded tenant transaction that:
 
-1. acquires the policy, period, entry-classification and approval selector locks, then locks the request receipt key, draft, validation run and resolved configuration rows;
+1. acquires the shared mutation-compatible selector/version locks for policy, period, entry classification, approval, rounding, FX, dimension, source, master-data, and authority selectors, then locks the request receipt key, draft, validation run, resolved rows and affected masters;
 2. replays an existing matching request receipt or rejects a fingerprint conflict;
-3. verifies the human maker's `Post` authority, exact draft/validation versions, all posting invariants, and the current policy/period/approval evaluations;
+3. verifies the human maker's `Post` authority and exact draft/validation versions, re-resolves every locked selector and posting invariant, recomputes the maker-visible preview and canonical digest, and requires the bound preview to remain current before creating the frozen candidate;
 4. locks the draft-version/candidate-fingerprint approval uniqueness key and rejects any competing non-stale chain;
 5. creates exactly one immutable `pending` approval containing the frozen candidate, with no native move, move line, source link or balance mutation;
 6. writes one authoritative tenant `posting.approval_requested` audit event and immutable request receipt in the same transaction; and
@@ -166,10 +168,10 @@ Any exception rolls back all seven steps. Simultaneous same-key requests replay 
 
 When maker-checker does not apply, the authorized post request enters this transaction directly. When it applies, only the approval command enters it, using its own action-scoped idempotency key and authenticated checker authorization. In one guarded tenant transaction it:
 
-1. acquires the shared policy, period, entry-classification and approval selector locks, then locks the posting receipt key, draft, pending approval if any, resolved policy/period/configuration rows and affected masters;
+1. acquires the shared mutation-compatible selector/version locks for policy, period, entry classification, approval, rounding, FX, dimension, source, master-data, and authority selectors, then locks the posting receipt key, draft, pending approval if any, validation run, resolved rows and affected masters;
 2. replays an existing matching posting receipt or rejects a fingerprint conflict;
 3. for immediate posting, verifies the requesting human’s `Post` authority; for approval posting, revalidates the recorded maker’s `Post` authority/scope, verifies the distinct checker’s `Approve` authority/scope, and atomically claims the still-pending approval;
-4. verifies exact draft/validation/candidate versions and recomputes canonical totals and snapshots;
+4. verifies exact draft/validation/candidate versions and, for immediate posting, binds the supplied digest to the server-rendered immediate-post preview and confirmation, then recomputes canonical totals, preview digest and snapshots;
 5. re-evaluates company, active posting accounts/journal/currencies, dimensions, source, FX provenance, rounding treatment and applicable matrix/period/approval result, marking a changed approval candidate stale without ledger movement;
 6. locks the draft terminal-post uniqueness key so simultaneous immediate/approval commands have one winner;
 7. creates the native move and lines in draft state internally, applies KEMFAI/source/policy/dimension metadata, and invokes the single guarded native posting transition;
@@ -207,7 +209,7 @@ A future generated task graph must place all tests before first posting implemen
 
 - contract tests for exact routes, schemas, auth, headers, ETags, status/error codes, route absence while disabled, and no native leakage;
 - Odoo tests for balance, atomic rollback, immutable posted state, scope, exact values, source/dimension/policy snapshots, rounding limits, native transition guard, and receipt/audit failure;
-- true two-connection races for same key, same draft with different keys, approval decisions, and approval/policy/entry-classification/period configuration changes;
+- true two-connection races for same key, same draft with different keys, approval decisions, immediate-post preview-input drift, and approval/policy/entry-classification/period/rounding/FX/dimension/source/master-data/authority selector changes, including phantom/overlapping rows;
 - Nest integration tests for real RPC, handoff leases, lost responses, mirror outage/recovery, opaque cross-tenant/company denial, and exactly-once results;
 - frontend unit/accessibility tests in EN/AR/RTL and a no-interception browser journey; and
 - fail-closed evidence validator tests written and observed red before fixture/evidence implementation.
