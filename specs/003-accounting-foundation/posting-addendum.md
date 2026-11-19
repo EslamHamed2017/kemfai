@@ -30,11 +30,12 @@ Story 5 reversal/correction, Story 6 opening balances, and Story 7 period mainte
 
 All customer calls follow browser → Next.js BFF → NestJS → guarded Odoo ORM → exact tenant DB. Public identifiers are UUIDs; native model names, integer IDs, database names, RPC details, and Odoo URLs never cross the API boundary.
 
-A future additive OpenAPI contract may expose only these five Story 4 operations:
+A future additive OpenAPI contract may expose only these six Story 4 operations:
 
 | Method and path | Purpose | Success |
 |---|---|---|
 | `POST /v1/accounting/drafts/{draftId}/post` | Human requests posting of one exact draft version. It either posts immediately or creates/replays a required approval request. | `201` posted; `202` approval required; `200` exact replay |
+| `GET /v1/accounting/posting-approvals?status=pending` | An authorized checker discovers only pending approvals within their tenant, selected company, `Approve` permission, and amount scope; results contain public UUIDs and summary evidence only, use stable cursor pagination, and never claim or mutate an approval. | `200` |
 | `GET /v1/accounting/posting-approvals/{approvalId}` | Authorized maker or distinct in-scope checker reads the immutable frozen candidate and current non-mutating preview evidence required for review; this operation never claims, approves, posts, or mutates the candidate. | `200` |
 | `POST /v1/accounting/posting-approvals/{approvalId}/approve` | Distinct authorized checker approves and atomically posts the frozen candidate. | `201` posted; `200` exact replay |
 | `GET /v1/accounting/posted-entries/{entryId}` | Read immutable KEMFAI entry, source, dimensions, policy and audit links within scope. | `200` |
@@ -44,7 +45,7 @@ No generic native action endpoint is permitted. There is no posted-entry PUT/PAT
 
 ### 3.1 Command headers
 
-Mutation commands require authenticated user context, `X-KEMFAI-Company-Id`, `Idempotency-Key`, `If-Match` with the exact strong draft or approval ETag, and correlation context. The server derives tenant and actor. Wildcard preconditions are rejected.
+Mutation commands require authenticated user context, `X-KEMFAI-Company-Id`, `Idempotency-Key`, `If-Match` with the exact strong draft or approval ETag, and correlation context. The server derives tenant and actor. Wildcard preconditions are rejected. The strong approval ETag covers the preview digest inputs and every mutable policy, period, approval-configuration, master-data, dimension, source, FX, rounding, candidate, and authority version used to produce the checker-visible preview.
 
 ### 3.2 Post request
 
@@ -57,7 +58,13 @@ The body contains only:
 
 Client-supplied matrix versions, Odoo IDs, calculated totals, permission claims, approval decisions, or period states are rejected. The server resolves and snapshots them.
 
-### 3.3 Outcomes and stable errors
+### 3.3 Approval review and command binding
+
+The pending collection and approval-detail reads are non-mutating and scope-filtered. The detail response returns the exact frozen candidate, current preview evidence, a strong approval ETag, and a server-generated canonical `previewDigest`. The digest is computed from a domain-separated, versioned canonical serialization of the approval public ID/version, candidate fingerprint, complete checker-visible preview payload, and every policy, period, approval-configuration, master-data, dimension, source, FX, rounding, selector, and authority version that can affect approval-time posting. The canonical serialization and digest algorithm are contract-versioned; clients never construct or alter the digest.
+
+The approval command body includes the exact `previewDigest` returned by the detail read and a literal `confirmation: APPROVE`; no calculated amount, policy decision, or approval result is accepted from the client. The `If-Match` value and `previewDigest` jointly bind the human confirmation to one exact server-rendered preview. Under the guarded posting transaction and selector locks, the server re-resolves all mutable facts and recomputes both the preview and digest. An ETag or digest mismatch cannot post: stale preconditions return `412`; changed or invalid execution facts atomically mark the candidate `stale`, return the stable conflict outcome, and produce zero ledger effect. Exact idempotent replay returns only the original terminal outcome.
+
+### 3.4 Outcomes and stable errors
 
 - `401/403`: unauthenticated or unauthorized, with opaque foreign-resource behavior.
 - `404`: absent or out-of-scope public resource; no existence disclosure.
@@ -192,7 +199,7 @@ Rate lookup, realized FX and revaluation are outside this addendum. Posting cons
 
 The existing draft composer gains a posting-impact review only when capability is enabled. It shows exact lines, base/transaction totals, dimensions, source, period result, matrix v1.0, rounding line if any, approval requirement, and explicit irreversible-posting language. The user must actively confirm; no preselected or AI-triggered confirmation exists.
 
-EN/LTR and AR/RTL flows require keyboard-complete grid/review/dialog operation, visible focus, semantic headings/tables, error summary linked to line fields, announced pending/success/failure status, duplicate-submit prevention, 200% zoom, and localized empty/loading/recoverable-error states. Input is preserved on failure. Approval inbox and decisions use the authorized non-mutating approval-detail read operation to expose the same evidence and clearly identify maker/checker separation. Checker-visible totals and rounding are preview computations only. After explicit checker confirmation, the approval command performs the final recomputation under the guarded transaction locks; it posts only if that final evidence exactly matches the checker-confirmed preview, otherwise it marks the candidate stale with zero ledger effect and requires a new review.
+EN/LTR and AR/RTL flows require keyboard-complete grid/review/dialog operation, visible focus, semantic headings/tables, error summary linked to line fields, announced pending/success/failure status, duplicate-submit prevention, 200% zoom, and localized empty/loading/recoverable-error states. Input is preserved on failure. The approval inbox uses the scope-filtered pending-approval collection, then the authorized non-mutating approval-detail read operation to expose the exact evidence and clearly identify maker/checker separation. Checker-visible totals and rounding are preview computations only. The UI must submit the returned canonical `previewDigest` with the checker’s explicit `APPROVE` confirmation and exact strong approval ETag. After explicit checker confirmation, the approval command performs the final recomputation under the guarded transaction locks; it posts only if the final evidence exactly matches the checker-confirmed preview and its digest, otherwise it marks the candidate stale with zero ledger effect and requires a new review.
 
 ## 9. Test-first implementation gate
 
