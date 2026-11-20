@@ -14,7 +14,7 @@ services:
       - ./init-control-db.sh:/docker-entrypoint-initdb.d/init-control-db.sh:ro
     restart: unless-stopped
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U odoo"]
+      test: ["CMD-SHELL", "pg_isready -U odoo -d postgres"]
       interval: 10s
       timeout: 5s
       retries: 5
