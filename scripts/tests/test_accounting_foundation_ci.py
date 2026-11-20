@@ -316,9 +316,9 @@ def _assert_story_four_vertical_slice_semantics(posting_tasks: str) -> None:
 def _assert_story_four_addendum_identity(
     posting_tasks: str, addendum_bytes: bytes
 ) -> None:
-    expected_blob_oid = "e47a20787ebec3ee2ebac6b62755877784c9050f"
+    expected_blob_oid = "ac6fa99c96ac9a60d34fecd7d69b40bee7aff6dc"
     expected_digest = (
-        "f871751a5547022b066dcf54dcb8ccc69aa51188e3ae2c5901f0bd2edde89a7b"
+        "ba9d9a464499eeb2ff9fc36fc3af04cb8bfe274087dc6b2bbcd7920810fe806c"
     )
     blob_oid = hashlib.sha1(
         f"blob {len(addendum_bytes)}\0".encode("ascii") + addendum_bytes
@@ -340,7 +340,7 @@ def _assert_story_four_vertical_slice_contract(posting_tasks: str) -> None:
     _assert_story_four_checker_review_contract(posting_tasks)
     _assert_story_four_approval_revalidation_and_usability_contract(posting_tasks)
     commissioned_document_digest = (
-        "9e557d5c49ed96706f616ed614282fbddebf307ed7e3cfd0646fc010f4f65434"
+        "1c06da77c37ff3425eba9344fc43c51329e481685a9df54b7b34c82d316c62f3"
     )
     if (
         hashlib.sha256(posting_tasks.encode("utf-8")).hexdigest()
@@ -1076,6 +1076,35 @@ class AccountingFoundationCiStructureTests(unittest.TestCase):
         ).read_bytes()
         _assert_story_four_addendum_identity(posting_tasks, addendum_bytes)
         self.assertIn("at the independently reviewed graph-review head", posting_tasks)
+
+    def test_story_four_v11_amendment_is_reconciled_with_plan_and_gate_history(self) -> None:
+        plan = (ROOT / "specs/003-accounting-foundation/plan.md").read_text(
+            encoding="utf-8"
+        )
+        posting_addendum = (
+            ROOT / "specs/003-accounting-foundation/posting-addendum.md"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn(
+            "posting-addendum.md`](./posting-addendum.md) v1.1 amendment candidate",
+            plan,
+        )
+        self.assertIn(
+            "T152 remains the completed historical review record for v1.0",
+            plan,
+        )
+        self.assertIn(
+            "v1.1 must receive exact-content independent review before Story 4 runtime implementation",
+            plan,
+        )
+        self.assertNotIn(
+            "ambiguities are resolved before T152 is checked complete",
+            posting_addendum,
+        )
+        self.assertIn(
+            "T152 remains the completed historical review record for v1.0",
+            posting_addendum,
+        )
 
     def test_story_four_normative_addendum_identity_rejects_semantic_mutation(self) -> None:
         posting_tasks = (

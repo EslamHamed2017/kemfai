@@ -251,4 +251,4 @@ The reviewer must confirm:
 - atomic balance, immutable history, human authorization, tenant/company isolation, exact policy version, execution-time period evaluation, idempotency/races, audit/source linkage, release gating, real-path evidence, and cleanup are deterministic;
 - Stories 5–7 are not accidentally implemented or accepted;
 - no current production route, model, task, flag, or acceptance status is enabled by this document; and
-- ambiguities are resolved before T152 is checked complete.
+- T152 remains the completed historical review record for v1.0; all v1.1 ambiguities and review findings are resolved before this amendment is commissioned for Story 4 runtime implementation.
