@@ -316,9 +316,9 @@ def _assert_story_four_vertical_slice_semantics(posting_tasks: str) -> None:
 def _assert_story_four_addendum_identity(
     posting_tasks: str, addendum_bytes: bytes
 ) -> None:
-    expected_blob_oid = "ac6fa99c96ac9a60d34fecd7d69b40bee7aff6dc"
+    expected_blob_oid = "179eee4011b81c797fe595355b8a981f9af8a675"
     expected_digest = (
-        "ba9d9a464499eeb2ff9fc36fc3af04cb8bfe274087dc6b2bbcd7920810fe806c"
+        "ebf65281ddc1a2d0ffac7a02ed306e57312cff14d445da4aab0988d4bb83fa3d"
     )
     blob_oid = hashlib.sha1(
         f"blob {len(addendum_bytes)}\0".encode("ascii") + addendum_bytes
@@ -340,7 +340,7 @@ def _assert_story_four_vertical_slice_contract(posting_tasks: str) -> None:
     _assert_story_four_checker_review_contract(posting_tasks)
     _assert_story_four_approval_revalidation_and_usability_contract(posting_tasks)
     commissioned_document_digest = (
-        "1c06da77c37ff3425eba9344fc43c51329e481685a9df54b7b34c82d316c62f3"
+        "886f9a6e5e8a81cf60de5c452dd1c87f5b6790c7938e3b4ded01fe9320026ead"
     )
     if (
         hashlib.sha256(posting_tasks.encode("utf-8")).hexdigest()
@@ -351,7 +351,7 @@ def _assert_story_four_vertical_slice_contract(posting_tasks: str) -> None:
         )
 
     commissioned_runtime_digest = (
-        "22e9f0fad8b66d0548ecb168a5ae7ee778577601a75261f4f67ffdea01276e55"
+        "2d0bd4cd5f4c1f263fc4ad4f42968961be1228b7f0ec4a74c2b3b16ec4cb3555"
     )
     runtime_tasks = "\n".join(
         _story_four_task_block(posting_tasks, number)
@@ -374,7 +374,7 @@ def _assert_story_four_vertical_slice_contract(posting_tasks: str) -> None:
     # or regex inference. Any wording drift requires explicit re-commissioning.
     commissioned_tasks = {
         178: '- [ ] t178 [us4] [p: glm-5.2 | b: claude | r: codex] deliver the authorized english immediate-posting command happy-path vertical slice across browser ui→next bff→nest→odoo→tenant audit — deps: t177; ac: one balanced draft uses the non-mutating posting-preview read to show the minimum impact summary and unselected explicit confirmation bound to its exact strong draft etag and server preview digest, then re-resolves every locked preview input, fails closed on drift, posts atomically, returns only public uuid/receipt data, mirrors audit, and passes focused accessibility/contract/integration/browser tests while production remains disabled.',
-        181: '- [ ] t181 [us4] [p: glm-5.2 | b: claude | r: codex] deliver the english maker human ui, impact review, explicit confirmation, and pending-approval request vertical slice across browser ui→next bff→nest→odoo→tenant audit — deps: t177; ac: one human-confirmed applicable approval configuration creates one immutable pending approval, request receipt, and authoritative audit event atomically with zero ledger movement, deterministic replay/conflict, preserved input on failure, and focused accessibility/browser tests.',
+        181: '- [ ] t181 [us4] [p: glm-5.2 | b: claude | r: codex] deliver the english maker human ui, impact review, explicit confirmation, and pending-approval request vertical slice across browser ui→next bff→nest→odoo→tenant audit — deps: t177; ac: one human-confirmed applicable approval configuration first uses the non-mutating posting-preview read and binds the request to its exact strong draft etag and server preview digest; after client bindings match, every locked input is re-resolved so changed but still valid preview inputs conflict with `409`, invalid execution facts fail validation with `422`, and neither outcome creates approval or ledger state; only an unchanged valid preview creates one immutable pending approval, request receipt, and authoritative audit event atomically with zero ledger movement, deterministic replay/conflict, preserved input on failure, and focused accessibility/browser tests.',
         183: "- [ ] t183 [us4] [p: glm-5.2 | b: claude | r: codex] deliver the english distinct-checker human ui, frozen-evidence review, explicit confirmation, and approval-to-post vertical slice across browser ui→next bff→nest→odoo→tenant audit — deps: t181, t182; ac: a non-maker checker with approve scope explicitly confirms and posts the frozen candidate once in one guarded transaction that revalidates the maker's post authority/scope, checker authority/scope, exact draft/candidate integrity, and company-scoped policy, period, posting masters, dimensions, source, fx, rounding, and approval facts; the approval body supplies the canonical `previewdigest` from the detail response with the exact strong approval etag, and the final locked recomputation exactly matches the checker-confirmed preview and digest or marks the candidate stale with zero ledger effect; self-approval or an unauthorized checker fails closed without changing the still-pending candidate; only changed draft/candidate or invalidated execution facts mark it stale without ledger effect, receipt plus tenant/platform audit complete before success, input survives failure, and focused accessibility/browser tests pass.",
         196: '- [ ] t196 [us4] [p: claude | b: glm-5.2 | r: codex] run the immediate-post/read/source accessibility acceptance gate across the complete real candidate path — deps: t179, t180, t185, t186; ac: en/ltr and ar/rtl keyboard flow, semantic headings/tables, linked errors, focus, live status, visible focus, axe, and 200% zoom pass without retrofitting or waiving any slice-level accessibility requirement.',
         197: '- [ ] t197 [us4] [p: claude | b: glm-5.2 | r: codex] run the maker/checker/recovery accessibility acceptance gate across the complete real candidate path — deps: t182, t184, t194, t195; ac: both locales pass keyboard, focus, linked-error, live-status, axe, and 200%-zoom checks for pending, checker, stale, failure, and recovery states without clipping, traps, retrofits, or waivers.',
@@ -1178,6 +1178,48 @@ class AccountingFoundationCiStructureTests(unittest.TestCase):
             "changed but still valid preview inputs return `409`",
         ):
             self.assertIn(phrase, post_contract)
+
+    def test_story_four_maker_approval_request_binds_the_preview_contract(self) -> None:
+        posting_tasks = (
+            ROOT / "specs/003-accounting-foundation/posting-tasks.md"
+        ).read_text(encoding="utf-8")
+        task = _story_four_task_block(posting_tasks, 181)
+        for phrase in (
+            "exact strong draft etag and server preview digest",
+            "changed but still valid preview inputs conflict",
+            "invalid execution facts fail validation",
+        ):
+            self.assertIn(phrase, task)
+
+    def test_story_four_approval_status_precedence_is_deterministic(self) -> None:
+        posting_addendum = (
+            ROOT / "specs/003-accounting-foundation/posting-addendum.md"
+        ).read_text(encoding="utf-8")
+        approval_contract = posting_addendum.split(
+            "### 3.3 Approval review", 1
+        )[1].split("### 3.4 Outcomes", 1)[0].lower()
+        for phrase in (
+            "checker authorization is evaluated before candidate staleness",
+            "remains pending",
+            "changed but still valid execution facts",
+            "return `409`",
+            "invalid execution facts",
+            "return `422`",
+        ):
+            self.assertIn(phrase, approval_contract)
+
+    def test_story_four_disabled_route_behavior_is_explicit_per_operation(self) -> None:
+        posting_addendum = (
+            ROOT / "specs/003-accounting-foundation/posting-addendum.md"
+        ).read_text(encoding="utf-8")
+        route_contract = posting_addendum.split(
+            "## 3. Boundary and routes", 1
+        )[1].split("### 3.1 Command headers", 1)[0]
+        for phrase in (
+            "posting-preview, pending-approval collection, approval-detail, and mutation routes are absent",
+            "posted-entry and source-traversal reads remain mounted",
+        ):
+            self.assertIn(phrase, route_contract)
 
     def test_story_four_pending_approval_locks_and_recomputes_all_selectors(self) -> None:
         posting_addendum = (
