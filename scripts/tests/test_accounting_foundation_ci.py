@@ -340,7 +340,7 @@ def _assert_story_four_vertical_slice_contract(posting_tasks: str) -> None:
     _assert_story_four_checker_review_contract(posting_tasks)
     _assert_story_four_approval_revalidation_and_usability_contract(posting_tasks)
     commissioned_document_digest = (
-        "dbd2521d5aacf99c34055ee86195fa0ad5aae77df99c2628e15974744483bfa3"
+        "cf5fd457db26f8336e75b6ec5757a78efe1a8c7efa6b61202f2f8a3db98564c3"
     )
     if (
         hashlib.sha256(posting_tasks.encode("utf-8")).hexdigest()
@@ -351,7 +351,7 @@ def _assert_story_four_vertical_slice_contract(posting_tasks: str) -> None:
         )
 
     commissioned_runtime_digest = (
-        "8d21aa3494e60bf0c0b4d4565a03a31b3e866cfd1ad33d35831799131c6bdc51"
+        "09ba5c30105cd60129ab4e7d1d93b79221a538f2ca8047949caea29348107bc0"
     )
     runtime_tasks = "\n".join(
         _story_four_task_block(posting_tasks, number)
@@ -378,7 +378,7 @@ def _assert_story_four_vertical_slice_contract(posting_tasks: str) -> None:
         183: "- [ ] t183 [us4] [p: glm-5.2 | b: claude | r: codex] deliver the english distinct-checker human ui, frozen-evidence review, explicit confirmation, and approval-to-post vertical slice across browser ui→next bff→nest→odoo→tenant audit — deps: t181, t182; ac: a non-maker checker with approve scope explicitly confirms and posts the frozen candidate once in one guarded transaction that revalidates the maker's post authority/scope, checker authority/scope, exact draft/candidate integrity, and company-scoped policy, period, posting masters, dimensions, source, fx, rounding, and approval facts; the approval body supplies the canonical `previewdigest` from the detail response with the exact strong approval etag, and the final locked recomputation exactly matches the checker-confirmed preview and digest or marks the candidate stale with zero ledger effect; self-approval or an unauthorized checker fails closed without changing the still-pending candidate; only changed draft/candidate or invalidated execution facts mark it stale without ledger effect, receipt plus tenant/platform audit complete before success, input survives failure, and focused accessibility/browser tests pass.",
         196: '- [ ] t196 [us4] [p: claude | b: glm-5.2 | r: codex] run the immediate-post/read/source accessibility acceptance gate across the complete real candidate path — deps: t179, t180, t185, t186; ac: en/ltr and ar/rtl keyboard flow, semantic headings/tables, linked errors, focus, live status, visible focus, axe, and 200% zoom pass without retrofitting or waiving any slice-level accessibility requirement.',
         197: '- [ ] t197 [us4] [p: claude | b: glm-5.2 | r: codex] run the maker/checker/recovery accessibility acceptance gate across the complete real candidate path — deps: t182, t184, t194, t195; ac: both locales pass keyboard, focus, linked-error, live-status, axe, and 200%-zoom checks for pending, checker, stale, failure, and recovery states without clipping, traps, retrofits, or waivers.',
-        198: '- [ ] t198 [us4] [p: glm-5.2 | b: claude | r: codex] run the integrated story 4 candidate acceptance gate across browser ui→next bff→nest→odoo→tenant audit in disposable upgraded tenant dbs — deps: t177–t197; ac: additive install/upgrade, static, contract, odoo, nestjs, frontend, accessibility, migration, race, failure, recovery, and playwright discovery suites pass nonzero with zero failed/skipped/unexpected/flaky while production entitlement remains false and routes remain unmounted.',
+        198: '- [ ] t198 [us4] [p: glm-5.2 | b: claude | r: codex] run the integrated story 4 candidate acceptance gate across browser ui→next bff→nest→odoo→tenant audit in disposable upgraded tenant dbs — deps: t177–t197; ac: additive install/upgrade, static, contract, odoo, nestjs, frontend, accessibility, migration, race, failure, recovery, and playwright discovery suites pass nonzero with zero failed/skipped/unexpected/flaky while production entitlement remains false, posting-preview, pending-approval collection, approval-detail, and mutation routes are absent, and authorized posted-entry and source-traversal reads remain mounted.',
     }
     for number, commissioned in commissioned_tasks.items():
         if _story_four_task(posting_tasks, number) != commissioned:
@@ -1229,13 +1229,15 @@ class AccountingFoundationCiStructureTests(unittest.TestCase):
             "posting-preview, pending-approval collection, approval-detail, "
             "and mutation routes are absent"
         )
-        for task_number in (160, 167, 173, 177, 203, 208):
+        route_availability = "posted-entry and source-traversal reads remain mounted"
+        for task_number in (160, 167, 173, 177, 198, 203, 208, 210):
             with self.subTest(task=task_number):
-                self.assertIn(
-                    route_absence,
-                    _story_four_task_block(posting_tasks, task_number),
-                )
-        self.assertIn(route_absence, posting_tasks.split("## Ownership", 1)[0].lower())
+                task_block = _story_four_task_block(posting_tasks, task_number)
+                self.assertIn(route_absence, task_block)
+                self.assertIn(route_availability, task_block)
+        commissioning_baseline = posting_tasks.split("## Ownership", 1)[0].lower()
+        self.assertIn(route_absence, commissioning_baseline)
+        self.assertIn(route_availability, commissioning_baseline)
 
     def test_story_four_pending_approval_locks_and_recomputes_all_selectors(self) -> None:
         posting_addendum = (
