@@ -340,7 +340,7 @@ def _assert_story_four_vertical_slice_contract(posting_tasks: str) -> None:
     _assert_story_four_checker_review_contract(posting_tasks)
     _assert_story_four_approval_revalidation_and_usability_contract(posting_tasks)
     commissioned_document_digest = (
-        "886f9a6e5e8a81cf60de5c452dd1c87f5b6790c7938e3b4ded01fe9320026ead"
+        "dbd2521d5aacf99c34055ee86195fa0ad5aae77df99c2628e15974744483bfa3"
     )
     if (
         hashlib.sha256(posting_tasks.encode("utf-8")).hexdigest()
@@ -351,7 +351,7 @@ def _assert_story_four_vertical_slice_contract(posting_tasks: str) -> None:
         )
 
     commissioned_runtime_digest = (
-        "2d0bd4cd5f4c1f263fc4ad4f42968961be1228b7f0ec4a74c2b3b16ec4cb3555"
+        "8d21aa3494e60bf0c0b4d4565a03a31b3e866cfd1ad33d35831799131c6bdc51"
     )
     runtime_tasks = "\n".join(
         _story_four_task_block(posting_tasks, number)
@@ -1220,6 +1220,22 @@ class AccountingFoundationCiStructureTests(unittest.TestCase):
             "posted-entry and source-traversal reads remain mounted",
         ):
             self.assertIn(phrase, route_contract)
+
+    def test_story_four_disabled_route_policy_is_commissioned_end_to_end(self) -> None:
+        posting_tasks = (
+            ROOT / "specs/003-accounting-foundation/posting-tasks.md"
+        ).read_text(encoding="utf-8")
+        route_absence = (
+            "posting-preview, pending-approval collection, approval-detail, "
+            "and mutation routes are absent"
+        )
+        for task_number in (160, 167, 173, 177, 203, 208):
+            with self.subTest(task=task_number):
+                self.assertIn(
+                    route_absence,
+                    _story_four_task_block(posting_tasks, task_number),
+                )
+        self.assertIn(route_absence, posting_tasks.split("## Ownership", 1)[0].lower())
 
     def test_story_four_pending_approval_locks_and_recomputes_all_selectors(self) -> None:
         posting_addendum = (
