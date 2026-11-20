@@ -127,17 +127,32 @@ class TestT108CiWiring(unittest.TestCase):
         self.assertRegex(setup, r"(?m)^          node-version: \$\{\{ env\.NODE_VERSION \}\}$")
         self.assertRegex(setup, r"(?m)^          cache: npm$")
         self.assertRegex(
-            setup, r"(?m)^          cache-dependency-path: backend/api/package-lock.json$"
+            setup,
+            r"(?m)^          cache-dependency-path: \|\n"
+            r"            backend/api/package-lock\.json\n"
+            r"            frontend/package-lock\.json$",
         )
         install = workflow_named_step(
             governance_job, "Install backend dependencies for governance"
         )
         self.assertRegex(install, r"(?m)^        working-directory: backend/api$")
         self.assertRegex(install, r"(?m)^        run: npm ci --ignore-scripts$")
+        frontend_install = workflow_named_step(
+            governance_job, "Install frontend dependencies for governance"
+        )
+        self.assertRegex(frontend_install, r"(?m)^        working-directory: frontend$")
+        self.assertRegex(frontend_install, r"(?m)^        run: npm ci --ignore-scripts$")
+        chromium_install = workflow_named_step(
+            governance_job, "Install Chromium for governance"
+        )
+        self.assertRegex(chromium_install, r"(?m)^        working-directory: frontend$")
+        self.assertRegex(chromium_install, r"(?m)^        run: npx playwright install chromium$")
         governance = workflow_named_step(governance_job, "Run T108 governance regressions")
         self.assertRegex(governance, r"(?m)^        run: bash scripts/tests/run_all.sh$")
         self.assertLess(governance_job.index("Set up Node for governance"), governance_job.index("Install backend dependencies for governance"))
-        self.assertLess(governance_job.index("Install backend dependencies for governance"), governance_job.index("Run T108 governance regressions"))
+        self.assertLess(governance_job.index("Install backend dependencies for governance"), governance_job.index("Install frontend dependencies for governance"))
+        self.assertLess(governance_job.index("Install frontend dependencies for governance"), governance_job.index("Install Chromium for governance"))
+        self.assertLess(governance_job.index("Install Chromium for governance"), governance_job.index("Run T108 governance regressions"))
 
         backend_job = workflow_job(WORKFLOW, "owned-backend-live")
         backend_images = workflow_named_step(backend_job, "Pull pinned owned-stack images")
@@ -441,8 +456,30 @@ class TestT108CiWiring(unittest.TestCase):
             self._assert_owned_artifact_step(
                 mutated, "Upload T112 evidence", "${{ runner.temp }}/t112-evidence"
             )
+        governance_job = workflow.split("  frontend-static:", 1)[0]
+        self.assertIn("Install frontend dependencies for governance", governance_job)
+        self.assertIn("working-directory: frontend", governance_job)
+        self.assertIn("run: npm ci --ignore-scripts", governance_job)
         aggregate = (ROOT / "scripts/tests/run_all.sh").read_text()
         self.assertIn('bash "$HERE/test_t108_odoo_cleanup.sh"', aggregate)
+        self.assertIn('bash "$HERE/test_t071_live_harness.sh"', aggregate)
+        lifecycle_harness = (ROOT / "scripts/tests/test_t071_live_harness.sh").read_text()
+        self.assertIn(
+            'PROBE_FILE="$non_utf8_file" python3 "$repo_dir/scripts/fixtures/t071_owned_session_exec.py" \\\n'
+            '  --hold-for-cleanup --keep-env PROBE_FILE',
+            lifecycle_harness,
+        )
+        self.assertIn(
+            'PROBE_FILE="$cross_session_file" \\\n'
+            '  python3 "$repo_dir/scripts/fixtures/t071_owned_session_exec.py" \\\n'
+            '    --hold-for-cleanup --keep-env PROBE_FILE',
+            lifecycle_harness,
+        )
+        self.assertIn(
+            'python3 "$repo_dir/scripts/fixtures/t071_owned_session_exec.py" \\\n'
+            '    --hold-for-cleanup --keep-env ADOPTED_ZOMBIE_FILE',
+            lifecycle_harness,
+        )
         odoo = (ROOT / "scripts/ci/test_odoo_addons.sh").read_text()
         self.assertIn("drop_owned_database", odoo)
         self.assertIn("survived DROP", odoo)

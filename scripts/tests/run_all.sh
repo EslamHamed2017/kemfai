@@ -43,6 +43,12 @@ bash "$HERE/test_t108_odoo_cleanup.sh"
 
 echo ""
 
+echo "########## test_t071_live_harness.sh ##########"
+bash "$HERE/test_t071_live_harness.sh"
+[ $? -eq 0 ] || FAIL=1
+
+echo ""
+
 echo "########## repository Docker cleanup static gate ##########"
 (
   cd "$REPO"

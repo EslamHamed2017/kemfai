@@ -28,10 +28,18 @@ jobs:
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: npm
-          cache-dependency-path: backend/api/package-lock.json
+          cache-dependency-path: |
+            backend/api/package-lock.json
+            frontend/package-lock.json
       - name: Install backend dependencies for governance
         working-directory: backend/api
         run: npm ci --ignore-scripts
+      - name: Install frontend dependencies for governance
+        working-directory: frontend
+        run: npm ci --ignore-scripts
+      - name: Install Chromium for governance
+        working-directory: frontend
+        run: npx playwright install chromium
       - name: Run T108 governance regressions
         run: bash scripts/tests/run_all.sh
 
@@ -387,6 +395,9 @@ jobs:
           docker pull quay.io/keycloak/keycloak:26.0
           docker pull odoo:18.0
       - name: Verify accounting foundation branch protection
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          KEMFAI_BRANCH_PROTECTION_BRANCH: main
         run: python3 scripts/fixtures/accounting_foundation_verify_branch_protection.py
       - name: Discover and run Accounting Foundation contract suite
         working-directory: backend/api
