@@ -149,8 +149,8 @@ class AccountingFoundationOwnedLiveTests(unittest.TestCase):
                 "persistedStateVerified": True,
                 "captureSource": "persisted-queries",
                 "databases": [
-                    {"name": "tenant_a_db", "tenantId": "tenant-a", "companyIds": ["company-a1", "company-a2"], "persistedQueryId": "query-db-a"},
-                    {"name": "tenant_b_db", "tenantId": "tenant-b", "companyIds": ["company-b1"], "persistedQueryId": "query-db-b"},
+                    {"name": "tenant_a_db", "actualDatabase": "af_owned_tenant_a", "tenantId": "tenant-a", "companyIds": ["company-a1", "company-a2"], "persistedQueryId": "query-db-a"},
+                    {"name": "tenant_b_db", "actualDatabase": "af_owned_tenant_b", "tenantId": "tenant-b", "companyIds": ["company-b1"], "persistedQueryId": "query-db-b"},
                 ],
                 "account": {"id": "11111111-1111-4111-8111-111111111111", "database": "tenant_a_db", "companyId": "company-a1", "persistedQueryId": "query-account"},
                 "draft": {"id": "22222222-2222-4222-8222-222222222222", "state": "draft", "database": "tenant_a_db", "companyId": "company-a1", "persistedQueryId": "query-draft"},
@@ -173,8 +173,8 @@ class AccountingFoundationOwnedLiveTests(unittest.TestCase):
                 "actionPostInvocations": 0,
                 "postingFeatureEnabled": False,
                 "databases": [
-                    {"name": "tenant_a_db", "beforeHash": "a" * 64, "afterHash": "a" * 64, "beforeMoveCount": 0, "afterMoveCount": 0, "beforeLineCount": 0, "afterLineCount": 0, "beforeBalanceHash": "c" * 64, "afterBalanceHash": "c" * 64, "persistedQueryId": "query-ledger-a"},
-                    {"name": "tenant_b_db", "beforeHash": "b" * 64, "afterHash": "b" * 64, "beforeMoveCount": 0, "afterMoveCount": 0, "beforeLineCount": 0, "afterLineCount": 0, "beforeBalanceHash": "d" * 64, "afterBalanceHash": "d" * 64, "persistedQueryId": "query-ledger-b"},
+                    {"name": "tenant_a_db", "actualDatabase": "af_owned_tenant_a", "beforeHash": "a" * 64, "afterHash": "a" * 64, "beforeMoveCount": 0, "afterMoveCount": 0, "beforeLineCount": 0, "afterLineCount": 0, "beforeBalanceHash": "c" * 64, "afterBalanceHash": "c" * 64, "persistedQueryId": "odoo:af_owned_tenant_a:ledger-count-hash"},
+                    {"name": "tenant_b_db", "actualDatabase": "af_owned_tenant_b", "beforeHash": "b" * 64, "afterHash": "b" * 64, "beforeMoveCount": 0, "afterMoveCount": 0, "beforeLineCount": 0, "afterLineCount": 0, "beforeBalanceHash": "d" * 64, "afterBalanceHash": "d" * 64, "persistedQueryId": "odoo:af_owned_tenant_b:ledger-count-hash"},
                 ],
             },
             "audit-and-receipts.json": {
@@ -234,6 +234,14 @@ class AccountingFoundationOwnedLiveTests(unittest.TestCase):
         result = self._validate_story_one_capture(artifacts)
         self.assertNotEqual(result.returncode, 0, msg=result.stdout + result.stderr)
         self.assertIn("ledger proof incomplete", result.stdout + result.stderr)
+
+    def test_story_one_capture_rejects_relabelled_duplicate_ledger_database(self) -> None:
+        artifacts = self._story_one_capture()
+        duplicate = dict(artifacts["no-ledger-effect.json"]["databases"][0])
+        duplicate["name"] = "tenant_b_db"
+        artifacts["no-ledger-effect.json"]["databases"][1] = duplicate
+        result = self._validate_story_one_capture(artifacts)
+        self.assertNotEqual(result.returncode, 0, msg=result.stdout + result.stderr)
 
     def test_story_one_capture_rejects_invalid_ledger_counts(self) -> None:
         for prefix, value in (

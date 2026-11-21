@@ -140,12 +140,14 @@ def _baseline_artifacts() -> dict[str, dict]:
             "databases": [
                 {
                     "name": "tenant_a_db",
+                    "actualDatabase": "af_owned_tenant_a",
                     "tenantId": "tenant-a",
                     "companyIds": ["company-a1", "company-a2"],
                     "persistedQueryId": "query-db-a",
                 },
                 {
                     "name": "tenant_b_db",
+                    "actualDatabase": "af_owned_tenant_b",
                     "tenantId": "tenant-b",
                     "companyIds": ["company-b1"],
                     "persistedQueryId": "query-db-b",
@@ -347,6 +349,8 @@ def _baseline_artifacts() -> dict[str, dict]:
             "databases": [
                 {
                     "name": "tenant_a_db",
+                    "actualDatabase": "af_owned_tenant_a",
+                    "persistedQueryId": "odoo:af_owned_tenant_a:ledger-count-hash",
                     "beforeHash": "a" * 64,
                     "afterHash": "a" * 64,
                     "beforeMoveCount": 0, "afterMoveCount": 0,
@@ -355,6 +359,8 @@ def _baseline_artifacts() -> dict[str, dict]:
                 },
                 {
                     "name": "tenant_b_db",
+                    "actualDatabase": "af_owned_tenant_b",
+                    "persistedQueryId": "odoo:af_owned_tenant_b:ledger-count-hash",
                     "beforeHash": "b" * 64,
                     "afterHash": "b" * 64,
                     "beforeMoveCount": 0, "afterMoveCount": 0,
@@ -739,6 +745,13 @@ class AccountingFoundationEvidenceTests(unittest.TestCase):
                 payload["noLedger"][field] = value
                 self._rewrite_payload("story-2-state.json", payload)
                 self._assert_invalid()
+
+    def test_no_ledger_requires_each_tenant_database_once(self) -> None:
+        payload = copy.deepcopy(self.artifacts["no-ledger-effect.json"])
+        payload["databases"][1] = copy.deepcopy(payload["databases"][0])
+        payload["databases"][1]["name"] = "tenant_b_db"
+        self._rewrite_payload("no-ledger-effect.json", payload)
+        self._assert_invalid()
 
     def test_no_ledger_rejects_invalid_count_facts(self) -> None:
         for prefix, value in (

@@ -494,13 +494,23 @@ def validate_routes(data: dict[str, Any]) -> None:
     require(all(item.get("method") == "POST" and item.get("status") == 404 for item in routes), "forbidden route is mounted")
 
 
-def validate_no_ledger(data: dict[str, Any]) -> None:
+def validate_no_ledger(data: dict[str, Any], story: dict[str, Any] | None = None) -> None:
     require(data.get("status") == "passed", "no-ledger proof did not pass")
     require(data.get("actionPostInvocations") == 0, "posting method was invoked")
     require(data.get("postingFeatureEnabled") is False, "posting feature is enabled")
     databases = data.get("databases")
     require(isinstance(databases, list) and len(databases) == 2, "both database ledger proofs are required")
+    require({item.get("name") for item in databases} == {"tenant_a_db", "tenant_b_db"}, "ledger proof database set mismatch")
+    actual_databases = {item.get("name"): item.get("actualDatabase") for item in databases}
+    require(all(nonempty(value) for value in actual_databases.values()), "ledger proof actual database identity is required")
+    require(len(set(actual_databases.values())) == 2, "ledger proofs must come from two distinct actual databases")
+    if story is not None:
+        story_databases = story.get("databases")
+        require(isinstance(story_databases, list), "Story 1 database topology is required for ledger proof binding")
+        story_actual = {item.get("name"): item.get("actualDatabase") for item in story_databases if isinstance(item, dict)}
+        require(story_actual == actual_databases, "ledger proof actual databases differ from Story 1 topology")
     for item in databases:
+        require(item.get("persistedQueryId") == f"odoo:{item.get('actualDatabase')}:ledger-count-hash", f"ledger query identity mismatch in {item.get('name')}")
         require(all(field in item for field in ("beforeMoveCount", "afterMoveCount", "beforeLineCount", "afterLineCount", "beforeBalanceHash", "afterBalanceHash")), f"ledger count/balance proof incomplete in {item.get('name')}")
         require(valid_sha256(item.get("beforeHash")) and valid_sha256(item.get("afterHash")), f"ledger hash invalid in {item.get('name')}")
         for prefix in ("MoveCount", "LineCount"):
@@ -598,7 +608,7 @@ def validate_story_one_run(root: Path) -> None:
     require(set(story.get("locales", [])) == {"en-LTR", "ar-RTL"}, "story-1 locale proof incomplete")
     validate_story_one(story)
     validate_scope(payloads["scope-and-authorization.json"])
-    validate_no_ledger(payloads["no-ledger-effect.json"])
+    validate_no_ledger(payloads["no-ledger-effect.json"], story)
     validate_audit(payloads["audit-and-receipts.json"])
     secret = payloads["secret-scan.json"]
     require(secret.get("status") == "passed", "secret scan did not pass")
@@ -649,7 +659,7 @@ def validate(root: Path) -> None:
     validate_story_two(payloads["story-2-state.json"])
     validate_story_three(payloads["story-3-state.json"])
     validate_routes(payloads["api-contract-summary.json"])
-    validate_no_ledger(payloads["no-ledger-effect.json"])
+    validate_no_ledger(payloads["no-ledger-effect.json"], payloads["story-1-state.json"])
     validate_scope(payloads["scope-and-authorization.json"])
     validate_audit(payloads["audit-and-receipts.json"])
     validate_failures(payloads["failure-injection.json"])

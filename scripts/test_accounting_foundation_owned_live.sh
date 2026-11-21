@@ -127,7 +127,12 @@ require(ledger.get("postingFeatureEnabled") is False, "posting capability must r
 ledger_databases = ledger.get("databases")
 require(isinstance(ledger_databases, list) and len(ledger_databases) == 2, "both tenant ledger proofs are required")
 require({item.get("name") for item in ledger_databases if isinstance(item, dict)} == set(database_names), "ledger proof database set differs from Story 1 topology")
+story_actual = {item.get("name"): item.get("actualDatabase") for item in databases if isinstance(item, dict)}
+ledger_actual = {item.get("name"): item.get("actualDatabase") for item in ledger_databases if isinstance(item, dict)}
+require(all(nonempty(value) for value in story_actual.values()) and story_actual == ledger_actual, "ledger proof actual databases differ from Story 1 topology")
+require(len(set(ledger_actual.values())) == 2, "ledger proofs must come from two distinct actual databases")
 for item in ledger_databases:
+    require(item.get("persistedQueryId") == f"odoo:{item.get('actualDatabase')}:ledger-count-hash", f"ledger query identity mismatch in {item.get('name')}")
     required_ledger_fields = ("beforeMoveCount", "afterMoveCount", "beforeLineCount", "afterLineCount", "beforeBalanceHash", "afterBalanceHash")
     require(all(field in item for field in required_ledger_fields), f"ledger proof incomplete in {item.get('name')}")
     require(valid_sha256(item.get("beforeHash")) and valid_sha256(item.get("afterHash")), f"ledger hash invalid in {item.get('name')}")
