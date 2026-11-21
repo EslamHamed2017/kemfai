@@ -737,14 +737,20 @@ class AccountingFoundationOwnedLiveTests(unittest.TestCase):
             ledger_output = root / "no-ledger-effect.json"
             journey.write_text(json.dumps(story), encoding="utf-8")
             result = subprocess.run(
-                ["python3", "-c", code, str(journey), str(story_output), str(ledger_output), "tenant_a_db", "tenant_b_db"],
+                ["python3", "-c", code, str(journey), str(story_output), str(ledger_output), "kemfai_af_tenant_a", "kemfai_af_tenant_b"],
                 cwd=ROOT, text=True, capture_output=True,
             )
             self.assertEqual(result.returncode, 0, msg=result.stdout + result.stderr)
             captured = json.loads(ledger_output.read_text(encoding="utf-8"))
             self.assertEqual(
-                [(item["name"], item["beforeHash"], item["afterHash"]) for item in captured["databases"]],
-                [("tenant_a_db", "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"), ("tenant_b_db", "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc", "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc")],
+                [
+                    (item["name"], item["actualDatabase"], item["persistedQueryId"])
+                    for item in captured["databases"]
+                ],
+                [
+                    ("tenant_a_db", "kemfai_af_tenant_a", "odoo:kemfai_af_tenant_a:ledger-count-hash"),
+                    ("tenant_b_db", "kemfai_af_tenant_b", "odoo:kemfai_af_tenant_b:ledger-count-hash"),
+                ],
             )
 
     def test_runner_has_valid_bash_syntax(self) -> None:

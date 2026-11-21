@@ -140,12 +140,14 @@ def _baseline_artifacts() -> dict[str, dict]:
             "databases": [
                 {
                     "name": "tenant_a_db",
+                    "actualDatabase": "kemfai_af_tenant_a",
                     "tenantId": "tenant-a",
                     "companyIds": ["company-a1", "company-a2"],
                     "persistedQueryId": "query-db-a",
                 },
                 {
                     "name": "tenant_b_db",
+                    "actualDatabase": "kemfai_af_tenant_b",
                     "tenantId": "tenant-b",
                     "companyIds": ["company-b1"],
                     "persistedQueryId": "query-db-b",
@@ -347,6 +349,8 @@ def _baseline_artifacts() -> dict[str, dict]:
             "databases": [
                 {
                     "name": "tenant_a_db",
+                    "actualDatabase": "kemfai_af_tenant_a",
+                    "persistedQueryId": "odoo:kemfai_af_tenant_a:ledger-count-hash",
                     "beforeHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
                     "afterHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
                     "beforeMoveCount": 0, "afterMoveCount": 0,
@@ -355,6 +359,8 @@ def _baseline_artifacts() -> dict[str, dict]:
                 },
                 {
                     "name": "tenant_b_db",
+                    "actualDatabase": "kemfai_af_tenant_b",
+                    "persistedQueryId": "odoo:kemfai_af_tenant_b:ledger-count-hash",
                     "beforeHash": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
                     "afterHash": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
                     "beforeMoveCount": 0, "afterMoveCount": 0,
@@ -875,6 +881,28 @@ class AccountingFoundationEvidenceTests(unittest.TestCase):
         payload = copy.deepcopy(self.artifacts["readiness.json"])
         payload["databases"] = payload["databases"][:1]
         self._rewrite_payload("readiness.json", payload)
+        self._assert_invalid()
+
+    def test_ledger_proofs_require_distinct_expected_database_identities(self) -> None:
+        mutations = (
+            ("duplicate logical name", "name"),
+            ("duplicate actual database", "actualDatabase"),
+            ("duplicate persisted query", "persistedQueryId"),
+        )
+        for label, field in mutations:
+            with self.subTest(label=label):
+                self.artifacts = _baseline_artifacts()
+                self._write_all()
+                payload = copy.deepcopy(self.artifacts["no-ledger-effect.json"])
+                payload["databases"][1][field] = payload["databases"][0][field]
+                self._rewrite_payload("no-ledger-effect.json", payload)
+                self._assert_invalid()
+
+    def test_ledger_proofs_must_match_story_one_database_topology(self) -> None:
+        payload = copy.deepcopy(self.artifacts["no-ledger-effect.json"])
+        payload["databases"][1]["actualDatabase"] = "kemfai_af_unrelated"
+        payload["databases"][1]["persistedQueryId"] = "odoo:kemfai_af_unrelated:ledger-count-hash"
+        self._rewrite_payload("no-ledger-effect.json", payload)
         self._assert_invalid()
 
     def test_malformed_ledger_proof_fails_closed(self) -> None:
