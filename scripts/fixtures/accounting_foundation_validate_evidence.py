@@ -231,6 +231,13 @@ def validate_story_one(data: dict[str, Any]) -> None:
     require(set(topology) == {"tenant_a_db", "tenant_b_db"}, "Story 1 tenant database set mismatch")
     tenant_a, companies_a = topology["tenant_a_db"]
     tenant_b, companies_b = topology["tenant_b_db"]
+    actor = data.get("actor")
+    require(isinstance(actor, dict), "Story 1 persisted actor mapping is required")
+    for field in ("accountId", "subjectId"):
+        value = actor.get(field)
+        require(isinstance(value, str) and UUID_PATTERN.fullmatch(value) is not None, f"Story 1 actor {field} is invalid")
+    require(actor["accountId"] != actor["subjectId"], "Story 1 actor account and identity subject must remain distinct")
+    require_query_id(actor.get("persistedQueryId"), "Story 1 actor mapping")
     require(tenant_a != tenant_b, "Story 1 tenant identities must be distinct")
     require(
         len(companies_a) == 2 and len(companies_b) == 1 and companies_a.isdisjoint(companies_b),
@@ -470,7 +477,7 @@ def validate_native_exposure(data: dict[str, Any]) -> None:
         require(data.get(field) == 0, f"native-engine exposure detected: {field}")
 
 
-def validate_scope(data: dict[str, Any]) -> None:
+def validate_scope(data: dict[str, Any], story: dict[str, Any]) -> None:
     require(data.get("status") == "passed", "scope evidence did not pass")
     foreign_id = data.get("tenantBResourceId")
     require(isinstance(foreign_id, str) and UUID_PATTERN.fullmatch(foreign_id) is not None, "real Tenant-B resource UUID is required")
@@ -483,7 +490,25 @@ def validate_scope(data: dict[str, Any]) -> None:
     )
     require(data.get("ordinaryAuthenticatedPath") is True, "cross-tenant denial did not use the ordinary authenticated path")
     require(data.get("foreignFieldsDisclosed") is False, "cross-tenant denial disclosed foreign fields")
-    require_query_id(data.get("denialAuditQueryId"), "cross-tenant denial audit")
+    denial_query_id = data.get("denialAuditQueryId")
+    require_query_id(denial_query_id, "cross-tenant denial audit")
+    denial = data.get("denialAudit")
+    require(isinstance(denial, dict), "cross-tenant denial audit binding is required")
+    for field in ("eventId", "operationId", "actorAccountId", "tenantId", "companyId"):
+        value = denial.get(field)
+        require(isinstance(value, str) and UUID_PATTERN.fullmatch(value) is not None, f"cross-tenant denial audit {field} is invalid")
+    require(denial_query_id == f"control:audit_event:{denial['eventId']}", "cross-tenant denial audit query is not bound to its persisted event")
+    require(denial.get("route") == f"/v1/accounting/accounts/{foreign_id}", "cross-tenant denial audit is not bound to the exact foreign resource")
+    require(denial.get("reason") == "company_scope_denied", "cross-tenant denial audit reason is invalid")
+    topology = {item.get("name"): item for item in story.get("databases", []) if isinstance(item, dict)}
+    tenant_a = topology.get("tenant_a_db")
+    require(isinstance(tenant_a, dict), "Story 1 Tenant A topology is missing from scope validation")
+    account = story.get("account")
+    actor = story.get("actor")
+    require(isinstance(account, dict) and isinstance(actor, dict), "Story 1 account or actor binding is missing")
+    require(denial["tenantId"] == tenant_a.get("tenantId"), "cross-tenant denial audit tenant is not Tenant A")
+    require(denial["companyId"] == account.get("companyId"), "cross-tenant denial audit company is not Company A1")
+    require(denial["actorAccountId"] == actor.get("accountId"), "cross-tenant denial audit actor is not User A")
 
 
 def validate_routes(data: dict[str, Any]) -> None:
@@ -616,7 +641,7 @@ def validate_story_one_run(root: Path) -> None:
     require(set(story.get("locales", [])) == {"en-LTR", "ar-RTL"}, "story-1 locale proof incomplete")
     validate_story_one(story)
     expected_databases = {item["name"]: item["actualDatabase"] for item in story["databases"]}
-    validate_scope(payloads["scope-and-authorization.json"])
+    validate_scope(payloads["scope-and-authorization.json"], story)
     validate_no_ledger(payloads["no-ledger-effect.json"], expected_databases)
     validate_audit(payloads["audit-and-receipts.json"])
     secret = payloads["secret-scan.json"]
@@ -671,7 +696,7 @@ def validate(root: Path) -> None:
     validate_routes(payloads["api-contract-summary.json"])
     expected_databases = {item["name"]: item["actualDatabase"] for item in story_one["databases"]}
     validate_no_ledger(payloads["no-ledger-effect.json"], expected_databases)
-    validate_scope(payloads["scope-and-authorization.json"])
+    validate_scope(payloads["scope-and-authorization.json"], story_one)
     validate_audit(payloads["audit-and-receipts.json"])
     validate_failures(payloads["failure-injection.json"])
     validate_native_exposure(payloads["odoo-exposure-scan.json"])

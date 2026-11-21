@@ -141,29 +141,34 @@ def _baseline_artifacts() -> dict[str, dict]:
                 {
                     "name": "tenant_a_db",
                     "actualDatabase": "kemfai_af_tenant_a",
-                    "tenantId": "tenant-a",
-                    "companyIds": ["company-a1", "company-a2"],
+                    "tenantId": "66666666-6666-4666-8666-666666666666",
+                    "companyIds": ["77777777-7777-4777-8777-777777777777", "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"],
                     "persistedQueryId": "query-db-a",
                 },
                 {
                     "name": "tenant_b_db",
                     "actualDatabase": "kemfai_af_tenant_b",
-                    "tenantId": "tenant-b",
-                    "companyIds": ["company-b1"],
+                    "tenantId": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+                    "companyIds": ["cccccccc-cccc-4ccc-8ccc-cccccccccccc"],
                     "persistedQueryId": "query-db-b",
                 },
             ],
+            "actor": {
+                "accountId": "55555555-5555-4555-8555-555555555555",
+                "subjectId": "dddddddd-dddd-4ddd-8ddd-dddddddddddd",
+                "persistedQueryId": "control:account:55555555-5555-4555-8555-555555555555",
+            },
             "account": {
                 "id": "11111111-1111-4111-8111-111111111111",
                 "database": "tenant_a_db",
-                "companyId": "company-a1",
+                "companyId": "77777777-7777-4777-8777-777777777777",
                 "persistedQueryId": "query-account",
             },
             "draft": {
                 "id": "22222222-2222-4222-8222-222222222222",
                 "state": "draft",
                 "database": "tenant_a_db",
-                "companyId": "company-a1",
+                "companyId": "77777777-7777-4777-8777-777777777777",
                 "persistedQueryId": "query-draft",
             },
             "parentRejection": {
@@ -378,7 +383,16 @@ def _baseline_artifacts() -> dict[str, dict]:
             "sameResourceOpaquelyDeniedToUserA": True,
             "ordinaryAuthenticatedPath": True,
             "foreignFieldsDisclosed": False,
-            "denialAuditQueryId": "query-denial-audit",
+            "denialAuditQueryId": "control:audit_event:99999999-9999-4999-8999-999999999999",
+            "denialAudit": {
+                "eventId": "99999999-9999-4999-8999-999999999999",
+                "operationId": "44444444-4444-4444-8444-444444444444",
+                "actorAccountId": "55555555-5555-4555-8555-555555555555",
+                "tenantId": "66666666-6666-4666-8666-666666666666",
+                "companyId": "77777777-7777-4777-8777-777777777777",
+                "route": "/v1/accounting/accounts/33333333-3333-4333-8333-333333333333",
+                "reason": "company_scope_denied",
+            },
         },
         "audit-and-receipts.json": {
             "status": "passed",
@@ -525,9 +539,12 @@ class AccountingFoundationEvidenceTests(unittest.TestCase):
         story["databases"][1]["companyIds"] = [company_b1]
         story["account"]["companyId"] = company_a1
         story["draft"]["companyId"] = company_a1
+        scope = copy.deepcopy(self.artifacts["scope-and-authorization.json"])
+        scope["denialAudit"]["tenantId"] = tenant_a
+        scope["denialAudit"]["companyId"] = company_a1
         self.artifacts = {
             "story-1-state.json": story,
-            "scope-and-authorization.json": self.artifacts["scope-and-authorization.json"],
+            "scope-and-authorization.json": scope,
             "no-ledger-effect.json": self.artifacts["no-ledger-effect.json"],
             "audit-and-receipts.json": self.artifacts["audit-and-receipts.json"],
             "secret-scan.json": {"status": "passed", "leaks": []},
@@ -785,6 +802,22 @@ class AccountingFoundationEvidenceTests(unittest.TestCase):
         payload["tenantBResourceId"] = "not-a-real-uuid"
         self._rewrite_payload("scope-and-authorization.json", payload)
         self._assert_invalid()
+
+    def test_story_one_denial_audit_must_bind_the_exact_attempt(self) -> None:
+        mutations = {
+            "route": "/v1/accounting/accounts/88888888-8888-4888-8888-888888888888",
+            "tenantId": "88888888-8888-4888-8888-888888888888",
+            "companyId": "88888888-8888-4888-8888-888888888888",
+            "actorAccountId": "88888888-8888-4888-8888-888888888888",
+        }
+        for field, value in mutations.items():
+            with self.subTest(field=field):
+                self.artifacts = _baseline_artifacts()
+                self._write_all()
+                payload = copy.deepcopy(self.artifacts["scope-and-authorization.json"])
+                payload["denialAudit"][field] = value
+                self._rewrite_payload("scope-and-authorization.json", payload)
+                self._assert_invalid()
 
     def test_story_one_receipt_and_event_sets_must_match_mutations(self) -> None:
         payload = copy.deepcopy(self.artifacts["audit-and-receipts.json"])
