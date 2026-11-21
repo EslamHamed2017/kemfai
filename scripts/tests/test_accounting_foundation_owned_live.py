@@ -173,8 +173,8 @@ class AccountingFoundationOwnedLiveTests(unittest.TestCase):
                 "actionPostInvocations": 0,
                 "postingFeatureEnabled": False,
                 "databases": [
-                    {"name": "tenant_a_db", "beforeHash": "hash-a", "afterHash": "hash-a", "beforeCount": 0, "afterCount": 0, "persistedQueryId": "query-ledger-a"},
-                    {"name": "tenant_b_db", "beforeHash": "hash-b", "afterHash": "hash-b", "beforeCount": 0, "afterCount": 0, "persistedQueryId": "query-ledger-b"},
+                    {"name": "tenant_a_db", "beforeHash": "hash-a", "afterHash": "hash-a", "beforeMoveCount": 0, "afterMoveCount": 0, "beforeLineCount": 0, "afterLineCount": 0, "beforeBalanceHash": "balance-a", "afterBalanceHash": "balance-a", "persistedQueryId": "query-ledger-a"},
+                    {"name": "tenant_b_db", "beforeHash": "hash-b", "afterHash": "hash-b", "beforeMoveCount": 0, "afterMoveCount": 0, "beforeLineCount": 0, "afterLineCount": 0, "beforeBalanceHash": "balance-b", "afterBalanceHash": "balance-b", "persistedQueryId": "query-ledger-b"},
                 ],
             },
             "audit-and-receipts.json": {
@@ -207,6 +207,33 @@ class AccountingFoundationOwnedLiveTests(unittest.TestCase):
     def test_story_one_capture_accepts_persisted_simultaneous_evidence(self) -> None:
         result = self._validate_story_one_capture(self._story_one_capture())
         self.assertEqual(result.returncode, 0, msg=result.stdout + result.stderr)
+
+    def test_story_one_capture_helper_emits_full_ledger_schema(self) -> None:
+        source = (ROOT / "scripts/fixtures/accounting_foundation_capture_story_one.py").read_text()
+        for field in (
+            "beforeMoveCount",
+            "afterMoveCount",
+            "beforeLineCount",
+            "afterLineCount",
+            "beforeBalanceHash",
+            "afterBalanceHash",
+        ):
+            self.assertIn(field, source)
+
+    def test_story_one_capture_rejects_legacy_aggregate_ledger_schema(self) -> None:
+        artifacts = self._story_one_capture()
+        for item in artifacts["no-ledger-effect.json"]["databases"]:
+            item.pop("beforeMoveCount", None)
+            item.pop("afterMoveCount", None)
+            item.pop("beforeLineCount", None)
+            item.pop("afterLineCount", None)
+            item.pop("beforeBalanceHash", None)
+            item.pop("afterBalanceHash", None)
+            item["beforeCount"] = 0
+            item["afterCount"] = 0
+        result = self._validate_story_one_capture(artifacts)
+        self.assertNotEqual(result.returncode, 0, msg=result.stdout + result.stderr)
+        self.assertIn("ledger proof incomplete", result.stdout + result.stderr)
 
     def test_story_one_capture_rejects_response_only_evidence(self) -> None:
         artifacts = self._story_one_capture()
