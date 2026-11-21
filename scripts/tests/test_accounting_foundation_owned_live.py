@@ -149,8 +149,8 @@ class AccountingFoundationOwnedLiveTests(unittest.TestCase):
                 "persistedStateVerified": True,
                 "captureSource": "persisted-queries",
                 "databases": [
-                    {"name": "tenant_a_db", "tenantId": "tenant-a", "companyIds": ["company-a1", "company-a2"], "persistedQueryId": "query-db-a"},
-                    {"name": "tenant_b_db", "tenantId": "tenant-b", "companyIds": ["company-b1"], "persistedQueryId": "query-db-b"},
+                    {"name": "tenant_a_db", "actualDatabase": "af_owned_tenant_a", "tenantId": "tenant-a", "companyIds": ["company-a1", "company-a2"], "persistedQueryId": "query-db-a"},
+                    {"name": "tenant_b_db", "actualDatabase": "af_owned_tenant_b", "tenantId": "tenant-b", "companyIds": ["company-b1"], "persistedQueryId": "query-db-b"},
                 ],
                 "account": {"id": "11111111-1111-4111-8111-111111111111", "database": "tenant_a_db", "companyId": "company-a1", "persistedQueryId": "query-account"},
                 "draft": {"id": "22222222-2222-4222-8222-222222222222", "state": "draft", "database": "tenant_a_db", "companyId": "company-a1", "persistedQueryId": "query-draft"},
@@ -173,8 +173,8 @@ class AccountingFoundationOwnedLiveTests(unittest.TestCase):
                 "actionPostInvocations": 0,
                 "postingFeatureEnabled": False,
                 "databases": [
-                    {"name": "tenant_a_db", "beforeHash": "hash-a", "afterHash": "hash-a", "beforeCount": 0, "afterCount": 0, "persistedQueryId": "query-ledger-a"},
-                    {"name": "tenant_b_db", "beforeHash": "hash-b", "afterHash": "hash-b", "beforeCount": 0, "afterCount": 0, "persistedQueryId": "query-ledger-b"},
+                    {"name": "tenant_a_db", "actualDatabase": "af_owned_tenant_a", "beforeHash": "a" * 64, "afterHash": "a" * 64, "beforeMoveCount": 0, "afterMoveCount": 0, "beforeLineCount": 0, "afterLineCount": 0, "beforeBalanceHash": "c" * 64, "afterBalanceHash": "c" * 64, "persistedQueryId": "odoo:af_owned_tenant_a:ledger-count-hash"},
+                    {"name": "tenant_b_db", "actualDatabase": "af_owned_tenant_b", "beforeHash": "b" * 64, "afterHash": "b" * 64, "beforeMoveCount": 0, "afterMoveCount": 0, "beforeLineCount": 0, "afterLineCount": 0, "beforeBalanceHash": "d" * 64, "afterBalanceHash": "d" * 64, "persistedQueryId": "odoo:af_owned_tenant_b:ledger-count-hash"},
                 ],
             },
             "audit-and-receipts.json": {
@@ -207,6 +207,87 @@ class AccountingFoundationOwnedLiveTests(unittest.TestCase):
     def test_story_one_capture_accepts_persisted_simultaneous_evidence(self) -> None:
         result = self._validate_story_one_capture(self._story_one_capture())
         self.assertEqual(result.returncode, 0, msg=result.stdout + result.stderr)
+
+    def test_story_one_capture_helper_emits_full_ledger_schema(self) -> None:
+        source = (ROOT / "scripts/fixtures/accounting_foundation_capture_story_one.py").read_text()
+        for field in (
+            "beforeMoveCount",
+            "afterMoveCount",
+            "beforeLineCount",
+            "afterLineCount",
+            "beforeBalanceHash",
+            "afterBalanceHash",
+        ):
+            self.assertIn(field, source)
+
+    def test_story_one_capture_rejects_legacy_aggregate_ledger_schema(self) -> None:
+        artifacts = self._story_one_capture()
+        for item in artifacts["no-ledger-effect.json"]["databases"]:
+            item.pop("beforeMoveCount", None)
+            item.pop("afterMoveCount", None)
+            item.pop("beforeLineCount", None)
+            item.pop("afterLineCount", None)
+            item.pop("beforeBalanceHash", None)
+            item.pop("afterBalanceHash", None)
+            item["beforeCount"] = 0
+            item["afterCount"] = 0
+        result = self._validate_story_one_capture(artifacts)
+        self.assertNotEqual(result.returncode, 0, msg=result.stdout + result.stderr)
+        self.assertIn("ledger proof incomplete", result.stdout + result.stderr)
+
+    def test_story_one_capture_rejects_relabelled_duplicate_ledger_database(self) -> None:
+        artifacts = self._story_one_capture()
+        duplicate = dict(artifacts["no-ledger-effect.json"]["databases"][0])
+        duplicate["name"] = "tenant_b_db"
+        artifacts["no-ledger-effect.json"]["databases"][1] = duplicate
+        result = self._validate_story_one_capture(artifacts)
+        self.assertNotEqual(result.returncode, 0, msg=result.stdout + result.stderr)
+
+    def test_story_one_capture_rejects_invalid_ledger_counts(self) -> None:
+        for prefix, value in (
+            ("MoveCount", None),
+            ("MoveCount", True),
+            ("LineCount", -1),
+            ("LineCount", "0"),
+        ):
+            with self.subTest(prefix=prefix, value=value):
+                artifacts = self._story_one_capture()
+                item = artifacts["no-ledger-effect.json"]["databases"][0]
+                item[f"before{prefix}"] = value
+                item[f"after{prefix}"] = value
+                result = self._validate_story_one_capture(artifacts)
+                self.assertNotEqual(result.returncode, 0, msg=result.stdout + result.stderr)
+                self.assertIn("ledger count invalid", result.stdout + result.stderr)
+
+    def test_story_one_capture_rejects_invalid_ledger_hashes(self) -> None:
+        for prefix, value in (
+            ("Hash", None),
+            ("Hash", ""),
+            ("BalanceHash", "not-a-sha256"),
+            ("BalanceHash", "z" * 64),
+        ):
+            with self.subTest(prefix=prefix, value=value):
+                artifacts = self._story_one_capture()
+                item = artifacts["no-ledger-effect.json"]["databases"][0]
+                item[f"before{prefix}"] = value
+                item[f"after{prefix}"] = value
+                result = self._validate_story_one_capture(artifacts)
+                self.assertNotEqual(result.returncode, 0, msg=result.stdout + result.stderr)
+                self.assertIn("ledger hash invalid", result.stdout + result.stderr)
+
+    def test_story_one_capture_rejects_each_changed_ledger_pair(self) -> None:
+        for field, value in (
+            ("afterHash", "e" * 64),
+            ("afterMoveCount", 1),
+            ("afterLineCount", 1),
+            ("afterBalanceHash", "e" * 64),
+        ):
+            with self.subTest(field=field):
+                artifacts = self._story_one_capture()
+                artifacts["no-ledger-effect.json"]["databases"][0][field] = value
+                result = self._validate_story_one_capture(artifacts)
+                self.assertNotEqual(result.returncode, 0, msg=result.stdout + result.stderr)
+                self.assertIn("changed", result.stdout + result.stderr)
 
     def test_story_one_capture_rejects_response_only_evidence(self) -> None:
         artifacts = self._story_one_capture()
@@ -709,14 +790,17 @@ class AccountingFoundationOwnedLiveTests(unittest.TestCase):
             ledger_output = root / "no-ledger-effect.json"
             journey.write_text(json.dumps(story), encoding="utf-8")
             result = subprocess.run(
-                ["python3", "-c", code, str(journey), str(story_output), str(ledger_output), "tenant_a_db", "tenant_b_db"],
+                ["python3", "-c", code, str(journey), str(story_output), str(ledger_output), "af_actual_tenant_a", "af_actual_tenant_b"],
                 cwd=ROOT, text=True, capture_output=True,
             )
             self.assertEqual(result.returncode, 0, msg=result.stdout + result.stderr)
             captured = json.loads(ledger_output.read_text(encoding="utf-8"))
             self.assertEqual(
-                [(item["name"], item["beforeHash"], item["afterHash"]) for item in captured["databases"]],
-                [("tenant_a_db", "hash-a", "hash-a"), ("tenant_b_db", "hash-b", "hash-b")],
+                [(item["name"], item["actualDatabase"], item["persistedQueryId"], item["beforeHash"], item["afterHash"]) for item in captured["databases"]],
+                [
+                    ("tenant_a_db", "af_actual_tenant_a", "odoo:af_actual_tenant_a:ledger-count-hash", "hash-a", "hash-a"),
+                    ("tenant_b_db", "af_actual_tenant_b", "odoo:af_actual_tenant_b:ledger-count-hash", "hash-b", "hash-b"),
+                ],
             )
 
     def test_runner_has_valid_bash_syntax(self) -> None:

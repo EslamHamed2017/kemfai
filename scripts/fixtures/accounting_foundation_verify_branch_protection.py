@@ -42,22 +42,31 @@ def main() -> int:
     if re.fullmatch(r"[A-Za-z0-9._/-]+", branch) is None or ".." in branch:
         return fail("target branch is absent or malformed")
     endpoint = f"https://api.github.com/repos/{repository}/branches/{quote(branch, safe='')}"
+    command = [
+        "curl",
+        "--disable",
+        "--fail",
+        "--silent",
+        "--show-error",
+        "--proto",
+        "=https",
+        "--tlsv1.2",
+        "-H",
+        "Accept: application/vnd.github+json",
+        "-H",
+        "User-Agent: kemfai-branch-protection-verifier",
+    ]
+    curl_input = None
+    token = os.environ.get("GITHUB_TOKEN", "")
+    if token:
+        if re.fullmatch(r"[A-Za-z0-9_.-]+", token) is None:
+            return fail("GITHUB_TOKEN contains unsupported characters")
+        command.extend(["--config", "-"])
+        curl_input = f'header = "Authorization: Bearer {token}"\n'
+    command.append(endpoint)
     result = subprocess.run(
-        [
-            "curl",
-            "--disable",
-            "--fail",
-            "--silent",
-            "--show-error",
-            "--proto",
-            "=https",
-            "--tlsv1.2",
-            "-H",
-            "Accept: application/vnd.github+json",
-            "-H",
-            "User-Agent: kemfai-branch-protection-verifier",
-            endpoint,
-        ],
+        command,
+        input=curl_input,
         text=True,
         capture_output=True,
         check=False,

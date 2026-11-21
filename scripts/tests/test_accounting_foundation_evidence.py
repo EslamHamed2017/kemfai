@@ -140,12 +140,14 @@ def _baseline_artifacts() -> dict[str, dict]:
             "databases": [
                 {
                     "name": "tenant_a_db",
+                    "actualDatabase": "af_owned_tenant_a",
                     "tenantId": "tenant-a",
                     "companyIds": ["company-a1", "company-a2"],
                     "persistedQueryId": "query-db-a",
                 },
                 {
                     "name": "tenant_b_db",
+                    "actualDatabase": "af_owned_tenant_b",
                     "tenantId": "tenant-b",
                     "companyIds": ["company-b1"],
                     "persistedQueryId": "query-db-b",
@@ -347,19 +349,23 @@ def _baseline_artifacts() -> dict[str, dict]:
             "databases": [
                 {
                     "name": "tenant_a_db",
-                    "beforeHash": "hash-a",
-                    "afterHash": "hash-a",
+                    "actualDatabase": "af_owned_tenant_a",
+                    "persistedQueryId": "odoo:af_owned_tenant_a:ledger-count-hash",
+                    "beforeHash": "a" * 64,
+                    "afterHash": "a" * 64,
                     "beforeMoveCount": 0, "afterMoveCount": 0,
                     "beforeLineCount": 0, "afterLineCount": 0,
-                    "beforeBalanceHash": "balance-a", "afterBalanceHash": "balance-a",
+                    "beforeBalanceHash": "c" * 64, "afterBalanceHash": "c" * 64,
                 },
                 {
                     "name": "tenant_b_db",
-                    "beforeHash": "hash-b",
-                    "afterHash": "hash-b",
+                    "actualDatabase": "af_owned_tenant_b",
+                    "persistedQueryId": "odoo:af_owned_tenant_b:ledger-count-hash",
+                    "beforeHash": "b" * 64,
+                    "afterHash": "b" * 64,
                     "beforeMoveCount": 0, "afterMoveCount": 0,
                     "beforeLineCount": 0, "afterLineCount": 0,
-                    "beforeBalanceHash": "balance-b", "afterBalanceHash": "balance-b",
+                    "beforeBalanceHash": "d" * 64, "afterBalanceHash": "d" * 64,
                 },
             ],
         },
@@ -738,6 +744,62 @@ class AccountingFoundationEvidenceTests(unittest.TestCase):
                 payload = copy.deepcopy(self.artifacts["story-2-state.json"])
                 payload["noLedger"][field] = value
                 self._rewrite_payload("story-2-state.json", payload)
+                self._assert_invalid()
+
+    def test_no_ledger_requires_each_tenant_database_once(self) -> None:
+        payload = copy.deepcopy(self.artifacts["no-ledger-effect.json"])
+        payload["databases"][1] = copy.deepcopy(payload["databases"][0])
+        payload["databases"][1]["name"] = "tenant_b_db"
+        self._rewrite_payload("no-ledger-effect.json", payload)
+        self._assert_invalid()
+
+    def test_no_ledger_rejects_invalid_count_facts(self) -> None:
+        for prefix, value in (
+            ("MoveCount", None),
+            ("MoveCount", True),
+            ("LineCount", -1),
+            ("LineCount", "0"),
+        ):
+            with self.subTest(prefix=prefix, value=value):
+                self.artifacts = _baseline_artifacts()
+                self._write_all()
+                payload = copy.deepcopy(self.artifacts["no-ledger-effect.json"])
+                item = payload["databases"][0]
+                item[f"before{prefix}"] = value
+                item[f"after{prefix}"] = value
+                self._rewrite_payload("no-ledger-effect.json", payload)
+                self._assert_invalid()
+
+    def test_no_ledger_rejects_invalid_hash_facts(self) -> None:
+        for prefix, value in (
+            ("Hash", None),
+            ("Hash", ""),
+            ("BalanceHash", "not-a-sha256"),
+            ("BalanceHash", "z" * 64),
+        ):
+            with self.subTest(prefix=prefix, value=value):
+                self.artifacts = _baseline_artifacts()
+                self._write_all()
+                payload = copy.deepcopy(self.artifacts["no-ledger-effect.json"])
+                item = payload["databases"][0]
+                item[f"before{prefix}"] = value
+                item[f"after{prefix}"] = value
+                self._rewrite_payload("no-ledger-effect.json", payload)
+                self._assert_invalid()
+
+    def test_no_ledger_rejects_each_changed_pair(self) -> None:
+        for field, value in (
+            ("afterHash", "e" * 64),
+            ("afterMoveCount", 1),
+            ("afterLineCount", 1),
+            ("afterBalanceHash", "e" * 64),
+        ):
+            with self.subTest(field=field):
+                self.artifacts = _baseline_artifacts()
+                self._write_all()
+                payload = copy.deepcopy(self.artifacts["no-ledger-effect.json"])
+                payload["databases"][0][field] = value
+                self._rewrite_payload("no-ledger-effect.json", payload)
                 self._assert_invalid()
 
     def test_story_one_response_only_capture_fails(self) -> None:

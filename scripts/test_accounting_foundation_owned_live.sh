@@ -48,6 +48,12 @@ def load(name):
 def nonempty(value):
     return isinstance(value, str) and bool(value.strip())
 
+def valid_count(value):
+    return isinstance(value, int) and not isinstance(value, bool) and value >= 0
+
+def valid_sha256(value):
+    return isinstance(value, str) and len(value) == 64 and all(char in "0123456789abcdef" for char in value)
+
 def query_id(value, label):
     require(nonempty(value), f"{label} persisted query identity is required")
 
@@ -121,8 +127,21 @@ require(ledger.get("postingFeatureEnabled") is False, "posting capability must r
 ledger_databases = ledger.get("databases")
 require(isinstance(ledger_databases, list) and len(ledger_databases) == 2, "both tenant ledger proofs are required")
 require({item.get("name") for item in ledger_databases if isinstance(item, dict)} == set(database_names), "ledger proof database set differs from Story 1 topology")
+story_actual = {item.get("name"): item.get("actualDatabase") for item in databases if isinstance(item, dict)}
+ledger_actual = {item.get("name"): item.get("actualDatabase") for item in ledger_databases if isinstance(item, dict)}
+require(all(nonempty(value) for value in story_actual.values()) and story_actual == ledger_actual, "ledger proof actual databases differ from Story 1 topology")
+require(len(set(ledger_actual.values())) == 2, "ledger proofs must come from two distinct actual databases")
 for item in ledger_databases:
-    require(item.get("beforeHash") == item.get("afterHash") and item.get("beforeCount") == item.get("afterCount"), f"ledger changed in {item.get('name')}")
+    require(item.get("persistedQueryId") == f"odoo:{item.get('actualDatabase')}:ledger-count-hash", f"ledger query identity mismatch in {item.get('name')}")
+    required_ledger_fields = ("beforeMoveCount", "afterMoveCount", "beforeLineCount", "afterLineCount", "beforeBalanceHash", "afterBalanceHash")
+    require(all(field in item for field in required_ledger_fields), f"ledger proof incomplete in {item.get('name')}")
+    require(valid_sha256(item.get("beforeHash")) and valid_sha256(item.get("afterHash")), f"ledger hash invalid in {item.get('name')}")
+    for prefix in ("MoveCount", "LineCount"):
+        require(valid_count(item.get(f"before{prefix}")) and valid_count(item.get(f"after{prefix}")), f"ledger count invalid in {item.get('name')}")
+    require(valid_sha256(item.get("beforeBalanceHash")) and valid_sha256(item.get("afterBalanceHash")), f"ledger hash invalid in {item.get('name')}")
+    require(item.get("beforeHash") == item.get("afterHash"), f"ledger hash changed in {item.get('name')}")
+    for prefix in ("MoveCount", "LineCount", "BalanceHash"):
+        require(item.get(f"before{prefix}") == item.get(f"after{prefix}"), f"ledger {prefix} changed in {item.get('name')}")
     query_id(item.get("persistedQueryId"), f"ledger {item.get('name')}")
 
 require(audit.get("status") == "passed", "audit/receipt evidence did not pass")
@@ -931,11 +950,13 @@ ledger = {
     "actionPostInvocations": probe["actionPostInvocations"],
     "postingMethodProbes": probe,
     "databases": [
-        {"name": name, "beforeHash": old["hash"], "afterHash": new["hash"],
+        {"name": logical_name, "actualDatabase": actual_database,
+         "persistedQueryId": f"odoo:{actual_database}:ledger-count-hash",
+         "beforeHash": old["hash"], "afterHash": new["hash"],
          "beforeMoveCount": old["moves"], "afterMoveCount": new["moves"],
          "beforeLineCount": old["lines"], "afterLineCount": new["lines"],
          "beforeBalanceHash": old["balanceHash"], "afterBalanceHash": new["balanceHash"]}
-        for name, old, new in zip(database_names, before, after)
+        for logical_name, actual_database, old, new in zip(("tenant_a_db", "tenant_b_db"), database_names, before, after)
     ],
 }
 ledger_path.write_text(json.dumps(ledger, sort_keys=True) + "\n", encoding="utf-8")

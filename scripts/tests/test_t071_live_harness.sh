@@ -5,11 +5,15 @@ repo_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 runner="$repo_dir/scripts/test_t071_live.sh"
 stage="$(mktemp)"
 probe_pid=""
+delayed_probe_pid=""
+registration_failure_pid_file=""
 private_home=""
 fixture_dir=""
 relay_dir=""
 offline_cleanup() {
   [ -z "$probe_pid" ] || kill -KILL -- "-$probe_pid" 2>/dev/null || true
+  [ -z "$delayed_probe_pid" ] || kill -KILL -- "-$delayed_probe_pid" 2>/dev/null || kill -KILL -- "$delayed_probe_pid" 2>/dev/null || true
+  [ -z "$registration_failure_pid_file" ] || rm -f -- "$registration_failure_pid_file"
   [ -z "$private_home" ] || rmdir "$private_home" 2>/dev/null || true
   [ -z "$fixture_dir" ] || rm -rf -- "$fixture_dir"
   [ -z "$relay_dir" ] || rm -rf -- "$relay_dir"
@@ -112,6 +116,40 @@ if pid_owned_by_this_run "$probe_pid" sleep; then fail "changed start time was a
 owned_pid_starttime["$probe_pid"]="$saved_start"
 terminate_owned_process_group "$probe_pid" sleep || fail "owned process session did not terminate"
 [ -z "$(session_survivors "${owned_pid_session[$probe_pid]}")" ] || fail "owned process-session survivor remained"
+
+# Registration must tolerate the bounded fork-to-exec race: the background PID exists
+# before it becomes the leader of the new setsid session.
+bash -c 'sleep .2; exec setsid sleep 30' &
+delayed_probe_pid=$!
+register_owned_process "$delayed_probe_pid" sleep
+pid_owned_by_this_run "$delayed_probe_pid" sleep || fail "delayed exec process identity was not recognized"
+terminate_owned_process_group "$delayed_probe_pid" sleep || fail "delayed exec process session did not terminate"
+[ -z "$(session_survivors "${owned_pid_session[$delayed_probe_pid]}")" ] || fail "delayed exec process-session survivor remained"
+delayed_probe_pid=""
+
+# A marker-validation failure after setsid must still clean the registered session.
+registration_failure_pid_file="$(mktemp)"
+if (
+  declare -A owned_pid_starttime=() owned_pid_session=()
+  failed_pid=""
+  failed_cleanup() {
+    local status=$?
+    trap - EXIT
+    [ -z "$failed_pid" ] || terminate_owned_process_group "$failed_pid" wrong-marker
+    exit "$status"
+  }
+  trap failed_cleanup EXIT
+  setsid sleep 30 &
+  failed_pid=$!
+  printf '%s\n' "$failed_pid" >"$registration_failure_pid_file"
+  register_owned_process "$failed_pid" wrong-marker
+); then
+  fail "wrong process marker registration unexpectedly succeeded"
+fi
+read -r failed_pid <"$registration_failure_pid_file"
+for _ in $(seq 1 25); do kill -0 "$failed_pid" 2>/dev/null || break; sleep .02; done
+if kill -0 "$failed_pid" 2>/dev/null; then fail "failed registration leaked its owned session"; fi
+rm -f -- "$registration_failure_pid_file"; registration_failure_pid_file=""
 
 # Resolve under the caller's installed cache, then prove that only the validated cache
 # root is sufficient with an otherwise empty environment and private HOME.

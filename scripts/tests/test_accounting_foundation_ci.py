@@ -327,6 +327,7 @@ class AccountingFoundationCiStructureTests(unittest.TestCase):
             "accounting_foundation_verify_branch_protection.py",
         )
         self.assertNotIn("continue-on-error", step)
+        self.assertEqual(step.get("env", {}).get("GITHUB_TOKEN"), "${{ github.token }}")
         self.assertTrue(
             BRANCH_PROTECTION_VALIDATOR.is_file(),
             f"missing intended T017 validator: {BRANCH_PROTECTION_VALIDATOR}",
@@ -335,7 +336,8 @@ class AccountingFoundationCiStructureTests(unittest.TestCase):
         self.assertIn("accounting-foundation-owned-live", source)
         self.assertRegex(source, r"\bcurl\b")
         self.assertIn("https://api.github.com/", source)
-        self.assertNotRegex(source, r"(?i)authorization|GH_TOKEN|GITHUB_TOKEN")
+        self.assertIn("GITHUB_TOKEN", source)
+        self.assertIn("Authorization: Bearer", source)
         mutation_pattern = (
             r"(?i)(?:--method|-X)[\"',\s]*(?:POST|PUT|PATCH|DELETE)\b|"
             r"\bgh\s+api\b[^\n]*(?:--input|-f|--field|--raw-field)\b|"
@@ -366,15 +368,17 @@ class AccountingFoundationCiStructureTests(unittest.TestCase):
 
 
     def _run_branch_protection_validator(
-        self, payload: dict[str, Any], event: str = "pull_request"
-    ) -> tuple[subprocess.CompletedProcess[str], str]:
+        self, payload: dict[str, Any], event: str = "pull_request", token: str = ""
+    ) -> tuple[subprocess.CompletedProcess[str], str, str]:
         with tempfile.TemporaryDirectory(prefix="kemfai-af-gh-") as directory:
             fake_curl = Path(directory) / "curl"
             args_log = Path(directory) / "args.log"
+            stdin_log = Path(directory) / "stdin.log"
             fake_curl.write_text(
                 "#!/usr/bin/env bash\n"
                 "printf '%s\\n' \"$GH_PAYLOAD\"\n"
-                "printf '%s\\n' \"$*\" >\"$GH_ARGS_LOG\"\n",
+                "printf '%s\\n' \"$*\" >\"$GH_ARGS_LOG\"\n"
+                "cat >\"$GH_STDIN_LOG\"\n",
                 encoding="utf-8",
             )
             fake_curl.chmod(0o755)
@@ -386,6 +390,8 @@ class AccountingFoundationCiStructureTests(unittest.TestCase):
                 "GITHUB_BASE_REF": "main",
                 "GH_PAYLOAD": json.dumps(payload),
                 "GH_ARGS_LOG": str(args_log),
+                "GH_STDIN_LOG": str(stdin_log),
+                "GITHUB_TOKEN": token,
             }
             result = subprocess.run(
                 [sys.executable, str(BRANCH_PROTECTION_VALIDATOR)],
@@ -396,10 +402,11 @@ class AccountingFoundationCiStructureTests(unittest.TestCase):
                 check=False,
             )
             arguments = args_log.read_text(encoding="utf-8") if args_log.exists() else ""
-            return result, arguments
+            stdin = stdin_log.read_text(encoding="utf-8") if stdin_log.exists() else ""
+            return result, arguments, stdin
 
     def test_branch_protection_validator_accepts_only_the_exact_required_check(self) -> None:
-        result, arguments = self._run_branch_protection_validator(
+        result, arguments, stdin = self._run_branch_protection_validator(
             {
                 "protected": True,
                 "protection": {
@@ -417,9 +424,27 @@ class AccountingFoundationCiStructureTests(unittest.TestCase):
             "--disable --fail --silent --show-error --proto =https --tlsv1.2 -H Accept: application/vnd.github+json -H User-Agent: kemfai-branch-protection-verifier https://api.github.com/repos/owner/repository/branches/main",
         )
         self.assertNotRegex(arguments, r"(?i)(?:-X|--request|authorization|token|(?:^|\s)-L(?:\s|$)|--location)")
+        self.assertEqual(stdin, "")
+
+    def test_branch_protection_validator_authenticates_without_exposing_token_in_argv(self) -> None:
+        result, arguments, stdin = self._run_branch_protection_validator(
+            {
+                "protected": True,
+                "protection": {
+                    "enabled": True,
+                    "required_status_checks": {"contexts": [JOB_NAME]},
+                },
+            },
+            token="github_pat-test.token",
+        )
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("--config -", arguments)
+        self.assertNotIn("github_pat-test.token", arguments)
+        self.assertNotRegex(arguments, r"(?i)authorization|bearer")
+        self.assertEqual(stdin, 'header = "Authorization: Bearer github_pat-test.token"\n')
 
     def test_branch_protection_validator_fails_closed_when_check_is_missing(self) -> None:
-        result, _ = self._run_branch_protection_validator(
+        result, _, _ = self._run_branch_protection_validator(
             {
                 "protected": True,
                 "protection": {
@@ -432,16 +457,17 @@ class AccountingFoundationCiStructureTests(unittest.TestCase):
         self.assertIn("FAIL", result.stderr)
 
     def test_branch_protection_validator_fails_closed_when_branch_is_unprotected(self) -> None:
-        result, _ = self._run_branch_protection_validator(
+        result, _, _ = self._run_branch_protection_validator(
             {"protected": False, "protection": {"enabled": False}}
         )
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("FAIL", result.stderr)
 
     def test_branch_protection_validator_skips_lookup_outside_merge_events(self) -> None:
-        result, arguments = self._run_branch_protection_validator({}, event="push")
+        result, arguments, stdin = self._run_branch_protection_validator({}, event="push")
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertEqual(arguments, "")
+        self.assertEqual(stdin, "")
 
 
 if __name__ == "__main__":
