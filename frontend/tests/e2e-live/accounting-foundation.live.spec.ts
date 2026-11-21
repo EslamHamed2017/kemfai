@@ -158,8 +158,6 @@ test.describe.serial('Accounting Foundation Story 1 owned production journey', (
 
     expect(await odoo('account.move', 'search_count', [[]])).toBe(movesBefore);
     expect(await odoo('account.move.line', 'search_count', [[]])).toBe(linesBefore);
-    journey.ledgerAfter = { tenantA: await ledgerSnapshot(tenantADb), tenantB: await ledgerSnapshot(tenantBDb) };
-    expect(journey.ledgerAfter).toEqual(ledgerBefore);
     expect(
       Number(
         await odoo('kemfai.account.audit.event', 'search_count', [
@@ -180,6 +178,8 @@ test.describe.serial('Accounting Foundation Story 1 owned production journey', (
     const tokenB = required('KEMFAI_AF_USER_B_TOKEN');
     const companyA = required('KEMFAI_AF_COMPANY_A1_ID');
     const companyB = required('KEMFAI_AF_COMPANY_B1_ID');
+    const tenantADb = required('KEMFAI_AF_TENANT_A_DB');
+    const tenantBDb = required('KEMFAI_AF_TENANT_B_DB');
     const body = {
       code: `T030.RACE.${randomUUID().slice(0, 8)}`,
       name: { en: 'Race account', ar: 'حساب سباق' },
@@ -256,6 +256,8 @@ test.describe.serial('Accounting Foundation Story 1 owned production journey', (
       validationAuditEventId: validation.body.auditEventId,
       errors: validationResult.errors,
     };
+    journey.ledgerAfter = { tenantA: await ledgerSnapshot(tenantADb), tenantB: await ledgerSnapshot(tenantBDb) };
+    expect(journey.ledgerAfter).toEqual(journey.ledgerBefore);
   });
 });
 

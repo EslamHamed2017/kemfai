@@ -204,6 +204,18 @@ class AccountingFoundationOwnedLiveTests(unittest.TestCase):
                 capture_output=True,
             )
 
+    def test_story_one_journey_captures_final_ledgers_after_all_mutations(self) -> None:
+        journey = (ROOT / "frontend/tests/e2e-live/accounting-foundation.live.spec.ts").read_text()
+        story_one = journey[journey.index("test.describe.serial('Accounting Foundation Story 1"):journey.index("type JourneyResource")]
+        final_snapshot = "journey.ledgerAfter = { tenantA: await ledgerSnapshot(tenantADb), tenantB: await ledgerSnapshot(tenantBDb) };"
+        self.assertEqual(story_one.count(final_snapshot), 1)
+        self.assertGreater(story_one.index(final_snapshot), story_one.index("validationResult.errors"))
+        helper = (ROOT / "scripts/fixtures/accounting_foundation_capture_story_one.py").read_text()
+        self.assertIn("'afterHash':x_after['hash']", helper)
+        self.assertIn("'afterMoveCount':x_after['moves']", helper)
+        self.assertIn("'afterLineCount':x_after['lines']", helper)
+        self.assertIn("'afterBalanceHash':x_after['balanceHash']", helper)
+
     def test_story_one_capture_emits_validator_complete_ledger_proof(self) -> None:
         helper = (ROOT / "scripts/fixtures/accounting_foundation_capture_story_one.py").read_text()
         for field in (
