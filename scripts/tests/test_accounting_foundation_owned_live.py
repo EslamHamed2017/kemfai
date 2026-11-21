@@ -173,8 +173,8 @@ class AccountingFoundationOwnedLiveTests(unittest.TestCase):
                 "actionPostInvocations": 0,
                 "postingFeatureEnabled": False,
                 "databases": [
-                    {"name": "tenant_a_db", "beforeHash": "hash-a", "afterHash": "hash-a", "beforeMoveCount": 0, "afterMoveCount": 0, "beforeLineCount": 0, "afterLineCount": 0, "beforeBalanceHash": "balance-a", "afterBalanceHash": "balance-a", "persistedQueryId": "query-ledger-a"},
-                    {"name": "tenant_b_db", "beforeHash": "hash-b", "afterHash": "hash-b", "beforeMoveCount": 0, "afterMoveCount": 0, "beforeLineCount": 0, "afterLineCount": 0, "beforeBalanceHash": "balance-b", "afterBalanceHash": "balance-b", "persistedQueryId": "query-ledger-b"},
+                    {"name": "tenant_a_db", "beforeHash": "a" * 64, "afterHash": "a" * 64, "beforeMoveCount": 0, "afterMoveCount": 0, "beforeLineCount": 0, "afterLineCount": 0, "beforeBalanceHash": "c" * 64, "afterBalanceHash": "c" * 64, "persistedQueryId": "query-ledger-a"},
+                    {"name": "tenant_b_db", "beforeHash": "b" * 64, "afterHash": "b" * 64, "beforeMoveCount": 0, "afterMoveCount": 0, "beforeLineCount": 0, "afterLineCount": 0, "beforeBalanceHash": "d" * 64, "afterBalanceHash": "d" * 64, "persistedQueryId": "query-ledger-b"},
                 ],
             },
             "audit-and-receipts.json": {
@@ -234,6 +234,52 @@ class AccountingFoundationOwnedLiveTests(unittest.TestCase):
         result = self._validate_story_one_capture(artifacts)
         self.assertNotEqual(result.returncode, 0, msg=result.stdout + result.stderr)
         self.assertIn("ledger proof incomplete", result.stdout + result.stderr)
+
+    def test_story_one_capture_rejects_invalid_ledger_counts(self) -> None:
+        for prefix, value in (
+            ("MoveCount", None),
+            ("MoveCount", True),
+            ("LineCount", -1),
+            ("LineCount", "0"),
+        ):
+            with self.subTest(prefix=prefix, value=value):
+                artifacts = self._story_one_capture()
+                item = artifacts["no-ledger-effect.json"]["databases"][0]
+                item[f"before{prefix}"] = value
+                item[f"after{prefix}"] = value
+                result = self._validate_story_one_capture(artifacts)
+                self.assertNotEqual(result.returncode, 0, msg=result.stdout + result.stderr)
+                self.assertIn("ledger count invalid", result.stdout + result.stderr)
+
+    def test_story_one_capture_rejects_invalid_ledger_hashes(self) -> None:
+        for prefix, value in (
+            ("Hash", None),
+            ("Hash", ""),
+            ("BalanceHash", "not-a-sha256"),
+            ("BalanceHash", "z" * 64),
+        ):
+            with self.subTest(prefix=prefix, value=value):
+                artifacts = self._story_one_capture()
+                item = artifacts["no-ledger-effect.json"]["databases"][0]
+                item[f"before{prefix}"] = value
+                item[f"after{prefix}"] = value
+                result = self._validate_story_one_capture(artifacts)
+                self.assertNotEqual(result.returncode, 0, msg=result.stdout + result.stderr)
+                self.assertIn("ledger hash invalid", result.stdout + result.stderr)
+
+    def test_story_one_capture_rejects_each_changed_ledger_pair(self) -> None:
+        for field, value in (
+            ("afterHash", "e" * 64),
+            ("afterMoveCount", 1),
+            ("afterLineCount", 1),
+            ("afterBalanceHash", "e" * 64),
+        ):
+            with self.subTest(field=field):
+                artifacts = self._story_one_capture()
+                artifacts["no-ledger-effect.json"]["databases"][0][field] = value
+                result = self._validate_story_one_capture(artifacts)
+                self.assertNotEqual(result.returncode, 0, msg=result.stdout + result.stderr)
+                self.assertIn("changed", result.stdout + result.stderr)
 
     def test_story_one_capture_rejects_response_only_evidence(self) -> None:
         artifacts = self._story_one_capture()

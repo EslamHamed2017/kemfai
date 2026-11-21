@@ -48,6 +48,12 @@ def load(name):
 def nonempty(value):
     return isinstance(value, str) and bool(value.strip())
 
+def valid_count(value):
+    return isinstance(value, int) and not isinstance(value, bool) and value >= 0
+
+def valid_sha256(value):
+    return isinstance(value, str) and len(value) == 64 and all(char in "0123456789abcdef" for char in value)
+
 def query_id(value, label):
     require(nonempty(value), f"{label} persisted query identity is required")
 
@@ -124,6 +130,10 @@ require({item.get("name") for item in ledger_databases if isinstance(item, dict)
 for item in ledger_databases:
     required_ledger_fields = ("beforeMoveCount", "afterMoveCount", "beforeLineCount", "afterLineCount", "beforeBalanceHash", "afterBalanceHash")
     require(all(field in item for field in required_ledger_fields), f"ledger proof incomplete in {item.get('name')}")
+    require(valid_sha256(item.get("beforeHash")) and valid_sha256(item.get("afterHash")), f"ledger hash invalid in {item.get('name')}")
+    for prefix in ("MoveCount", "LineCount"):
+        require(valid_count(item.get(f"before{prefix}")) and valid_count(item.get(f"after{prefix}")), f"ledger count invalid in {item.get('name')}")
+    require(valid_sha256(item.get("beforeBalanceHash")) and valid_sha256(item.get("afterBalanceHash")), f"ledger hash invalid in {item.get('name')}")
     require(item.get("beforeHash") == item.get("afterHash"), f"ledger hash changed in {item.get('name')}")
     for prefix in ("MoveCount", "LineCount", "BalanceHash"):
         require(item.get(f"before{prefix}") == item.get(f"after{prefix}"), f"ledger {prefix} changed in {item.get('name')}")

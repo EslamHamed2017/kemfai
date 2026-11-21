@@ -195,6 +195,14 @@ def nonempty(value: Any) -> bool:
     return isinstance(value, str) and bool(value.strip())
 
 
+def valid_count(value: Any) -> bool:
+    return isinstance(value, int) and not isinstance(value, bool) and value >= 0
+
+
+def valid_sha256(value: Any) -> bool:
+    return isinstance(value, str) and len(value) == 64 and all(char in "0123456789abcdef" for char in value)
+
+
 def require_query_id(value: Any, label: str) -> None:
     require(nonempty(value), f"{label} persisted query identity is required")
 
@@ -493,10 +501,14 @@ def validate_no_ledger(data: dict[str, Any]) -> None:
     databases = data.get("databases")
     require(isinstance(databases, list) and len(databases) == 2, "both database ledger proofs are required")
     for item in databases:
+        require(all(field in item for field in ("beforeMoveCount", "afterMoveCount", "beforeLineCount", "afterLineCount", "beforeBalanceHash", "afterBalanceHash")), f"ledger count/balance proof incomplete in {item.get('name')}")
+        require(valid_sha256(item.get("beforeHash")) and valid_sha256(item.get("afterHash")), f"ledger hash invalid in {item.get('name')}")
+        for prefix in ("MoveCount", "LineCount"):
+            require(valid_count(item.get(f"before{prefix}")) and valid_count(item.get(f"after{prefix}")), f"ledger count invalid in {item.get('name')}")
+        require(valid_sha256(item.get("beforeBalanceHash")) and valid_sha256(item.get("afterBalanceHash")), f"ledger hash invalid in {item.get('name')}")
         require(item.get("beforeHash") == item.get("afterHash"), f"ledger hash changed in {item.get('name')}")
         for prefix in ("MoveCount", "LineCount", "BalanceHash"):
             require(item.get(f"before{prefix}") == item.get(f"after{prefix}"), f"ledger {prefix} changed in {item.get('name')}")
-        require(all(field in item for field in ("beforeMoveCount", "afterMoveCount", "beforeLineCount", "afterLineCount", "beforeBalanceHash", "afterBalanceHash")), f"ledger count/balance proof incomplete in {item.get('name')}")
 
 
 def validate_audit(data: dict[str, Any]) -> None:
