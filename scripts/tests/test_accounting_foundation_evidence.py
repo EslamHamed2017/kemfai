@@ -347,19 +347,19 @@ def _baseline_artifacts() -> dict[str, dict]:
             "databases": [
                 {
                     "name": "tenant_a_db",
-                    "beforeHash": "hash-a",
-                    "afterHash": "hash-a",
+                    "beforeHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                    "afterHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
                     "beforeMoveCount": 0, "afterMoveCount": 0,
                     "beforeLineCount": 0, "afterLineCount": 0,
-                    "beforeBalanceHash": "balance-a", "afterBalanceHash": "balance-a",
+                    "beforeBalanceHash": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", "afterBalanceHash": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
                 },
                 {
                     "name": "tenant_b_db",
-                    "beforeHash": "hash-b",
-                    "afterHash": "hash-b",
+                    "beforeHash": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+                    "afterHash": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
                     "beforeMoveCount": 0, "afterMoveCount": 0,
                     "beforeLineCount": 0, "afterLineCount": 0,
-                    "beforeBalanceHash": "balance-b", "afterBalanceHash": "balance-b",
+                    "beforeBalanceHash": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd", "afterBalanceHash": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
                 },
             ],
         },
@@ -876,6 +876,23 @@ class AccountingFoundationEvidenceTests(unittest.TestCase):
         payload["databases"] = payload["databases"][:1]
         self._rewrite_payload("readiness.json", payload)
         self._assert_invalid()
+
+    def test_malformed_ledger_proof_fails_closed(self) -> None:
+        mutations = (
+            ("missing hashes", lambda item: (item.pop("beforeHash"), item.pop("afterHash"))),
+            ("null move counts", lambda item: (item.__setitem__("beforeMoveCount", None), item.__setitem__("afterMoveCount", None))),
+            ("string line counts", lambda item: (item.__setitem__("beforeLineCount", "0"), item.__setitem__("afterLineCount", "0"))),
+            ("negative move counts", lambda item: (item.__setitem__("beforeMoveCount", -1), item.__setitem__("afterMoveCount", -1))),
+            ("invalid balance hashes", lambda item: (item.__setitem__("beforeBalanceHash", "not-a-sha256"), item.__setitem__("afterBalanceHash", "not-a-sha256"))),
+        )
+        for label, mutate in mutations:
+            with self.subTest(label=label):
+                self.artifacts = _baseline_artifacts()
+                self._write_all()
+                payload = copy.deepcopy(self.artifacts["no-ledger-effect.json"])
+                mutate(payload["databases"][0])
+                self._rewrite_payload("no-ledger-effect.json", payload)
+                self._assert_invalid()
 
     def test_ledger_change_fails(self) -> None:
         payload = copy.deepcopy(self.artifacts["no-ledger-effect.json"])

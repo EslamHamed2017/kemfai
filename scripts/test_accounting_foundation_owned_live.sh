@@ -27,6 +27,7 @@ from pathlib import Path
 
 root = Path(sys.argv[1])
 UUID = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$", re.I)
+SHA256 = re.compile(r"^[0-9a-f]{64}$", re.I)
 
 def fail(message):
     raise SystemExit(f"FAIL: Story 1 evidence capture: {message}")
@@ -122,8 +123,12 @@ ledger_databases = ledger.get("databases")
 require(isinstance(ledger_databases, list) and len(ledger_databases) == 2, "both tenant ledger proofs are required")
 require({item.get("name") for item in ledger_databases if isinstance(item, dict)} == set(database_names), "ledger proof database set differs from Story 1 topology")
 for item in ledger_databases:
-    require(all(field in item for field in ("beforeMoveCount", "afterMoveCount", "beforeLineCount", "afterLineCount", "beforeBalanceHash", "afterBalanceHash")), f"ledger count/balance proof incomplete in {item.get('name')}")
-    require(item.get("beforeHash") == item.get("afterHash") and item.get("beforeMoveCount") == item.get("afterMoveCount") and item.get("beforeLineCount") == item.get("afterLineCount") and item.get("beforeBalanceHash") == item.get("afterBalanceHash"), f"ledger changed in {item.get('name')}")
+    require(isinstance(item, dict), "ledger proof must be an object")
+    for field in ("beforeHash", "afterHash", "beforeBalanceHash", "afterBalanceHash"):
+        require(isinstance(item.get(field), str) and SHA256.fullmatch(item[field]), f"ledger {field} must be a SHA-256 hash in {item.get('name')}")
+    for field in ("beforeMoveCount", "afterMoveCount", "beforeLineCount", "afterLineCount"):
+        require(type(item.get(field)) is int and item[field] >= 0, f"ledger {field} must be a non-negative integer in {item.get('name')}")
+    require(item["beforeHash"] == item["afterHash"] and item["beforeMoveCount"] == item["afterMoveCount"] and item["beforeLineCount"] == item["afterLineCount"] and item["beforeBalanceHash"] == item["afterBalanceHash"], f"ledger changed in {item.get('name')}")
     query_id(item.get("persistedQueryId"), f"ledger {item.get('name')}")
 
 require(audit.get("status") == "passed", "audit/receipt evidence did not pass")

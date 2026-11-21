@@ -173,8 +173,8 @@ class AccountingFoundationOwnedLiveTests(unittest.TestCase):
                 "actionPostInvocations": 0,
                 "postingFeatureEnabled": False,
                 "databases": [
-                    {"name": "tenant_a_db", "beforeHash": "hash-a", "afterHash": "hash-a", "beforeMoveCount": 0, "afterMoveCount": 0, "beforeLineCount": 0, "afterLineCount": 0, "beforeBalanceHash": "balance-a", "afterBalanceHash": "balance-a", "persistedQueryId": "query-ledger-a"},
-                    {"name": "tenant_b_db", "beforeHash": "hash-b", "afterHash": "hash-b", "beforeMoveCount": 0, "afterMoveCount": 0, "beforeLineCount": 0, "afterLineCount": 0, "beforeBalanceHash": "balance-b", "afterBalanceHash": "balance-b", "persistedQueryId": "query-ledger-b"},
+                    {"name": "tenant_a_db", "beforeHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "afterHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "beforeMoveCount": 0, "afterMoveCount": 0, "beforeLineCount": 0, "afterLineCount": 0, "beforeBalanceHash": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", "afterBalanceHash": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", "persistedQueryId": "query-ledger-a"},
+                    {"name": "tenant_b_db", "beforeHash": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc", "afterHash": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc", "beforeMoveCount": 0, "afterMoveCount": 0, "beforeLineCount": 0, "afterLineCount": 0, "beforeBalanceHash": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd", "afterBalanceHash": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd", "persistedQueryId": "query-ledger-b"},
                 ],
             },
             "audit-and-receipts.json": {
@@ -219,6 +219,22 @@ class AccountingFoundationOwnedLiveTests(unittest.TestCase):
     def test_story_one_capture_accepts_persisted_simultaneous_evidence(self) -> None:
         result = self._validate_story_one_capture(self._story_one_capture())
         self.assertEqual(result.returncode, 0, msg=result.stdout + result.stderr)
+
+    def test_story_one_capture_rejects_malformed_ledger_proof(self) -> None:
+        mutations = (
+            ("missing hashes", lambda item: (item.pop("beforeHash"), item.pop("afterHash"))),
+            ("null move counts", lambda item: (item.__setitem__("beforeMoveCount", None), item.__setitem__("afterMoveCount", None))),
+            ("string line counts", lambda item: (item.__setitem__("beforeLineCount", "0"), item.__setitem__("afterLineCount", "0"))),
+            ("negative move counts", lambda item: (item.__setitem__("beforeMoveCount", -1), item.__setitem__("afterMoveCount", -1))),
+            ("invalid balance hashes", lambda item: (item.__setitem__("beforeBalanceHash", "not-a-sha256"), item.__setitem__("afterBalanceHash", "not-a-sha256"))),
+        )
+        for label, mutate in mutations:
+            with self.subTest(label=label):
+                artifacts = self._story_one_capture()
+                mutate(artifacts["no-ledger-effect.json"]["databases"][0])
+                result = self._validate_story_one_capture(artifacts)
+                self.assertNotEqual(result.returncode, 0, msg=result.stdout + result.stderr)
+                self.assertIn("FAIL", (result.stdout + result.stderr).upper())
 
     def test_story_one_capture_rejects_response_only_evidence(self) -> None:
         artifacts = self._story_one_capture()
@@ -692,12 +708,12 @@ class AccountingFoundationOwnedLiveTests(unittest.TestCase):
                 "exactMetadata": [{"transactionCurrencyCode": "USD"}],
                 "configurationSnapshot": {"journal": {"version": 1}},
                 "ledgerBefore": {
-                    "tenantA": {"moves": 0, "lines": 0, "hash": "hash-a", "balanceHash": "balance-a"},
-                    "tenantB": {"moves": 0, "lines": 0, "hash": "hash-b", "balanceHash": "balance-b"},
+                    "tenantA": {"moves": 0, "lines": 0, "hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "balanceHash": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"},
+                    "tenantB": {"moves": 0, "lines": 0, "hash": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc", "balanceHash": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"},
                 },
                 "ledgerAfter": {
-                    "tenantA": {"moves": 0, "lines": 0, "hash": "hash-a", "balanceHash": "balance-a"},
-                    "tenantB": {"moves": 0, "lines": 0, "hash": "hash-b", "balanceHash": "balance-b"},
+                    "tenantA": {"moves": 0, "lines": 0, "hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "balanceHash": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"},
+                    "tenantB": {"moves": 0, "lines": 0, "hash": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc", "balanceHash": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"},
                 },
                 "raceLedgerBefore": [{"moves": 0}, {"moves": 0}],
                 "raceLedgerAfter": [{"moves": 0}, {"moves": 0}],
@@ -728,7 +744,7 @@ class AccountingFoundationOwnedLiveTests(unittest.TestCase):
             captured = json.loads(ledger_output.read_text(encoding="utf-8"))
             self.assertEqual(
                 [(item["name"], item["beforeHash"], item["afterHash"]) for item in captured["databases"]],
-                [("tenant_a_db", "hash-a", "hash-a"), ("tenant_b_db", "hash-b", "hash-b")],
+                [("tenant_a_db", "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"), ("tenant_b_db", "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc", "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc")],
             )
 
     def test_runner_has_valid_bash_syntax(self) -> None:

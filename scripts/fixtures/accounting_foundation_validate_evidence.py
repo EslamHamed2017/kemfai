@@ -57,6 +57,7 @@ REQUIRED_FILES = {
     "cleanup-receipt.json",
 }
 UUID_PATTERN = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$", re.IGNORECASE)
+SHA256_PATTERN = re.compile(r"^[0-9a-f]{64}$", re.IGNORECASE)
 FORBIDDEN_PATHS = {
     "/v1/accounting/drafts/{id}/post",
     "/v1/accounting/entries/{id}/reverse",
@@ -493,10 +494,14 @@ def validate_no_ledger(data: dict[str, Any]) -> None:
     databases = data.get("databases")
     require(isinstance(databases, list) and len(databases) == 2, "both database ledger proofs are required")
     for item in databases:
-        require(item.get("beforeHash") == item.get("afterHash"), f"ledger hash changed in {item.get('name')}")
+        require(isinstance(item, dict), "ledger proof must be an object")
+        for field in ("beforeHash", "afterHash", "beforeBalanceHash", "afterBalanceHash"):
+            require(isinstance(item.get(field), str) and SHA256_PATTERN.fullmatch(item[field]) is not None, f"ledger {field} must be a SHA-256 hash in {item.get('name')}")
+        for field in ("beforeMoveCount", "afterMoveCount", "beforeLineCount", "afterLineCount"):
+            require(type(item.get(field)) is int and item[field] >= 0, f"ledger {field} must be a non-negative integer in {item.get('name')}")
+        require(item["beforeHash"] == item["afterHash"], f"ledger hash changed in {item.get('name')}")
         for prefix in ("MoveCount", "LineCount", "BalanceHash"):
-            require(item.get(f"before{prefix}") == item.get(f"after{prefix}"), f"ledger {prefix} changed in {item.get('name')}")
-        require(all(field in item for field in ("beforeMoveCount", "afterMoveCount", "beforeLineCount", "afterLineCount", "beforeBalanceHash", "afterBalanceHash")), f"ledger count/balance proof incomplete in {item.get('name')}")
+            require(item[f"before{prefix}"] == item[f"after{prefix}"], f"ledger {prefix} changed in {item.get('name')}")
 
 
 def validate_audit(data: dict[str, Any]) -> None:
