@@ -790,14 +790,17 @@ class AccountingFoundationOwnedLiveTests(unittest.TestCase):
             ledger_output = root / "no-ledger-effect.json"
             journey.write_text(json.dumps(story), encoding="utf-8")
             result = subprocess.run(
-                ["python3", "-c", code, str(journey), str(story_output), str(ledger_output), "tenant_a_db", "tenant_b_db"],
+                ["python3", "-c", code, str(journey), str(story_output), str(ledger_output), "af_actual_tenant_a", "af_actual_tenant_b"],
                 cwd=ROOT, text=True, capture_output=True,
             )
             self.assertEqual(result.returncode, 0, msg=result.stdout + result.stderr)
             captured = json.loads(ledger_output.read_text(encoding="utf-8"))
             self.assertEqual(
-                [(item["name"], item["beforeHash"], item["afterHash"]) for item in captured["databases"]],
-                [("tenant_a_db", "hash-a", "hash-a"), ("tenant_b_db", "hash-b", "hash-b")],
+                [(item["name"], item["actualDatabase"], item["persistedQueryId"], item["beforeHash"], item["afterHash"]) for item in captured["databases"]],
+                [
+                    ("tenant_a_db", "af_actual_tenant_a", "odoo:af_actual_tenant_a:ledger-count-hash", "hash-a", "hash-a"),
+                    ("tenant_b_db", "af_actual_tenant_b", "odoo:af_actual_tenant_b:ledger-count-hash", "hash-b", "hash-b"),
+                ],
             )
 
     def test_runner_has_valid_bash_syntax(self) -> None:

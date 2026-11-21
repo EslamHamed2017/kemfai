@@ -950,11 +950,13 @@ ledger = {
     "actionPostInvocations": probe["actionPostInvocations"],
     "postingMethodProbes": probe,
     "databases": [
-        {"name": name, "beforeHash": old["hash"], "afterHash": new["hash"],
+        {"name": logical_name, "actualDatabase": actual_database,
+         "persistedQueryId": f"odoo:{actual_database}:ledger-count-hash",
+         "beforeHash": old["hash"], "afterHash": new["hash"],
          "beforeMoveCount": old["moves"], "afterMoveCount": new["moves"],
          "beforeLineCount": old["lines"], "afterLineCount": new["lines"],
          "beforeBalanceHash": old["balanceHash"], "afterBalanceHash": new["balanceHash"]}
-        for name, old, new in zip(database_names, before, after)
+        for logical_name, actual_database, old, new in zip(("tenant_a_db", "tenant_b_db"), database_names, before, after)
     ],
 }
 ledger_path.write_text(json.dumps(ledger, sort_keys=True) + "\n", encoding="utf-8")
