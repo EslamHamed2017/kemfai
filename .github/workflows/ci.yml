@@ -387,6 +387,8 @@ jobs:
           docker pull quay.io/keycloak/keycloak:26.0
           docker pull odoo:18.0
       - name: Verify accounting foundation branch protection
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
         run: python3 scripts/fixtures/accounting_foundation_verify_branch_protection.py
       - name: Discover and run Accounting Foundation contract suite
         working-directory: backend/api
