@@ -142,7 +142,7 @@ start_relay() {
   subnet="$(docker network inspect -f '{{(index .IPAM.Config 0).Subnet}}' "$network")"
   config="$private_dir/relay-${container}.json"; ready="$private_dir/relay-${container}.ready"
   printf '{"targetIp":"%s","subnet":"%s","targetPort":%s,"readyFile":"%s"}\n' "$ip" "$subnet" "$port" "$ready" >"$config"; chmod 600 "$config"
-  (export T071_RELAY_CONFIG="$config"; exec setsid python3 "$repo_dir/scripts/fixtures/t071_loopback_relay.py") >"$artifacts_dir/relay-${container}.log" 2>&1 &
+  (export T071_RELAY_CONFIG="$config"; exec python3 -I "$repo_dir/scripts/fixtures/t071_owned_session_exec.py" --hold-for-cleanup --keep-env T071_RELAY_CONFIG python3 "$repo_dir/scripts/fixtures/t071_loopback_relay.py") >"$artifacts_dir/relay-${container}.log" 2>&1 &
   pid=$!; relay_pids+=("$pid"); register_owned_process "$pid" t071_loopback_relay.py
   for _ in $(seq 1 100); do [ -s "$ready" ] && break; sleep .05; done
   [ -s "$ready" ] || fail "relay for $container failed"

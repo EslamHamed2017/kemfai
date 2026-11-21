@@ -37,6 +37,9 @@ grep -qF 'owned_pid_starttime' "$stage" || fail "generated lifecycle does not pi
 grep -qF 'owned_pid_session' "$stage" || fail "generated lifecycle does not pin process session"
 grep -qF 'register_owned_process "$api_pid"' "$stage" || fail "API process identity is not registered"
 grep -qF 'register_owned_process "$frontend_pid"' "$stage" || fail "frontend process identity is not registered"
+grep -qF 't071_owned_session_exec.py" --hold-for-cleanup --keep-env NODE_ENV,PORT,NEXT_PUBLIC_API_URL' "$stage" \
+  || fail "multi-process frontend is not retained by the authenticated cleanup supervisor"
+if grep -qF 'exec setsid npx next start' "$stage"; then fail "frontend retained an unsupervised npx session leader"; fi
 grep -qF 'register_owned_process "$proxy_pid"' "$stage" || fail "proxy process identity is not registered"
 grep -qF 'source "$repo_dir/scripts/fixtures/t071_process_lifecycle.sh"' "$stage" || fail "generated lifecycle does not load the tested process helper"
 grep -qF 'session_survivors' "$repo_dir/scripts/fixtures/t071_process_lifecycle.sh" || fail "process helper does not prove session extinction"
