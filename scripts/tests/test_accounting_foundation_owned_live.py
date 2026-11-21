@@ -173,8 +173,8 @@ class AccountingFoundationOwnedLiveTests(unittest.TestCase):
                 "actionPostInvocations": 0,
                 "postingFeatureEnabled": False,
                 "databases": [
-                    {"name": "tenant_a_db", "beforeHash": "hash-a", "afterHash": "hash-a", "beforeCount": 0, "afterCount": 0, "persistedQueryId": "query-ledger-a"},
-                    {"name": "tenant_b_db", "beforeHash": "hash-b", "afterHash": "hash-b", "beforeCount": 0, "afterCount": 0, "persistedQueryId": "query-ledger-b"},
+                    {"name": "tenant_a_db", "beforeHash": "hash-a", "afterHash": "hash-a", "beforeMoveCount": 0, "afterMoveCount": 0, "beforeLineCount": 0, "afterLineCount": 0, "beforeBalanceHash": "balance-a", "afterBalanceHash": "balance-a", "persistedQueryId": "query-ledger-a"},
+                    {"name": "tenant_b_db", "beforeHash": "hash-b", "afterHash": "hash-b", "beforeMoveCount": 0, "afterMoveCount": 0, "beforeLineCount": 0, "afterLineCount": 0, "beforeBalanceHash": "balance-b", "afterBalanceHash": "balance-b", "persistedQueryId": "query-ledger-b"},
                 ],
             },
             "audit-and-receipts.json": {
@@ -203,6 +203,18 @@ class AccountingFoundationOwnedLiveTests(unittest.TestCase):
                 text=True,
                 capture_output=True,
             )
+
+    def test_story_one_capture_emits_validator_complete_ledger_proof(self) -> None:
+        helper = (ROOT / "scripts/fixtures/accounting_foundation_capture_story_one.py").read_text()
+        for field in (
+            "beforeMoveCount",
+            "afterMoveCount",
+            "beforeLineCount",
+            "afterLineCount",
+            "beforeBalanceHash",
+            "afterBalanceHash",
+        ):
+            self.assertIn(field, helper)
 
     def test_story_one_capture_accepts_persisted_simultaneous_evidence(self) -> None:
         result = self._validate_story_one_capture(self._story_one_capture())
