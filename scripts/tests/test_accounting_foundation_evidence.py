@@ -51,7 +51,7 @@ def _baseline_artifacts() -> dict[str, dict]:
             "status": 404,
         },
     ]
-    return {
+    artifacts = {
         "fixture-registry.json": {
             "runId": "af-test-run",
             "ownershipLabel": "kemfai.accounting-foundation.run=af-test-run",
@@ -467,6 +467,11 @@ def _baseline_artifacts() -> dict[str, dict]:
         },
     }
 
+    artifacts["story-3-no-ledger-effect.json"] = copy.deepcopy(
+        artifacts["no-ledger-effect.json"]
+    )
+    return artifacts
+
 
 class AccountingFoundationEvidenceTests(unittest.TestCase):
     maxDiff = None
@@ -590,7 +595,7 @@ class AccountingFoundationEvidenceTests(unittest.TestCase):
     def test_story_three_mode_accepts_owned_live_manifest_and_fails_on_ledger_change(self) -> None:
         self.artifacts = {
             "story-3-state.json": self.artifacts["story-3-state.json"],
-            "no-ledger-effect.json": self.artifacts["no-ledger-effect.json"],
+            "story-3-no-ledger-effect.json": self.artifacts["story-3-no-ledger-effect.json"],
             "secret-scan.json": {"status": "passed", "leaks": []},
             "cleanup-receipt.json": {
                 **copy.deepcopy(self.artifacts["cleanup-receipt.json"]),
@@ -608,9 +613,9 @@ class AccountingFoundationEvidenceTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, msg=result.stdout + result.stderr)
         self.assertIn("Story 3 evidence", result.stdout)
 
-        ledger = copy.deepcopy(self.artifacts["no-ledger-effect.json"])
+        ledger = copy.deepcopy(self.artifacts["story-3-no-ledger-effect.json"])
         ledger["databases"][0]["afterHash"] = "changed"
-        self._rewrite_payload("no-ledger-effect.json", ledger)
+        self._rewrite_payload("story-3-no-ledger-effect.json", ledger)
         result = self._run("--story-3")
         self.assertNotEqual(result.returncode, 0, msg=result.stdout + result.stderr)
 
@@ -633,6 +638,7 @@ class AccountingFoundationEvidenceTests(unittest.TestCase):
             "api-contract-summary.json",
             "readiness.json",
             "no-ledger-effect.json",
+            "story-3-no-ledger-effect.json",
             "failure-injection.json",
             "cleanup-receipt.json",
         ):
@@ -651,6 +657,7 @@ class AccountingFoundationEvidenceTests(unittest.TestCase):
             "api-contract-summary.json",
             "readiness.json",
             "no-ledger-effect.json",
+            "story-3-no-ledger-effect.json",
             "failure-injection.json",
             "cleanup-receipt.json",
         ):

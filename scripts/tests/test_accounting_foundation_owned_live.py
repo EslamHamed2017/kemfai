@@ -691,7 +691,7 @@ class AccountingFoundationOwnedLiveTests(unittest.TestCase):
         capture_body = capture.group("body")
         for marker in (
             "story-3-state.json",
-            "no-ledger-effect.json",
+            "story-3-no-ledger-effect.json",
             "exactAmounts",
             "configurationSnapshot",
             "postingMethodProbes",

@@ -27,7 +27,7 @@ STORY_TWO_REQUIRED_FILES = {
 }
 STORY_THREE_REQUIRED_FILES = {
     "story-3-state.json",
-    "no-ledger-effect.json",
+    "story-3-no-ledger-effect.json",
     "secret-scan.json",
     "cleanup-receipt.json",
 }
@@ -49,6 +49,7 @@ REQUIRED_FILES = {
     "story-2-state.json",
     "story-3-state.json",
     "no-ledger-effect.json",
+    "story-3-no-ledger-effect.json",
     "scope-and-authorization.json",
     "audit-and-receipts.json",
     "failure-injection.json",
@@ -674,7 +675,7 @@ def validate_story_three_run(root: Path) -> None:
     require(story.get("productionPath") is True, "story-3 lacks production-path proof")
     require(story.get("persistedStateVerified") is True, "story-3 lacks persisted-state proof")
     validate_story_three(story)
-    validate_no_ledger(payloads["no-ledger-effect.json"])
+    validate_no_ledger(payloads["story-3-no-ledger-effect.json"])
     secret = payloads["secret-scan.json"]
     require(secret.get("status") == "passed", "secret scan did not pass")
     require(secret.get("secretsFound", len(secret.get("leaks", []))) == 0, "secret leak detected")
@@ -696,6 +697,7 @@ def validate(root: Path) -> None:
     validate_routes(payloads["api-contract-summary.json"])
     expected_databases = {item["name"]: item["actualDatabase"] for item in story_one["databases"]}
     validate_no_ledger(payloads["no-ledger-effect.json"], expected_databases)
+    validate_no_ledger(payloads["story-3-no-ledger-effect.json"], expected_databases)
     validate_scope(payloads["scope-and-authorization.json"], story_one)
     validate_audit(payloads["audit-and-receipts.json"])
     validate_failures(payloads["failure-injection.json"])

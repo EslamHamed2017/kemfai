@@ -891,7 +891,7 @@ run_story_two() {
 capture_story_three_evidence() {
   local journey="$private_dir/story-three-journey.json"
   [ -s "$journey" ] || fail 'Story 3 browser journey output is missing'
-  python3 - "$journey" "$KEMFAI_AF_EVIDENCE_DIR/story-3-state.json" "$KEMFAI_AF_EVIDENCE_DIR/no-ledger-effect.json" "$KEMFAI_AF_TENANT_A_DB" "$KEMFAI_AF_TENANT_B_DB" <<'PY_STORY_THREE'
+  python3 - "$journey" "$KEMFAI_AF_EVIDENCE_DIR/story-3-state.json" "$KEMFAI_AF_EVIDENCE_DIR/story-3-no-ledger-effect.json" "$KEMFAI_AF_TENANT_A_DB" "$KEMFAI_AF_TENANT_B_DB" <<'PY_STORY_THREE'
 import json, pathlib, sys
 journey_path, story_path, ledger_path = map(pathlib.Path, sys.argv[1:4])
 database_names = sys.argv[4:6]
