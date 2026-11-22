@@ -525,8 +525,11 @@ def validate_no_ledger(
     expected_databases: dict[str, str] | None = None,
 ) -> None:
     require(data.get("status") == "passed", "no-ledger proof did not pass")
-    require(data.get("actionPostInvocations") == 0, "posting method was invoked")
-    require(data.get("postingFeatureEnabled") is False, "posting feature is enabled")
+    posting_probe = data.get("postingProbe")
+    require(isinstance(posting_probe, dict), "observed posting probe missing")
+    require(posting_probe.get("capabilityStatus") == 200, "posting capability probe failed")
+    require(posting_probe.get("postingFeatureEnabled") is False, "posting feature is enabled")
+    require(posting_probe.get("forbiddenRouteStatus") == 404, "posting route is mounted")
     databases = data.get("databases")
     require(isinstance(databases, list) and len(databases) == 2, "both database ledger proofs are required")
     proofs: dict[str, str] = {}
@@ -579,6 +582,13 @@ def validate_audit(data: dict[str, Any]) -> None:
     require(data.get("tenantAuditEvents") == accepted, "tenant audit cardinality mismatch")
     require(data.get("operationReceipts") == accepted, "operation receipt cardinality mismatch")
     require(data.get("platformMirrorsComplete") is True and data.get("dedupeStateComplete") is True, "audit mirror/dedupe incomplete")
+    links = data.get("auditReceiptLinks")
+    require(isinstance(links, list) and len(links) == accepted, "one audit/receipt link per accepted mutation is required")
+    require(all(isinstance(link, dict) for link in links), "audit/receipt links must be objects")
+    require({link.get("operationId") for link in links} == accepted_set, "audit/receipt link operations mismatch")
+    audit_ids = [link.get("auditEventId") for link in links]
+    require(all(nonempty(value) for value in audit_ids) and len(audit_ids) == len(set(audit_ids)), "audit event identities must be unique")
+    require(all(link.get("receiptAuditEventId") == link.get("auditEventId") for link in links), "receipt is not linked to its operation audit event")
     queries = data.get("persistedQueryIds")
     require(
         isinstance(queries, list) and len(queries) >= 3 and all(nonempty(query) for query in queries),

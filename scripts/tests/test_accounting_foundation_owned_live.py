@@ -170,8 +170,7 @@ class AccountingFoundationOwnedLiveTests(unittest.TestCase):
             },
             "no-ledger-effect.json": {
                 "status": "passed",
-                "actionPostInvocations": 0,
-                "postingFeatureEnabled": False,
+                "postingProbe": {"capabilityStatus": 200, "postingFeatureEnabled": False, "forbiddenRouteStatus": 404},
                 "databases": [
                     {"name": "tenant_a_db", "beforeHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "afterHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "beforeMoveCount": 0, "afterMoveCount": 0, "beforeLineCount": 0, "afterLineCount": 0, "beforeBalanceHash": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", "afterBalanceHash": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", "persistedQueryId": "query-ledger-a"},
                     {"name": "tenant_b_db", "beforeHash": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc", "afterHash": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc", "beforeMoveCount": 0, "afterMoveCount": 0, "beforeLineCount": 0, "afterLineCount": 0, "beforeBalanceHash": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd", "afterBalanceHash": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd", "persistedQueryId": "query-ledger-b"},
@@ -188,6 +187,7 @@ class AccountingFoundationOwnedLiveTests(unittest.TestCase):
                 "tenantAuditOperationIds": operation_ids,
                 "operationReceiptOperationIds": operation_ids,
                 "platformMirrorOperationIds": operation_ids,
+                "auditReceiptLinks": [{"operationId": operation_id, "auditEventId": f"audit-{operation_id}", "receiptAuditEventId": f"audit-{operation_id}"} for operation_id in operation_ids],
                 "persistedQueryIds": ["query-audit", "query-receipt", "query-mirror"],
             },
         }
@@ -227,6 +227,30 @@ class AccountingFoundationOwnedLiveTests(unittest.TestCase):
             "afterBalanceHash",
         ):
             self.assertIn(field, helper)
+
+    def test_story_one_capture_uses_observed_posting_probe(self) -> None:
+        helper = (ROOT / "scripts/fixtures/accounting_foundation_capture_story_one.py").read_text()
+        journey = (ROOT / "frontend/tests/e2e-live/accounting-foundation.live.spec.ts").read_text()
+        self.assertIn("journey.postingProbe", journey)
+        self.assertIn("journey.get('postingProbe')", helper)
+        self.assertNotIn("'actionPostInvocations':0", helper)
+        self.assertNotIn("'postingFeatureEnabled':False", helper)
+
+    def test_story_one_capture_preserves_audit_receipt_cardinality_and_linkage(self) -> None:
+        helper = (ROOT / "scripts/fixtures/accounting_foundation_capture_story_one.py").read_text()
+        self.assertIn("auditReceiptLinks", helper)
+        self.assertIn("len(audit_rows)==len(accepted)", helper)
+        self.assertIn("len(receipt_rows)==len(accepted)", helper)
+        self.assertIn("receipt['audit_event_uuid']==audit['public_id']", helper)
+
+    def test_story_one_capture_rejects_reused_audit_event_identity(self) -> None:
+        artifacts = self._story_one_capture()
+        links = artifacts["audit-and-receipts.json"]["auditReceiptLinks"]
+        links[1]["auditEventId"] = links[0]["auditEventId"]
+        links[1]["receiptAuditEventId"] = links[0]["auditEventId"]
+        result = self._validate_story_one_capture(artifacts)
+        self.assertNotEqual(result.returncode, 0, msg=result.stdout + result.stderr)
+        self.assertIn("FAIL", (result.stdout + result.stderr).upper())
 
     def test_story_one_capture_accepts_persisted_simultaneous_evidence(self) -> None:
         result = self._validate_story_one_capture(self._story_one_capture())

@@ -117,8 +117,9 @@ require(scope.get("sameResourceAttemptedByUserA") is True and scope.get("sameRes
 require(scope.get("ordinaryAuthenticatedPath") is True and scope.get("foreignFieldsDisclosed") is False, "ordinary authenticated isolation path must disclose no foreign fields")
 query_id(scope.get("denialAuditQueryId"), "cross-tenant denial audit")
 
-require(ledger.get("status") == "passed" and ledger.get("actionPostInvocations") == 0, "no-ledger capture did not pass")
-require(ledger.get("postingFeatureEnabled") is False, "posting capability must remain disabled")
+require(ledger.get("status") == "passed", "no-ledger capture did not pass")
+probe = ledger.get("postingProbe")
+require(isinstance(probe, dict) and probe.get("capabilityStatus") == 200 and probe.get("postingFeatureEnabled") is False and probe.get("forbiddenRouteStatus") == 404, "observed posting capability/route proof is incomplete")
 ledger_databases = ledger.get("databases")
 require(isinstance(ledger_databases, list) and len(ledger_databases) == 2, "both tenant ledger proofs are required")
 require({item.get("name") for item in ledger_databases if isinstance(item, dict)} == set(database_names), "ledger proof database set differs from Story 1 topology")
@@ -141,6 +142,13 @@ for field in ("tenantAuditOperationIds", "operationReceiptOperationIds", "platfo
 count = len(accepted_set)
 require(audit.get("acceptedMutations") == count and audit.get("tenantAuditEvents") == count and audit.get("operationReceipts") == count, "audit/receipt cardinality mismatch")
 require(audit.get("platformMirrorsComplete") is True and audit.get("dedupeStateComplete") is True, "platform mirror/dedupe proof is incomplete")
+links = audit.get("auditReceiptLinks")
+require(isinstance(links, list) and len(links) == len(accepted), "audit/receipt links must preserve accepted cardinality")
+require({item.get("operationId") for item in links if isinstance(item, dict)} == accepted_set, "audit/receipt link operations mismatch")
+require(all(isinstance(item, dict) for item in links), "audit/receipt links must be objects")
+require(all(item.get("auditEventId") and item.get("receiptAuditEventId") == item.get("auditEventId") for item in links), "receipt/audit linkage mismatch")
+audit_event_ids = [item.get("auditEventId") for item in links]
+require(len(audit_event_ids) == len(set(audit_event_ids)), "audit event identities must be unique")
 queries = audit.get("persistedQueryIds")
 require(isinstance(queries, list) and len(queries) >= 3 and all(nonempty(item) for item in queries), "persisted audit, receipt, and mirror query identities are required")
 

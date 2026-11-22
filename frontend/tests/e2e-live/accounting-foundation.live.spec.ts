@@ -242,6 +242,18 @@ test.describe.serial('Accounting Foundation Story 1 owned production journey', (
     expect(validation.status).toBe(200);
     const validationResult = validation.body.result as { errors: Array<{ code: string; lineId: string }> };
     expect(validationResult.errors).toContainEqual(expect.objectContaining({ code: 'ACCOUNT_NOT_POSTING', lineId }));
+    const capabilities = await api(tokenA, companyA, 'GET', '/v1/accounting/capabilities');
+    expect(capabilities.status).toBe(200);
+    expect(capabilities.body.postingEnabled).toBe(false);
+    const forbiddenPost = await api(tokenA, companyA, 'POST', `/v1/accounting/drafts/${saved.id}/post`, {
+      key: randomUUID(), etag: `"${saved.version}"`,
+    });
+    expect(forbiddenPost.status).toBe(404);
+    journey.postingProbe = {
+      capabilityStatus: capabilities.status,
+      postingFeatureEnabled: capabilities.body.postingEnabled,
+      forbiddenRouteStatus: forbiddenPost.status,
+    };
 
     journey.race = {
       barrierId, starts, accountId: account.id, initialVersion: account.version,
