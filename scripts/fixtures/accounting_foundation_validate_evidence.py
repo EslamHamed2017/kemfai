@@ -523,10 +523,15 @@ def validate_routes(data: dict[str, Any]) -> None:
 def validate_no_ledger(
     data: dict[str, Any],
     expected_databases: dict[str, str] | None = None,
+    require_observed_posting_probe: bool = False,
 ) -> None:
     require(data.get("status") == "passed", "no-ledger proof did not pass")
-    require(data.get("actionPostInvocations") == 0, "posting method was invoked")
-    require(data.get("postingFeatureEnabled") is False, "posting feature is enabled")
+    if require_observed_posting_probe:
+        posting_probe = data.get("postingProbe")
+        require(isinstance(posting_probe, dict), "observed posting probe missing")
+        require(posting_probe.get("capabilityStatus") == 200, "posting capability probe failed")
+        require(posting_probe.get("postingFeatureEnabled") is False, "posting feature is enabled")
+        require(posting_probe.get("forbiddenRouteStatus") == 404, "posting route is mounted")
     databases = data.get("databases")
     require(isinstance(databases, list) and len(databases) == 2, "both database ledger proofs are required")
     proofs: dict[str, str] = {}
@@ -579,6 +584,13 @@ def validate_audit(data: dict[str, Any]) -> None:
     require(data.get("tenantAuditEvents") == accepted, "tenant audit cardinality mismatch")
     require(data.get("operationReceipts") == accepted, "operation receipt cardinality mismatch")
     require(data.get("platformMirrorsComplete") is True and data.get("dedupeStateComplete") is True, "audit mirror/dedupe incomplete")
+    links = data.get("auditReceiptLinks")
+    require(isinstance(links, list) and len(links) == accepted, "one audit/receipt link per accepted mutation is required")
+    require(all(isinstance(link, dict) for link in links), "audit/receipt links must be objects")
+    require({link.get("operationId") for link in links} == accepted_set, "audit/receipt link operations mismatch")
+    audit_ids = [link.get("auditEventId") for link in links]
+    require(all(nonempty(value) for value in audit_ids) and len(audit_ids) == len(set(audit_ids)), "audit event identities must be unique")
+    require(all(link.get("receiptAuditEventId") == link.get("auditEventId") for link in links), "receipt is not linked to its operation audit event")
     queries = data.get("persistedQueryIds")
     require(
         isinstance(queries, list) and len(queries) >= 3 and all(nonempty(query) for query in queries),
@@ -643,7 +655,7 @@ def validate_story_one_run(root: Path) -> None:
     validate_story_one(story)
     expected_databases = {item["name"]: item["actualDatabase"] for item in story["databases"]}
     validate_scope(payloads["scope-and-authorization.json"], story)
-    validate_no_ledger(payloads["no-ledger-effect.json"], expected_databases)
+    validate_no_ledger(payloads["no-ledger-effect.json"], expected_databases, require_observed_posting_probe=True)
     validate_audit(payloads["audit-and-receipts.json"])
     secret = payloads["secret-scan.json"]
     require(secret.get("status") == "passed", "secret scan did not pass")
@@ -696,7 +708,7 @@ def validate(root: Path) -> None:
     validate_story_three(payloads["story-3-state.json"])
     validate_routes(payloads["api-contract-summary.json"])
     expected_databases = {item["name"]: item["actualDatabase"] for item in story_one["databases"]}
-    validate_no_ledger(payloads["no-ledger-effect.json"], expected_databases)
+    validate_no_ledger(payloads["no-ledger-effect.json"], expected_databases, require_observed_posting_probe=True)
     validate_no_ledger(payloads["story-3-no-ledger-effect.json"], expected_databases)
     validate_scope(payloads["scope-and-authorization.json"], story_one)
     validate_audit(payloads["audit-and-receipts.json"])

@@ -349,8 +349,7 @@ def _baseline_artifacts() -> dict[str, dict]:
         },
         "no-ledger-effect.json": {
             "status": "passed",
-            "actionPostInvocations": 0,
-            "postingFeatureEnabled": False,
+            "postingProbe": {"capabilityStatus": 200, "postingFeatureEnabled": False, "forbiddenRouteStatus": 404},
             "databases": [
                 {
                     "name": "tenant_a_db",
@@ -405,6 +404,10 @@ def _baseline_artifacts() -> dict[str, dict]:
             "tenantAuditOperationIds": ["op-create", "op-draft", "op-validate"],
             "operationReceiptOperationIds": ["op-create", "op-draft", "op-validate"],
             "platformMirrorOperationIds": ["op-create", "op-draft", "op-validate"],
+            "auditReceiptLinks": [
+                {"operationId": operation_id, "auditEventId": f"audit-{operation_id}", "receiptAuditEventId": f"audit-{operation_id}"}
+                for operation_id in ("op-create", "op-draft", "op-validate")
+            ],
             "persistedQueryIds": ["query-audit", "query-receipt", "query-mirror"],
         },
         "failure-injection.json": {
@@ -470,6 +473,8 @@ def _baseline_artifacts() -> dict[str, dict]:
     artifacts["story-3-no-ledger-effect.json"] = copy.deepcopy(
         artifacts["no-ledger-effect.json"]
     )
+    artifacts["story-3-no-ledger-effect.json"].pop("postingProbe")
+    artifacts["story-3-no-ledger-effect.json"].update({"actionPostInvocations": 0, "postingFeatureEnabled": False})
     return artifacts
 
 
@@ -829,6 +834,28 @@ class AccountingFoundationEvidenceTests(unittest.TestCase):
     def test_story_one_receipt_and_event_sets_must_match_mutations(self) -> None:
         payload = copy.deepcopy(self.artifacts["audit-and-receipts.json"])
         payload["operationReceiptOperationIds"][-1] = "op-duplicate"
+        self._rewrite_payload("audit-and-receipts.json", payload)
+        self._assert_invalid()
+
+    def test_story_one_posting_probe_must_be_observed_and_disabled(self) -> None:
+        for field, value in (("capabilityStatus", 500), ("postingFeatureEnabled", True), ("forbiddenRouteStatus", 200)):
+            with self.subTest(field=field):
+                self.artifacts = _baseline_artifacts()
+                self._write_all()
+                payload = copy.deepcopy(self.artifacts["no-ledger-effect.json"])
+                payload["postingProbe"][field] = value
+                self._rewrite_payload("no-ledger-effect.json", payload)
+                self._assert_invalid()
+
+    def test_story_one_receipt_must_link_to_its_exact_audit_event(self) -> None:
+        payload = copy.deepcopy(self.artifacts["audit-and-receipts.json"])
+        payload["auditReceiptLinks"][0]["receiptAuditEventId"] = "wrong-audit-event"
+        self._rewrite_payload("audit-and-receipts.json", payload)
+        self._assert_invalid()
+
+    def test_story_one_duplicate_audit_link_fails_cardinality(self) -> None:
+        payload = copy.deepcopy(self.artifacts["audit-and-receipts.json"])
+        payload["auditReceiptLinks"].append(copy.deepcopy(payload["auditReceiptLinks"][0]))
         self._rewrite_payload("audit-and-receipts.json", payload)
         self._assert_invalid()
 
