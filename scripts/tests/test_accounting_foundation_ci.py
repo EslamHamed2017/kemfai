@@ -340,7 +340,7 @@ def _assert_story_four_vertical_slice_contract(posting_tasks: str) -> None:
     _assert_story_four_checker_review_contract(posting_tasks)
     _assert_story_four_approval_revalidation_and_usability_contract(posting_tasks)
     commissioned_document_digest = (
-        "c465be4c4e0ff8c9bca5b1b4ff7c7e754b60dcba8e10ce69f9d5ec96505a8852"
+        "2b11a1e0633fd51a8aee6fc478bc152e0a9c6346430b1fbd42ddad76626b92b4"
     )
     if (
         hashlib.sha256(posting_tasks.encode("utf-8")).hexdigest()

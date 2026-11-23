@@ -246,6 +246,27 @@ class AccountingFoundationTaskGraphTests(unittest.TestCase):
                 task,
             )
 
+        for task_id in ("T175", "T200", "T201", "T205"):
+            task = next(
+                line for line in posting_tasks.splitlines() if f"] {task_id} " in line
+            )
+            self.assertIn(
+                "same correlation and same complete denied-attempt identity is deduplicated",
+                task,
+            )
+            self.assertIn(
+                "same correlation with a different denied fingerprint creates a separate authoritative denial event",
+                task,
+            )
+            self.assertIn(
+                "different correlation creates a separate denied-attempt identity",
+                task,
+            )
+            self.assertIn(
+                "tenant, company, authenticated actor, action, scoped-key hash, or winning operation identifier/fingerprint cannot collapse distinct denied attempts",
+                task,
+            )
+
     def test_approved_reversal_policy_gate_is_reconciled(self) -> None:
         matrix = (
             ROOT / "specs/003-accounting-foundation/accounting-policy-matrix.md"
