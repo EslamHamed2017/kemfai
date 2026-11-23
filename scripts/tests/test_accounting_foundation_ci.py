@@ -340,7 +340,7 @@ def _assert_story_four_vertical_slice_contract(posting_tasks: str) -> None:
     _assert_story_four_checker_review_contract(posting_tasks)
     _assert_story_four_approval_revalidation_and_usability_contract(posting_tasks)
     commissioned_document_digest = (
-        "cf5fd457db26f8336e75b6ec5757a78efe1a8c7efa6b61202f2f8a3db98564c3"
+        "1fd0dab412a405cd6fda3e3a32446f02dbbfe5334bdacbbe8197101885a87ced"
     )
     if (
         hashlib.sha256(posting_tasks.encode("utf-8")).hexdigest()
@@ -351,7 +351,7 @@ def _assert_story_four_vertical_slice_contract(posting_tasks: str) -> None:
         )
 
     commissioned_runtime_digest = (
-        "09ba5c30105cd60129ab4e7d1d93b79221a538f2ca8047949caea29348107bc0"
+        "9c263748d3866ce7ca16be72c921dc7b6335135d9c14c475d04a6ed3ab2591d8"
     )
     runtime_tasks = "\n".join(
         _story_four_task_block(posting_tasks, number)
@@ -1220,6 +1220,19 @@ class AccountingFoundationCiStructureTests(unittest.TestCase):
             "posted-entry and source-traversal reads remain mounted",
         ):
             self.assertIn(phrase, route_contract)
+
+    def test_story_four_historical_reads_precede_first_posting_slice(self) -> None:
+        posting_tasks = (
+            ROOT / "specs/003-accounting-foundation/posting-tasks.md"
+        ).read_text(encoding="utf-8")
+        first_runtime = _story_four_task_block(posting_tasks, 177).lower()
+        first_posting = _story_four_task_block(posting_tasks, 178).lower()
+        for required_read in (
+            "delivers the complete immutable posted-entry read",
+            "bidirectional source-traversal read",
+        ):
+            self.assertIn(required_read, first_runtime)
+            self.assertNotIn(required_read, first_posting)
 
     def test_story_four_disabled_route_policy_is_commissioned_end_to_end(self) -> None:
         posting_tasks = (
