@@ -316,6 +316,16 @@ class TestDraftDimensionAssignments(TransactionCase):
             result["rule_versions"],
         )
         self.assertFalse(hasattr(self.Draft, "action_post"))
+        self.assertEqual(
+            {
+                "blockedMethods": ["action_post", "button_post", "post"],
+                "availableMethods": [],
+                "methodAvailable": False,
+                "methodProbeStatus": "method-surface-absent",
+                "successfulInvocations": 0,
+            },
+            self.Draft.kemfai_posting_surface_probe(),
+        )
         self._assert_no_ledger_effect()
 
     def test_prohibited_assignment_reports_issue_without_ledger_effect(self):

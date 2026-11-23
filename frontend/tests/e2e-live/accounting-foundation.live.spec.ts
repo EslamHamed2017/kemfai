@@ -245,6 +245,13 @@ test.describe.serial('Accounting Foundation Story 1 owned production journey', (
     const capabilities = await api(tokenA, companyA, 'GET', '/v1/accounting/capabilities');
     expect(capabilities.status).toBe(200);
     expect(capabilities.body.postingEnabled).toBe(false);
+    const postingMethodProbe = await odoo('kemfai.account.draft', 'kemfai_posting_surface_probe', [] as unknown[]);
+    expect(postingMethodProbe).toEqual(expect.objectContaining({
+      availableMethods: [],
+      methodAvailable: false,
+      methodProbeStatus: 'method-surface-absent',
+      successfulInvocations: 0,
+    }));
     const forbiddenPost = await api(tokenA, companyA, 'POST', `/v1/accounting/drafts/${saved.id}/post`, {
       key: randomUUID(), etag: `"${saved.version}"`,
     });
@@ -253,6 +260,7 @@ test.describe.serial('Accounting Foundation Story 1 owned production journey', (
       capabilityStatus: capabilities.status,
       postingFeatureEnabled: capabilities.body.postingEnabled,
       forbiddenRouteStatus: forbiddenPost.status,
+      ...(postingMethodProbe as Record<string, unknown>),
     };
 
     journey.race = {

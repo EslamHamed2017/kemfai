@@ -532,6 +532,14 @@ def validate_no_ledger(
         require(posting_probe.get("capabilityStatus") == 200, "posting capability probe failed")
         require(posting_probe.get("postingFeatureEnabled") is False, "posting feature is enabled")
         require(posting_probe.get("forbiddenRouteStatus") == 404, "posting route is mounted")
+        require(
+            posting_probe.get("blockedMethods") == ["action_post", "button_post", "post"]
+            and posting_probe.get("availableMethods") == []
+            and posting_probe.get("methodAvailable") is False
+            and posting_probe.get("methodProbeStatus") == "method-surface-absent"
+            and posting_probe.get("successfulInvocations") == 0,
+            "posting method surface is available or was invoked",
+        )
     databases = data.get("databases")
     require(isinstance(databases, list) and len(databases) == 2, "both database ledger proofs are required")
     proofs: dict[str, str] = {}

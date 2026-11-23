@@ -170,7 +170,7 @@ class AccountingFoundationOwnedLiveTests(unittest.TestCase):
             },
             "no-ledger-effect.json": {
                 "status": "passed",
-                "postingProbe": {"capabilityStatus": 200, "postingFeatureEnabled": False, "forbiddenRouteStatus": 404},
+                "postingProbe": {"capabilityStatus": 200, "postingFeatureEnabled": False, "forbiddenRouteStatus": 404, "blockedMethods": ["action_post", "button_post", "post"], "availableMethods": [], "methodAvailable": False, "methodProbeStatus": "method-surface-absent", "successfulInvocations": 0},
                 "databases": [
                     {"name": "tenant_a_db", "beforeHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "afterHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "beforeMoveCount": 0, "afterMoveCount": 0, "beforeLineCount": 0, "afterLineCount": 0, "beforeBalanceHash": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", "afterBalanceHash": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", "persistedQueryId": "query-ledger-a"},
                     {"name": "tenant_b_db", "beforeHash": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc", "afterHash": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc", "beforeMoveCount": 0, "afterMoveCount": 0, "beforeLineCount": 0, "afterLineCount": 0, "beforeBalanceHash": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd", "afterBalanceHash": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd", "persistedQueryId": "query-ledger-b"},
@@ -232,7 +232,10 @@ class AccountingFoundationOwnedLiveTests(unittest.TestCase):
         helper = (ROOT / "scripts/fixtures/accounting_foundation_capture_story_one.py").read_text()
         journey = (ROOT / "frontend/tests/e2e-live/accounting-foundation.live.spec.ts").read_text()
         self.assertIn("journey.postingProbe", journey)
+        self.assertIn("kemfai_posting_surface_probe", journey)
+        self.assertIn("method-surface-absent", journey)
         self.assertIn("journey.get('postingProbe')", helper)
+        self.assertIn("posting_probe.get('successfulInvocations')==0", helper)
         self.assertNotIn("'actionPostInvocations':0", helper)
         self.assertNotIn("'postingFeatureEnabled':False", helper)
 

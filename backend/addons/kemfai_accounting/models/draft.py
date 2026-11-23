@@ -50,6 +50,27 @@ class KemfaiAccountDraft(models.Model):
         "kemfai.account.draft.line", "draft_id", readonly=True
     )
 
+    @api.model
+    def kemfai_posting_surface_probe(self):
+        """Report whether any explicitly forbidden posting entrypoint exists.
+
+        This probe is read-only: it inspects the runtime model surface and never
+        calls a posting method.
+        """
+        blocked_methods = ("action_post", "button_post", "post")
+        available_methods = [
+            name for name in blocked_methods if callable(getattr(self, name, None))
+        ]
+        return {
+            "blockedMethods": list(blocked_methods),
+            "availableMethods": available_methods,
+            "methodAvailable": bool(available_methods),
+            "methodProbeStatus": "method-surface-absent"
+            if not available_methods
+            else "method-surface-present",
+            "successfulInvocations": 0,
+        }
+
     @api.model_create_multi
     def create(self, values_list):
         prepared_values = []

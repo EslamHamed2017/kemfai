@@ -349,7 +349,7 @@ def _baseline_artifacts() -> dict[str, dict]:
         },
         "no-ledger-effect.json": {
             "status": "passed",
-            "postingProbe": {"capabilityStatus": 200, "postingFeatureEnabled": False, "forbiddenRouteStatus": 404},
+            "postingProbe": {"capabilityStatus": 200, "postingFeatureEnabled": False, "forbiddenRouteStatus": 404, "blockedMethods": ["action_post", "button_post", "post"], "availableMethods": [], "methodAvailable": False, "methodProbeStatus": "method-surface-absent", "successfulInvocations": 0},
             "databases": [
                 {
                     "name": "tenant_a_db",
@@ -838,7 +838,14 @@ class AccountingFoundationEvidenceTests(unittest.TestCase):
         self._assert_invalid()
 
     def test_story_one_posting_probe_must_be_observed_and_disabled(self) -> None:
-        for field, value in (("capabilityStatus", 500), ("postingFeatureEnabled", True), ("forbiddenRouteStatus", 200)):
+        for field, value in (
+            ("capabilityStatus", 500),
+            ("postingFeatureEnabled", True),
+            ("forbiddenRouteStatus", 200),
+            ("methodAvailable", True),
+            ("methodProbeStatus", "succeeded"),
+            ("successfulInvocations", 1),
+        ):
             with self.subTest(field=field):
                 self.artifacts = _baseline_artifacts()
                 self._write_all()
