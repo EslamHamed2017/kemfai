@@ -156,7 +156,8 @@ api-contract-summary.json
 story-1-state.json
 story-2-state.json
 story-3-state.json
-no-ledger-effect.json
+no-ledger-effect.json                 # Story 1 persisted before/after ledger proof
+story-3-no-ledger-effect.json         # Story 3 persisted before/after ledger proof
 scope-and-authorization.json
 audit-and-receipts.json
 failure-injection.json

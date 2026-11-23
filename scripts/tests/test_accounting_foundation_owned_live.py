@@ -170,11 +170,10 @@ class AccountingFoundationOwnedLiveTests(unittest.TestCase):
             },
             "no-ledger-effect.json": {
                 "status": "passed",
-                "actionPostInvocations": 0,
-                "postingFeatureEnabled": False,
+                "postingProbe": {"capabilityStatus": 200, "postingFeatureEnabled": False, "forbiddenRouteStatus": 404, "blockedMethods": ["action_post", "button_post", "post"], "availableMethods": [], "methodAvailable": False, "methodProbeStatus": "method-surface-absent", "successfulInvocations": 0},
                 "databases": [
-                    {"name": "tenant_a_db", "beforeHash": "hash-a", "afterHash": "hash-a", "beforeCount": 0, "afterCount": 0, "persistedQueryId": "query-ledger-a"},
-                    {"name": "tenant_b_db", "beforeHash": "hash-b", "afterHash": "hash-b", "beforeCount": 0, "afterCount": 0, "persistedQueryId": "query-ledger-b"},
+                    {"name": "tenant_a_db", "beforeHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "afterHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "beforeMoveCount": 0, "afterMoveCount": 0, "beforeLineCount": 0, "afterLineCount": 0, "beforeBalanceHash": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", "afterBalanceHash": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", "persistedQueryId": "query-ledger-a"},
+                    {"name": "tenant_b_db", "beforeHash": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc", "afterHash": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc", "beforeMoveCount": 0, "afterMoveCount": 0, "beforeLineCount": 0, "afterLineCount": 0, "beforeBalanceHash": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd", "afterBalanceHash": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd", "persistedQueryId": "query-ledger-b"},
                 ],
             },
             "audit-and-receipts.json": {
@@ -188,6 +187,7 @@ class AccountingFoundationOwnedLiveTests(unittest.TestCase):
                 "tenantAuditOperationIds": operation_ids,
                 "operationReceiptOperationIds": operation_ids,
                 "platformMirrorOperationIds": operation_ids,
+                "auditReceiptLinks": [{"operationId": operation_id, "auditEventId": f"audit-{operation_id}", "receiptAuditEventId": f"audit-{operation_id}"} for operation_id in operation_ids],
                 "persistedQueryIds": ["query-audit", "query-receipt", "query-mirror"],
             },
         }
@@ -204,9 +204,76 @@ class AccountingFoundationOwnedLiveTests(unittest.TestCase):
                 capture_output=True,
             )
 
+    def test_story_one_journey_captures_final_ledgers_after_all_mutations(self) -> None:
+        journey = (ROOT / "frontend/tests/e2e-live/accounting-foundation.live.spec.ts").read_text()
+        story_one = journey[journey.index("test.describe.serial('Accounting Foundation Story 1"):journey.index("type JourneyResource")]
+        final_snapshot = "journey.ledgerAfter = { tenantA: await ledgerSnapshot(tenantADb), tenantB: await ledgerSnapshot(tenantBDb) };"
+        self.assertEqual(story_one.count(final_snapshot), 1)
+        self.assertGreater(story_one.index(final_snapshot), story_one.index("validationResult.errors"))
+        helper = (ROOT / "scripts/fixtures/accounting_foundation_capture_story_one.py").read_text()
+        self.assertIn("'afterHash':x_after['hash']", helper)
+        self.assertIn("'afterMoveCount':x_after['moves']", helper)
+        self.assertIn("'afterLineCount':x_after['lines']", helper)
+        self.assertIn("'afterBalanceHash':x_after['balanceHash']", helper)
+
+    def test_story_one_capture_emits_validator_complete_ledger_proof(self) -> None:
+        helper = (ROOT / "scripts/fixtures/accounting_foundation_capture_story_one.py").read_text()
+        for field in (
+            "beforeMoveCount",
+            "afterMoveCount",
+            "beforeLineCount",
+            "afterLineCount",
+            "beforeBalanceHash",
+            "afterBalanceHash",
+        ):
+            self.assertIn(field, helper)
+
+    def test_story_one_capture_uses_observed_posting_probe(self) -> None:
+        helper = (ROOT / "scripts/fixtures/accounting_foundation_capture_story_one.py").read_text()
+        journey = (ROOT / "frontend/tests/e2e-live/accounting-foundation.live.spec.ts").read_text()
+        self.assertIn("journey.postingProbe", journey)
+        self.assertIn("kemfai_posting_surface_probe", journey)
+        self.assertIn("method-surface-absent", journey)
+        self.assertIn("journey.get('postingProbe')", helper)
+        self.assertIn("posting_probe.get('successfulInvocations')==0", helper)
+        self.assertNotIn("'actionPostInvocations':0", helper)
+        self.assertNotIn("'postingFeatureEnabled':False", helper)
+
+    def test_story_one_capture_preserves_audit_receipt_cardinality_and_linkage(self) -> None:
+        helper = (ROOT / "scripts/fixtures/accounting_foundation_capture_story_one.py").read_text()
+        self.assertIn("auditReceiptLinks", helper)
+        self.assertIn("len(audit_rows)==len(accepted)", helper)
+        self.assertIn("len(receipt_rows)==len(accepted)", helper)
+        self.assertIn("receipt['audit_event_uuid']==audit['public_id']", helper)
+
+    def test_story_one_capture_rejects_reused_audit_event_identity(self) -> None:
+        artifacts = self._story_one_capture()
+        links = artifacts["audit-and-receipts.json"]["auditReceiptLinks"]
+        links[1]["auditEventId"] = links[0]["auditEventId"]
+        links[1]["receiptAuditEventId"] = links[0]["auditEventId"]
+        result = self._validate_story_one_capture(artifacts)
+        self.assertNotEqual(result.returncode, 0, msg=result.stdout + result.stderr)
+        self.assertIn("FAIL", (result.stdout + result.stderr).upper())
+
     def test_story_one_capture_accepts_persisted_simultaneous_evidence(self) -> None:
         result = self._validate_story_one_capture(self._story_one_capture())
         self.assertEqual(result.returncode, 0, msg=result.stdout + result.stderr)
+
+    def test_story_one_capture_rejects_malformed_ledger_proof(self) -> None:
+        mutations = (
+            ("missing hashes", lambda item: (item.pop("beforeHash"), item.pop("afterHash"))),
+            ("null move counts", lambda item: (item.__setitem__("beforeMoveCount", None), item.__setitem__("afterMoveCount", None))),
+            ("string line counts", lambda item: (item.__setitem__("beforeLineCount", "0"), item.__setitem__("afterLineCount", "0"))),
+            ("negative move counts", lambda item: (item.__setitem__("beforeMoveCount", -1), item.__setitem__("afterMoveCount", -1))),
+            ("invalid balance hashes", lambda item: (item.__setitem__("beforeBalanceHash", "not-a-sha256"), item.__setitem__("afterBalanceHash", "not-a-sha256"))),
+        )
+        for label, mutate in mutations:
+            with self.subTest(label=label):
+                artifacts = self._story_one_capture()
+                mutate(artifacts["no-ledger-effect.json"]["databases"][0])
+                result = self._validate_story_one_capture(artifacts)
+                self.assertNotEqual(result.returncode, 0, msg=result.stdout + result.stderr)
+                self.assertIn("FAIL", (result.stdout + result.stderr).upper())
 
     def test_story_one_capture_rejects_response_only_evidence(self) -> None:
         artifacts = self._story_one_capture()
@@ -651,7 +718,7 @@ class AccountingFoundationOwnedLiveTests(unittest.TestCase):
         capture_body = capture.group("body")
         for marker in (
             "story-3-state.json",
-            "no-ledger-effect.json",
+            "story-3-no-ledger-effect.json",
             "exactAmounts",
             "configurationSnapshot",
             "postingMethodProbes",
@@ -680,12 +747,12 @@ class AccountingFoundationOwnedLiveTests(unittest.TestCase):
                 "exactMetadata": [{"transactionCurrencyCode": "USD"}],
                 "configurationSnapshot": {"journal": {"version": 1}},
                 "ledgerBefore": {
-                    "tenantA": {"moves": 0, "lines": 0, "hash": "hash-a", "balanceHash": "balance-a"},
-                    "tenantB": {"moves": 0, "lines": 0, "hash": "hash-b", "balanceHash": "balance-b"},
+                    "tenantA": {"moves": 0, "lines": 0, "hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "balanceHash": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"},
+                    "tenantB": {"moves": 0, "lines": 0, "hash": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc", "balanceHash": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"},
                 },
                 "ledgerAfter": {
-                    "tenantA": {"moves": 0, "lines": 0, "hash": "hash-a", "balanceHash": "balance-a"},
-                    "tenantB": {"moves": 0, "lines": 0, "hash": "hash-b", "balanceHash": "balance-b"},
+                    "tenantA": {"moves": 0, "lines": 0, "hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "balanceHash": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"},
+                    "tenantB": {"moves": 0, "lines": 0, "hash": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc", "balanceHash": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"},
                 },
                 "raceLedgerBefore": [{"moves": 0}, {"moves": 0}],
                 "raceLedgerAfter": [{"moves": 0}, {"moves": 0}],
@@ -709,14 +776,20 @@ class AccountingFoundationOwnedLiveTests(unittest.TestCase):
             ledger_output = root / "no-ledger-effect.json"
             journey.write_text(json.dumps(story), encoding="utf-8")
             result = subprocess.run(
-                ["python3", "-c", code, str(journey), str(story_output), str(ledger_output), "tenant_a_db", "tenant_b_db"],
+                ["python3", "-c", code, str(journey), str(story_output), str(ledger_output), "kemfai_af_tenant_a", "kemfai_af_tenant_b"],
                 cwd=ROOT, text=True, capture_output=True,
             )
             self.assertEqual(result.returncode, 0, msg=result.stdout + result.stderr)
             captured = json.loads(ledger_output.read_text(encoding="utf-8"))
             self.assertEqual(
-                [(item["name"], item["beforeHash"], item["afterHash"]) for item in captured["databases"]],
-                [("tenant_a_db", "hash-a", "hash-a"), ("tenant_b_db", "hash-b", "hash-b")],
+                [
+                    (item["name"], item["actualDatabase"], item["persistedQueryId"])
+                    for item in captured["databases"]
+                ],
+                [
+                    ("tenant_a_db", "kemfai_af_tenant_a", "odoo:kemfai_af_tenant_a:ledger-count-hash"),
+                    ("tenant_b_db", "kemfai_af_tenant_b", "odoo:kemfai_af_tenant_b:ledger-count-hash"),
+                ],
             )
 
     def test_runner_has_valid_bash_syntax(self) -> None:

@@ -37,10 +37,13 @@ def main() -> int:
         return 0
     repository = os.environ.get("GITHUB_REPOSITORY", "")
     branch = os.environ.get("GITHUB_BASE_REF") or os.environ.get("KEMFAI_BRANCH_PROTECTION_BRANCH", "")
+    token = os.environ.get("GITHUB_TOKEN", "")
     if re.fullmatch(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+", repository) is None:
         return fail("GITHUB_REPOSITORY is absent or malformed")
     if re.fullmatch(r"[A-Za-z0-9._/-]+", branch) is None or ".." in branch:
         return fail("target branch is absent or malformed")
+    if re.fullmatch(r"[A-Za-z0-9_.-]+", token) is None:
+        return fail("GITHUB_TOKEN is absent or malformed")
     endpoint = f"https://api.github.com/repos/{repository}/branches/{quote(branch, safe='')}"
     result = subprocess.run(
         [
@@ -56,8 +59,11 @@ def main() -> int:
             "Accept: application/vnd.github+json",
             "-H",
             "User-Agent: kemfai-branch-protection-verifier",
+            "--config",
+            "-",
             endpoint,
         ],
+        input=f'header = "Authorization: Bearer {token}"\n',
         text=True,
         capture_output=True,
         check=False,

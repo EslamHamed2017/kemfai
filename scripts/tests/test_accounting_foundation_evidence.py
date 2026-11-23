@@ -51,7 +51,7 @@ def _baseline_artifacts() -> dict[str, dict]:
             "status": 404,
         },
     ]
-    return {
+    artifacts = {
         "fixture-registry.json": {
             "runId": "af-test-run",
             "ownershipLabel": "kemfai.accounting-foundation.run=af-test-run",
@@ -140,28 +140,35 @@ def _baseline_artifacts() -> dict[str, dict]:
             "databases": [
                 {
                     "name": "tenant_a_db",
-                    "tenantId": "tenant-a",
-                    "companyIds": ["company-a1", "company-a2"],
+                    "actualDatabase": "kemfai_af_tenant_a",
+                    "tenantId": "66666666-6666-4666-8666-666666666666",
+                    "companyIds": ["77777777-7777-4777-8777-777777777777", "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"],
                     "persistedQueryId": "query-db-a",
                 },
                 {
                     "name": "tenant_b_db",
-                    "tenantId": "tenant-b",
-                    "companyIds": ["company-b1"],
+                    "actualDatabase": "kemfai_af_tenant_b",
+                    "tenantId": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+                    "companyIds": ["cccccccc-cccc-4ccc-8ccc-cccccccccccc"],
                     "persistedQueryId": "query-db-b",
                 },
             ],
+            "actor": {
+                "accountId": "55555555-5555-4555-8555-555555555555",
+                "subjectId": "dddddddd-dddd-4ddd-8ddd-dddddddddddd",
+                "persistedQueryId": "control:account:55555555-5555-4555-8555-555555555555",
+            },
             "account": {
                 "id": "11111111-1111-4111-8111-111111111111",
                 "database": "tenant_a_db",
-                "companyId": "company-a1",
+                "companyId": "77777777-7777-4777-8777-777777777777",
                 "persistedQueryId": "query-account",
             },
             "draft": {
                 "id": "22222222-2222-4222-8222-222222222222",
                 "state": "draft",
                 "database": "tenant_a_db",
-                "companyId": "company-a1",
+                "companyId": "77777777-7777-4777-8777-777777777777",
                 "persistedQueryId": "query-draft",
             },
             "parentRejection": {
@@ -342,24 +349,27 @@ def _baseline_artifacts() -> dict[str, dict]:
         },
         "no-ledger-effect.json": {
             "status": "passed",
-            "actionPostInvocations": 0,
-            "postingFeatureEnabled": False,
+            "postingProbe": {"capabilityStatus": 200, "postingFeatureEnabled": False, "forbiddenRouteStatus": 404, "blockedMethods": ["action_post", "button_post", "post"], "availableMethods": [], "methodAvailable": False, "methodProbeStatus": "method-surface-absent", "successfulInvocations": 0},
             "databases": [
                 {
                     "name": "tenant_a_db",
-                    "beforeHash": "hash-a",
-                    "afterHash": "hash-a",
+                    "actualDatabase": "kemfai_af_tenant_a",
+                    "persistedQueryId": "odoo:kemfai_af_tenant_a:ledger-count-hash",
+                    "beforeHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                    "afterHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
                     "beforeMoveCount": 0, "afterMoveCount": 0,
                     "beforeLineCount": 0, "afterLineCount": 0,
-                    "beforeBalanceHash": "balance-a", "afterBalanceHash": "balance-a",
+                    "beforeBalanceHash": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", "afterBalanceHash": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
                 },
                 {
                     "name": "tenant_b_db",
-                    "beforeHash": "hash-b",
-                    "afterHash": "hash-b",
+                    "actualDatabase": "kemfai_af_tenant_b",
+                    "persistedQueryId": "odoo:kemfai_af_tenant_b:ledger-count-hash",
+                    "beforeHash": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+                    "afterHash": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
                     "beforeMoveCount": 0, "afterMoveCount": 0,
                     "beforeLineCount": 0, "afterLineCount": 0,
-                    "beforeBalanceHash": "balance-b", "afterBalanceHash": "balance-b",
+                    "beforeBalanceHash": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd", "afterBalanceHash": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
                 },
             ],
         },
@@ -372,7 +382,16 @@ def _baseline_artifacts() -> dict[str, dict]:
             "sameResourceOpaquelyDeniedToUserA": True,
             "ordinaryAuthenticatedPath": True,
             "foreignFieldsDisclosed": False,
-            "denialAuditQueryId": "query-denial-audit",
+            "denialAuditQueryId": "control:audit_event:99999999-9999-4999-8999-999999999999",
+            "denialAudit": {
+                "eventId": "99999999-9999-4999-8999-999999999999",
+                "operationId": "44444444-4444-4444-8444-444444444444",
+                "actorAccountId": "55555555-5555-4555-8555-555555555555",
+                "tenantId": "66666666-6666-4666-8666-666666666666",
+                "companyId": "77777777-7777-4777-8777-777777777777",
+                "route": "/v1/accounting/accounts/33333333-3333-4333-8333-333333333333",
+                "reason": "company_scope_denied",
+            },
         },
         "audit-and-receipts.json": {
             "status": "passed",
@@ -385,6 +404,10 @@ def _baseline_artifacts() -> dict[str, dict]:
             "tenantAuditOperationIds": ["op-create", "op-draft", "op-validate"],
             "operationReceiptOperationIds": ["op-create", "op-draft", "op-validate"],
             "platformMirrorOperationIds": ["op-create", "op-draft", "op-validate"],
+            "auditReceiptLinks": [
+                {"operationId": operation_id, "auditEventId": f"audit-{operation_id}", "receiptAuditEventId": f"audit-{operation_id}"}
+                for operation_id in ("op-create", "op-draft", "op-validate")
+            ],
             "persistedQueryIds": ["query-audit", "query-receipt", "query-mirror"],
         },
         "failure-injection.json": {
@@ -446,6 +469,13 @@ def _baseline_artifacts() -> dict[str, dict]:
             "independentCatalogChecks": True,
         },
     }
+
+    artifacts["story-3-no-ledger-effect.json"] = copy.deepcopy(
+        artifacts["no-ledger-effect.json"]
+    )
+    artifacts["story-3-no-ledger-effect.json"].pop("postingProbe")
+    artifacts["story-3-no-ledger-effect.json"].update({"actionPostInvocations": 0, "postingFeatureEnabled": False})
+    return artifacts
 
 
 class AccountingFoundationEvidenceTests(unittest.TestCase):
@@ -519,9 +549,12 @@ class AccountingFoundationEvidenceTests(unittest.TestCase):
         story["databases"][1]["companyIds"] = [company_b1]
         story["account"]["companyId"] = company_a1
         story["draft"]["companyId"] = company_a1
+        scope = copy.deepcopy(self.artifacts["scope-and-authorization.json"])
+        scope["denialAudit"]["tenantId"] = tenant_a
+        scope["denialAudit"]["companyId"] = company_a1
         self.artifacts = {
             "story-1-state.json": story,
-            "scope-and-authorization.json": self.artifacts["scope-and-authorization.json"],
+            "scope-and-authorization.json": scope,
             "no-ledger-effect.json": self.artifacts["no-ledger-effect.json"],
             "audit-and-receipts.json": self.artifacts["audit-and-receipts.json"],
             "secret-scan.json": {"status": "passed", "leaks": []},
@@ -567,7 +600,7 @@ class AccountingFoundationEvidenceTests(unittest.TestCase):
     def test_story_three_mode_accepts_owned_live_manifest_and_fails_on_ledger_change(self) -> None:
         self.artifacts = {
             "story-3-state.json": self.artifacts["story-3-state.json"],
-            "no-ledger-effect.json": self.artifacts["no-ledger-effect.json"],
+            "story-3-no-ledger-effect.json": self.artifacts["story-3-no-ledger-effect.json"],
             "secret-scan.json": {"status": "passed", "leaks": []},
             "cleanup-receipt.json": {
                 **copy.deepcopy(self.artifacts["cleanup-receipt.json"]),
@@ -585,9 +618,9 @@ class AccountingFoundationEvidenceTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, msg=result.stdout + result.stderr)
         self.assertIn("Story 3 evidence", result.stdout)
 
-        ledger = copy.deepcopy(self.artifacts["no-ledger-effect.json"])
+        ledger = copy.deepcopy(self.artifacts["story-3-no-ledger-effect.json"])
         ledger["databases"][0]["afterHash"] = "changed"
-        self._rewrite_payload("no-ledger-effect.json", ledger)
+        self._rewrite_payload("story-3-no-ledger-effect.json", ledger)
         result = self._run("--story-3")
         self.assertNotEqual(result.returncode, 0, msg=result.stdout + result.stderr)
 
@@ -610,6 +643,7 @@ class AccountingFoundationEvidenceTests(unittest.TestCase):
             "api-contract-summary.json",
             "readiness.json",
             "no-ledger-effect.json",
+            "story-3-no-ledger-effect.json",
             "failure-injection.json",
             "cleanup-receipt.json",
         ):
@@ -628,6 +662,7 @@ class AccountingFoundationEvidenceTests(unittest.TestCase):
             "api-contract-summary.json",
             "readiness.json",
             "no-ledger-effect.json",
+            "story-3-no-ledger-effect.json",
             "failure-injection.json",
             "cleanup-receipt.json",
         ):
@@ -780,9 +815,54 @@ class AccountingFoundationEvidenceTests(unittest.TestCase):
         self._rewrite_payload("scope-and-authorization.json", payload)
         self._assert_invalid()
 
+    def test_story_one_denial_audit_must_bind_the_exact_attempt(self) -> None:
+        mutations = {
+            "route": "/v1/accounting/accounts/88888888-8888-4888-8888-888888888888",
+            "tenantId": "88888888-8888-4888-8888-888888888888",
+            "companyId": "88888888-8888-4888-8888-888888888888",
+            "actorAccountId": "88888888-8888-4888-8888-888888888888",
+        }
+        for field, value in mutations.items():
+            with self.subTest(field=field):
+                self.artifacts = _baseline_artifacts()
+                self._write_all()
+                payload = copy.deepcopy(self.artifacts["scope-and-authorization.json"])
+                payload["denialAudit"][field] = value
+                self._rewrite_payload("scope-and-authorization.json", payload)
+                self._assert_invalid()
+
     def test_story_one_receipt_and_event_sets_must_match_mutations(self) -> None:
         payload = copy.deepcopy(self.artifacts["audit-and-receipts.json"])
         payload["operationReceiptOperationIds"][-1] = "op-duplicate"
+        self._rewrite_payload("audit-and-receipts.json", payload)
+        self._assert_invalid()
+
+    def test_story_one_posting_probe_must_be_observed_and_disabled(self) -> None:
+        for field, value in (
+            ("capabilityStatus", 500),
+            ("postingFeatureEnabled", True),
+            ("forbiddenRouteStatus", 200),
+            ("methodAvailable", True),
+            ("methodProbeStatus", "succeeded"),
+            ("successfulInvocations", 1),
+        ):
+            with self.subTest(field=field):
+                self.artifacts = _baseline_artifacts()
+                self._write_all()
+                payload = copy.deepcopy(self.artifacts["no-ledger-effect.json"])
+                payload["postingProbe"][field] = value
+                self._rewrite_payload("no-ledger-effect.json", payload)
+                self._assert_invalid()
+
+    def test_story_one_receipt_must_link_to_its_exact_audit_event(self) -> None:
+        payload = copy.deepcopy(self.artifacts["audit-and-receipts.json"])
+        payload["auditReceiptLinks"][0]["receiptAuditEventId"] = "wrong-audit-event"
+        self._rewrite_payload("audit-and-receipts.json", payload)
+        self._assert_invalid()
+
+    def test_story_one_duplicate_audit_link_fails_cardinality(self) -> None:
+        payload = copy.deepcopy(self.artifacts["audit-and-receipts.json"])
+        payload["auditReceiptLinks"].append(copy.deepcopy(payload["auditReceiptLinks"][0]))
         self._rewrite_payload("audit-and-receipts.json", payload)
         self._assert_invalid()
 
@@ -876,6 +956,45 @@ class AccountingFoundationEvidenceTests(unittest.TestCase):
         payload["databases"] = payload["databases"][:1]
         self._rewrite_payload("readiness.json", payload)
         self._assert_invalid()
+
+    def test_ledger_proofs_require_distinct_expected_database_identities(self) -> None:
+        mutations = (
+            ("duplicate logical name", "name"),
+            ("duplicate actual database", "actualDatabase"),
+            ("duplicate persisted query", "persistedQueryId"),
+        )
+        for label, field in mutations:
+            with self.subTest(label=label):
+                self.artifacts = _baseline_artifacts()
+                self._write_all()
+                payload = copy.deepcopy(self.artifacts["no-ledger-effect.json"])
+                payload["databases"][1][field] = payload["databases"][0][field]
+                self._rewrite_payload("no-ledger-effect.json", payload)
+                self._assert_invalid()
+
+    def test_ledger_proofs_must_match_story_one_database_topology(self) -> None:
+        payload = copy.deepcopy(self.artifacts["no-ledger-effect.json"])
+        payload["databases"][1]["actualDatabase"] = "kemfai_af_unrelated"
+        payload["databases"][1]["persistedQueryId"] = "odoo:kemfai_af_unrelated:ledger-count-hash"
+        self._rewrite_payload("no-ledger-effect.json", payload)
+        self._assert_invalid()
+
+    def test_malformed_ledger_proof_fails_closed(self) -> None:
+        mutations = (
+            ("missing hashes", lambda item: (item.pop("beforeHash"), item.pop("afterHash"))),
+            ("null move counts", lambda item: (item.__setitem__("beforeMoveCount", None), item.__setitem__("afterMoveCount", None))),
+            ("string line counts", lambda item: (item.__setitem__("beforeLineCount", "0"), item.__setitem__("afterLineCount", "0"))),
+            ("negative move counts", lambda item: (item.__setitem__("beforeMoveCount", -1), item.__setitem__("afterMoveCount", -1))),
+            ("invalid balance hashes", lambda item: (item.__setitem__("beforeBalanceHash", "not-a-sha256"), item.__setitem__("afterBalanceHash", "not-a-sha256"))),
+        )
+        for label, mutate in mutations:
+            with self.subTest(label=label):
+                self.artifacts = _baseline_artifacts()
+                self._write_all()
+                payload = copy.deepcopy(self.artifacts["no-ledger-effect.json"])
+                mutate(payload["databases"][0])
+                self._rewrite_payload("no-ledger-effect.json", payload)
+                self._assert_invalid()
 
     def test_ledger_change_fails(self) -> None:
         payload = copy.deepcopy(self.artifacts["no-ledger-effect.json"])

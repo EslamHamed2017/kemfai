@@ -335,7 +335,9 @@ class AccountingFoundationCiStructureTests(unittest.TestCase):
         self.assertIn("accounting-foundation-owned-live", source)
         self.assertRegex(source, r"\bcurl\b")
         self.assertIn("https://api.github.com/", source)
-        self.assertNotRegex(source, r"(?i)authorization|GH_TOKEN|GITHUB_TOKEN")
+        self.assertIn("GITHUB_TOKEN", source)
+        self.assertRegex(source, r"Authorization: Bearer")
+        self.assertEqual(step.get("env", {}).get("GITHUB_TOKEN"), "${{ github.token }}")
         mutation_pattern = (
             r"(?i)(?:--method|-X)[\"',\s]*(?:POST|PUT|PATCH|DELETE)\b|"
             r"\bgh\s+api\b[^\n]*(?:--input|-f|--field|--raw-field)\b|"
@@ -374,7 +376,9 @@ class AccountingFoundationCiStructureTests(unittest.TestCase):
             fake_curl.write_text(
                 "#!/usr/bin/env bash\n"
                 "printf '%s\\n' \"$GH_PAYLOAD\"\n"
-                "printf '%s\\n' \"$*\" >\"$GH_ARGS_LOG\"\n",
+                "printf '%s\\n' \"$*\" >\"$GH_ARGS_LOG\"\n"
+                "printf '%s\\n' '--STDIN--' >>\"$GH_ARGS_LOG\"\n"
+                "cat >>\"$GH_ARGS_LOG\"\n",
                 encoding="utf-8",
             )
             fake_curl.chmod(0o755)
@@ -386,6 +390,7 @@ class AccountingFoundationCiStructureTests(unittest.TestCase):
                 "GITHUB_BASE_REF": "main",
                 "GH_PAYLOAD": json.dumps(payload),
                 "GH_ARGS_LOG": str(args_log),
+                "GITHUB_TOKEN": "read-only-test-token",
             }
             result = subprocess.run(
                 [sys.executable, str(BRANCH_PROTECTION_VALIDATOR)],
@@ -414,9 +419,11 @@ class AccountingFoundationCiStructureTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertEqual(
             arguments.strip(),
-            "--disable --fail --silent --show-error --proto =https --tlsv1.2 -H Accept: application/vnd.github+json -H User-Agent: kemfai-branch-protection-verifier https://api.github.com/repos/owner/repository/branches/main",
+            "--disable --fail --silent --show-error --proto =https --tlsv1.2 -H Accept: application/vnd.github+json -H User-Agent: kemfai-branch-protection-verifier --config - https://api.github.com/repos/owner/repository/branches/main\n--STDIN--\nheader = \"Authorization: Bearer read-only-test-token\"",
         )
-        self.assertNotRegex(arguments, r"(?i)(?:-X|--request|authorization|token|(?:^|\s)-L(?:\s|$)|--location)")
+        argv = arguments.split("\n--STDIN--\n", 1)[0]
+        self.assertNotIn("read-only-test-token", argv)
+        self.assertNotRegex(arguments, r"(?i)(?:-X|--request|(?:^|\s)-L(?:\s|$)|--location)")
 
     def test_branch_protection_validator_fails_closed_when_check_is_missing(self) -> None:
         result, _ = self._run_branch_protection_validator(

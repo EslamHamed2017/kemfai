@@ -27,6 +27,7 @@ from pathlib import Path
 
 root = Path(sys.argv[1])
 UUID = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$", re.I)
+SHA256 = re.compile(r"^[0-9a-f]{64}$", re.I)
 
 def fail(message):
     raise SystemExit(f"FAIL: Story 1 evidence capture: {message}")
@@ -116,13 +117,19 @@ require(scope.get("sameResourceAttemptedByUserA") is True and scope.get("sameRes
 require(scope.get("ordinaryAuthenticatedPath") is True and scope.get("foreignFieldsDisclosed") is False, "ordinary authenticated isolation path must disclose no foreign fields")
 query_id(scope.get("denialAuditQueryId"), "cross-tenant denial audit")
 
-require(ledger.get("status") == "passed" and ledger.get("actionPostInvocations") == 0, "no-ledger capture did not pass")
-require(ledger.get("postingFeatureEnabled") is False, "posting capability must remain disabled")
+require(ledger.get("status") == "passed", "no-ledger capture did not pass")
+probe = ledger.get("postingProbe")
+require(isinstance(probe, dict) and probe.get("capabilityStatus") == 200 and probe.get("postingFeatureEnabled") is False and probe.get("forbiddenRouteStatus") == 404, "observed posting capability/route proof is incomplete")
 ledger_databases = ledger.get("databases")
 require(isinstance(ledger_databases, list) and len(ledger_databases) == 2, "both tenant ledger proofs are required")
 require({item.get("name") for item in ledger_databases if isinstance(item, dict)} == set(database_names), "ledger proof database set differs from Story 1 topology")
 for item in ledger_databases:
-    require(item.get("beforeHash") == item.get("afterHash") and item.get("beforeCount") == item.get("afterCount"), f"ledger changed in {item.get('name')}")
+    require(isinstance(item, dict), "ledger proof must be an object")
+    for field in ("beforeHash", "afterHash", "beforeBalanceHash", "afterBalanceHash"):
+        require(isinstance(item.get(field), str) and SHA256.fullmatch(item[field]), f"ledger {field} must be a SHA-256 hash in {item.get('name')}")
+    for field in ("beforeMoveCount", "afterMoveCount", "beforeLineCount", "afterLineCount"):
+        require(type(item.get(field)) is int and item[field] >= 0, f"ledger {field} must be a non-negative integer in {item.get('name')}")
+    require(item["beforeHash"] == item["afterHash"] and item["beforeMoveCount"] == item["afterMoveCount"] and item["beforeLineCount"] == item["afterLineCount"] and item["beforeBalanceHash"] == item["afterBalanceHash"], f"ledger changed in {item.get('name')}")
     query_id(item.get("persistedQueryId"), f"ledger {item.get('name')}")
 
 require(audit.get("status") == "passed", "audit/receipt evidence did not pass")
@@ -135,6 +142,13 @@ for field in ("tenantAuditOperationIds", "operationReceiptOperationIds", "platfo
 count = len(accepted_set)
 require(audit.get("acceptedMutations") == count and audit.get("tenantAuditEvents") == count and audit.get("operationReceipts") == count, "audit/receipt cardinality mismatch")
 require(audit.get("platformMirrorsComplete") is True and audit.get("dedupeStateComplete") is True, "platform mirror/dedupe proof is incomplete")
+links = audit.get("auditReceiptLinks")
+require(isinstance(links, list) and len(links) == len(accepted), "audit/receipt links must preserve accepted cardinality")
+require({item.get("operationId") for item in links if isinstance(item, dict)} == accepted_set, "audit/receipt link operations mismatch")
+require(all(isinstance(item, dict) for item in links), "audit/receipt links must be objects")
+require(all(item.get("auditEventId") and item.get("receiptAuditEventId") == item.get("auditEventId") for item in links), "receipt/audit linkage mismatch")
+audit_event_ids = [item.get("auditEventId") for item in links]
+require(len(audit_event_ids) == len(set(audit_event_ids)), "audit event identities must be unique")
 queries = audit.get("persistedQueryIds")
 require(isinstance(queries, list) and len(queries) >= 3 and all(nonempty(item) for item in queries), "persisted audit, receipt, and mirror query identities are required")
 
@@ -885,7 +899,7 @@ run_story_two() {
 capture_story_three_evidence() {
   local journey="$private_dir/story-three-journey.json"
   [ -s "$journey" ] || fail 'Story 3 browser journey output is missing'
-  python3 - "$journey" "$KEMFAI_AF_EVIDENCE_DIR/story-3-state.json" "$KEMFAI_AF_EVIDENCE_DIR/no-ledger-effect.json" "$KEMFAI_AF_TENANT_A_DB" "$KEMFAI_AF_TENANT_B_DB" <<'PY_STORY_THREE'
+  python3 - "$journey" "$KEMFAI_AF_EVIDENCE_DIR/story-3-state.json" "$KEMFAI_AF_EVIDENCE_DIR/story-3-no-ledger-effect.json" "$KEMFAI_AF_TENANT_A_DB" "$KEMFAI_AF_TENANT_B_DB" <<'PY_STORY_THREE'
 import json, pathlib, sys
 journey_path, story_path, ledger_path = map(pathlib.Path, sys.argv[1:4])
 database_names = sys.argv[4:6]
@@ -931,11 +945,15 @@ ledger = {
     "actionPostInvocations": probe["actionPostInvocations"],
     "postingMethodProbes": probe,
     "databases": [
-        {"name": name, "beforeHash": old["hash"], "afterHash": new["hash"],
+        {"name": name, "actualDatabase": actual_database,
+         "persistedQueryId": f"odoo:{actual_database}:ledger-count-hash",
+         "beforeHash": old["hash"], "afterHash": new["hash"],
          "beforeMoveCount": old["moves"], "afterMoveCount": new["moves"],
          "beforeLineCount": old["lines"], "afterLineCount": new["lines"],
          "beforeBalanceHash": old["balanceHash"], "afterBalanceHash": new["balanceHash"]}
-        for name, old, new in zip(database_names, before, after)
+        for name, actual_database, old, new in zip(
+            ("tenant_a_db", "tenant_b_db"), database_names, before, after
+        )
     ],
 }
 ledger_path.write_text(json.dumps(ledger, sort_keys=True) + "\n", encoding="utf-8")

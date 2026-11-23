@@ -27,7 +27,7 @@ STORY_TWO_REQUIRED_FILES = {
 }
 STORY_THREE_REQUIRED_FILES = {
     "story-3-state.json",
-    "no-ledger-effect.json",
+    "story-3-no-ledger-effect.json",
     "secret-scan.json",
     "cleanup-receipt.json",
 }
@@ -49,6 +49,7 @@ REQUIRED_FILES = {
     "story-2-state.json",
     "story-3-state.json",
     "no-ledger-effect.json",
+    "story-3-no-ledger-effect.json",
     "scope-and-authorization.json",
     "audit-and-receipts.json",
     "failure-injection.json",
@@ -57,6 +58,7 @@ REQUIRED_FILES = {
     "cleanup-receipt.json",
 }
 UUID_PATTERN = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$", re.IGNORECASE)
+SHA256_PATTERN = re.compile(r"^[0-9a-f]{64}$", re.IGNORECASE)
 FORBIDDEN_PATHS = {
     "/v1/accounting/drafts/{id}/post",
     "/v1/accounting/entries/{id}/reverse",
@@ -204,12 +206,19 @@ def validate_story_one(data: dict[str, Any]) -> None:
     databases = data.get("databases")
     require(isinstance(databases, list) and len(databases) == 2, "Story 1 requires both tenant database proofs")
     topology: dict[str, tuple[str, set[str]]] = {}
+    actual_databases: set[str] = set()
     for index, item in enumerate(databases):
         require(isinstance(item, dict), f"Story 1 database proof {index} must be an object")
         name = item.get("name")
+        actual_database = item.get("actualDatabase")
         tenant = item.get("tenantId")
         companies = item.get("companyIds")
-        require(nonempty(name) and nonempty(tenant), f"Story 1 database proof {index} scope is incomplete")
+        require(
+            nonempty(name) and nonempty(actual_database) and nonempty(tenant),
+            f"Story 1 database proof {index} scope is incomplete",
+        )
+        require(actual_database not in actual_databases, "Story 1 physical tenant databases must be distinct")
+        actual_databases.add(actual_database)
         require(
             isinstance(companies, list)
             and companies
@@ -223,6 +232,13 @@ def validate_story_one(data: dict[str, Any]) -> None:
     require(set(topology) == {"tenant_a_db", "tenant_b_db"}, "Story 1 tenant database set mismatch")
     tenant_a, companies_a = topology["tenant_a_db"]
     tenant_b, companies_b = topology["tenant_b_db"]
+    actor = data.get("actor")
+    require(isinstance(actor, dict), "Story 1 persisted actor mapping is required")
+    for field in ("accountId", "subjectId"):
+        value = actor.get(field)
+        require(isinstance(value, str) and UUID_PATTERN.fullmatch(value) is not None, f"Story 1 actor {field} is invalid")
+    require(actor["accountId"] != actor["subjectId"], "Story 1 actor account and identity subject must remain distinct")
+    require_query_id(actor.get("persistedQueryId"), "Story 1 actor mapping")
     require(tenant_a != tenant_b, "Story 1 tenant identities must be distinct")
     require(
         len(companies_a) == 2 and len(companies_b) == 1 and companies_a.isdisjoint(companies_b),
@@ -462,7 +478,7 @@ def validate_native_exposure(data: dict[str, Any]) -> None:
         require(data.get(field) == 0, f"native-engine exposure detected: {field}")
 
 
-def validate_scope(data: dict[str, Any]) -> None:
+def validate_scope(data: dict[str, Any], story: dict[str, Any]) -> None:
     require(data.get("status") == "passed", "scope evidence did not pass")
     foreign_id = data.get("tenantBResourceId")
     require(isinstance(foreign_id, str) and UUID_PATTERN.fullmatch(foreign_id) is not None, "real Tenant-B resource UUID is required")
@@ -475,7 +491,25 @@ def validate_scope(data: dict[str, Any]) -> None:
     )
     require(data.get("ordinaryAuthenticatedPath") is True, "cross-tenant denial did not use the ordinary authenticated path")
     require(data.get("foreignFieldsDisclosed") is False, "cross-tenant denial disclosed foreign fields")
-    require_query_id(data.get("denialAuditQueryId"), "cross-tenant denial audit")
+    denial_query_id = data.get("denialAuditQueryId")
+    require_query_id(denial_query_id, "cross-tenant denial audit")
+    denial = data.get("denialAudit")
+    require(isinstance(denial, dict), "cross-tenant denial audit binding is required")
+    for field in ("eventId", "operationId", "actorAccountId", "tenantId", "companyId"):
+        value = denial.get(field)
+        require(isinstance(value, str) and UUID_PATTERN.fullmatch(value) is not None, f"cross-tenant denial audit {field} is invalid")
+    require(denial_query_id == f"control:audit_event:{denial['eventId']}", "cross-tenant denial audit query is not bound to its persisted event")
+    require(denial.get("route") == f"/v1/accounting/accounts/{foreign_id}", "cross-tenant denial audit is not bound to the exact foreign resource")
+    require(denial.get("reason") == "company_scope_denied", "cross-tenant denial audit reason is invalid")
+    topology = {item.get("name"): item for item in story.get("databases", []) if isinstance(item, dict)}
+    tenant_a = topology.get("tenant_a_db")
+    require(isinstance(tenant_a, dict), "Story 1 Tenant A topology is missing from scope validation")
+    account = story.get("account")
+    actor = story.get("actor")
+    require(isinstance(account, dict) and isinstance(actor, dict), "Story 1 account or actor binding is missing")
+    require(denial["tenantId"] == tenant_a.get("tenantId"), "cross-tenant denial audit tenant is not Tenant A")
+    require(denial["companyId"] == account.get("companyId"), "cross-tenant denial audit company is not Company A1")
+    require(denial["actorAccountId"] == actor.get("accountId"), "cross-tenant denial audit actor is not User A")
 
 
 def validate_routes(data: dict[str, Any]) -> None:
@@ -486,17 +520,52 @@ def validate_routes(data: dict[str, Any]) -> None:
     require(all(item.get("method") == "POST" and item.get("status") == 404 for item in routes), "forbidden route is mounted")
 
 
-def validate_no_ledger(data: dict[str, Any]) -> None:
+def validate_no_ledger(
+    data: dict[str, Any],
+    expected_databases: dict[str, str] | None = None,
+    require_observed_posting_probe: bool = False,
+) -> None:
     require(data.get("status") == "passed", "no-ledger proof did not pass")
-    require(data.get("actionPostInvocations") == 0, "posting method was invoked")
-    require(data.get("postingFeatureEnabled") is False, "posting feature is enabled")
+    if require_observed_posting_probe:
+        posting_probe = data.get("postingProbe")
+        require(isinstance(posting_probe, dict), "observed posting probe missing")
+        require(posting_probe.get("capabilityStatus") == 200, "posting capability probe failed")
+        require(posting_probe.get("postingFeatureEnabled") is False, "posting feature is enabled")
+        require(posting_probe.get("forbiddenRouteStatus") == 404, "posting route is mounted")
+        require(
+            posting_probe.get("blockedMethods") == ["action_post", "button_post", "post"]
+            and posting_probe.get("availableMethods") == []
+            and posting_probe.get("methodAvailable") is False
+            and posting_probe.get("methodProbeStatus") == "method-surface-absent"
+            and posting_probe.get("successfulInvocations") == 0,
+            "posting method surface is available or was invoked",
+        )
     databases = data.get("databases")
     require(isinstance(databases, list) and len(databases) == 2, "both database ledger proofs are required")
+    proofs: dict[str, str] = {}
+    query_ids: set[str] = set()
     for item in databases:
-        require(item.get("beforeHash") == item.get("afterHash"), f"ledger hash changed in {item.get('name')}")
+        require(isinstance(item, dict), "ledger proof must be an object")
+        name = item.get("name")
+        actual_database = item.get("actualDatabase")
+        query_id = item.get("persistedQueryId")
+        require(nonempty(name) and name not in proofs, "ledger proof names must be distinct")
+        require(nonempty(actual_database) and actual_database not in proofs.values(), "physical ledger databases must be distinct")
+        require_query_id(query_id, f"ledger {name}")
+        require(query_id not in query_ids, "ledger persisted query identities must be distinct")
+        require(query_id == f"odoo:{actual_database}:ledger-count-hash", f"ledger query identity is not bound to {name}")
+        proofs[name] = actual_database
+        query_ids.add(query_id)
+        for field in ("beforeHash", "afterHash", "beforeBalanceHash", "afterBalanceHash"):
+            require(isinstance(item.get(field), str) and SHA256_PATTERN.fullmatch(item[field]) is not None, f"ledger {field} must be a SHA-256 hash in {name}")
+        for field in ("beforeMoveCount", "afterMoveCount", "beforeLineCount", "afterLineCount"):
+            require(type(item.get(field)) is int and item[field] >= 0, f"ledger {field} must be a non-negative integer in {name}")
+        require(item["beforeHash"] == item["afterHash"], f"ledger hash changed in {name}")
         for prefix in ("MoveCount", "LineCount", "BalanceHash"):
-            require(item.get(f"before{prefix}") == item.get(f"after{prefix}"), f"ledger {prefix} changed in {item.get('name')}")
-        require(all(field in item for field in ("beforeMoveCount", "afterMoveCount", "beforeLineCount", "afterLineCount", "beforeBalanceHash", "afterBalanceHash")), f"ledger count/balance proof incomplete in {item.get('name')}")
+            require(item[f"before{prefix}"] == item[f"after{prefix}"], f"ledger {prefix} changed in {name}")
+    require(set(proofs) == {"tenant_a_db", "tenant_b_db"}, "ledger tenant database set mismatch")
+    if expected_databases is not None:
+        require(proofs == expected_databases, "ledger proofs do not match Story 1 database topology")
 
 
 def validate_audit(data: dict[str, Any]) -> None:
@@ -523,6 +592,13 @@ def validate_audit(data: dict[str, Any]) -> None:
     require(data.get("tenantAuditEvents") == accepted, "tenant audit cardinality mismatch")
     require(data.get("operationReceipts") == accepted, "operation receipt cardinality mismatch")
     require(data.get("platformMirrorsComplete") is True and data.get("dedupeStateComplete") is True, "audit mirror/dedupe incomplete")
+    links = data.get("auditReceiptLinks")
+    require(isinstance(links, list) and len(links) == accepted, "one audit/receipt link per accepted mutation is required")
+    require(all(isinstance(link, dict) for link in links), "audit/receipt links must be objects")
+    require({link.get("operationId") for link in links} == accepted_set, "audit/receipt link operations mismatch")
+    audit_ids = [link.get("auditEventId") for link in links]
+    require(all(nonempty(value) for value in audit_ids) and len(audit_ids) == len(set(audit_ids)), "audit event identities must be unique")
+    require(all(link.get("receiptAuditEventId") == link.get("auditEventId") for link in links), "receipt is not linked to its operation audit event")
     queries = data.get("persistedQueryIds")
     require(
         isinstance(queries, list) and len(queries) >= 3 and all(nonempty(query) for query in queries),
@@ -585,8 +661,9 @@ def validate_story_one_run(root: Path) -> None:
     require(story.get("emptyLoadingErrorCovered") is True, "story-1 state coverage incomplete")
     require(set(story.get("locales", [])) == {"en-LTR", "ar-RTL"}, "story-1 locale proof incomplete")
     validate_story_one(story)
-    validate_scope(payloads["scope-and-authorization.json"])
-    validate_no_ledger(payloads["no-ledger-effect.json"])
+    expected_databases = {item["name"]: item["actualDatabase"] for item in story["databases"]}
+    validate_scope(payloads["scope-and-authorization.json"], story)
+    validate_no_ledger(payloads["no-ledger-effect.json"], expected_databases, require_observed_posting_probe=True)
     validate_audit(payloads["audit-and-receipts.json"])
     secret = payloads["secret-scan.json"]
     require(secret.get("status") == "passed", "secret scan did not pass")
@@ -618,7 +695,7 @@ def validate_story_three_run(root: Path) -> None:
     require(story.get("productionPath") is True, "story-3 lacks production-path proof")
     require(story.get("persistedStateVerified") is True, "story-3 lacks persisted-state proof")
     validate_story_three(story)
-    validate_no_ledger(payloads["no-ledger-effect.json"])
+    validate_no_ledger(payloads["story-3-no-ledger-effect.json"])
     secret = payloads["secret-scan.json"]
     require(secret.get("status") == "passed", "secret scan did not pass")
     require(secret.get("secretsFound", len(secret.get("leaks", []))) == 0, "secret leak detected")
@@ -633,12 +710,15 @@ def validate(root: Path) -> None:
     validate_readiness(payloads["readiness.json"])
     validate_browser(root)
     validate_stories(root)
-    validate_story_one(payloads["story-1-state.json"])
+    story_one = payloads["story-1-state.json"]
+    validate_story_one(story_one)
     validate_story_two(payloads["story-2-state.json"])
     validate_story_three(payloads["story-3-state.json"])
     validate_routes(payloads["api-contract-summary.json"])
-    validate_no_ledger(payloads["no-ledger-effect.json"])
-    validate_scope(payloads["scope-and-authorization.json"])
+    expected_databases = {item["name"]: item["actualDatabase"] for item in story_one["databases"]}
+    validate_no_ledger(payloads["no-ledger-effect.json"], expected_databases, require_observed_posting_probe=True)
+    validate_no_ledger(payloads["story-3-no-ledger-effect.json"], expected_databases)
+    validate_scope(payloads["scope-and-authorization.json"], story_one)
     validate_audit(payloads["audit-and-receipts.json"])
     validate_failures(payloads["failure-injection.json"])
     validate_native_exposure(payloads["odoo-exposure-scan.json"])

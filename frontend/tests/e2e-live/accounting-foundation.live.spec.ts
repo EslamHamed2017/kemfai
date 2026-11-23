@@ -158,8 +158,6 @@ test.describe.serial('Accounting Foundation Story 1 owned production journey', (
 
     expect(await odoo('account.move', 'search_count', [[]])).toBe(movesBefore);
     expect(await odoo('account.move.line', 'search_count', [[]])).toBe(linesBefore);
-    journey.ledgerAfter = { tenantA: await ledgerSnapshot(tenantADb), tenantB: await ledgerSnapshot(tenantBDb) };
-    expect(journey.ledgerAfter).toEqual(ledgerBefore);
     expect(
       Number(
         await odoo('kemfai.account.audit.event', 'search_count', [
@@ -180,6 +178,8 @@ test.describe.serial('Accounting Foundation Story 1 owned production journey', (
     const tokenB = required('KEMFAI_AF_USER_B_TOKEN');
     const companyA = required('KEMFAI_AF_COMPANY_A1_ID');
     const companyB = required('KEMFAI_AF_COMPANY_B1_ID');
+    const tenantADb = required('KEMFAI_AF_TENANT_A_DB');
+    const tenantBDb = required('KEMFAI_AF_TENANT_B_DB');
     const body = {
       code: `T030.RACE.${randomUUID().slice(0, 8)}`,
       name: { en: 'Race account', ar: 'حساب سباق' },
@@ -242,6 +242,26 @@ test.describe.serial('Accounting Foundation Story 1 owned production journey', (
     expect(validation.status).toBe(200);
     const validationResult = validation.body.result as { errors: Array<{ code: string; lineId: string }> };
     expect(validationResult.errors).toContainEqual(expect.objectContaining({ code: 'ACCOUNT_NOT_POSTING', lineId }));
+    const capabilities = await api(tokenA, companyA, 'GET', '/v1/accounting/capabilities');
+    expect(capabilities.status).toBe(200);
+    expect(capabilities.body.postingEnabled).toBe(false);
+    const postingMethodProbe = await odoo('kemfai.account.draft', 'kemfai_posting_surface_probe', [] as unknown[]);
+    expect(postingMethodProbe).toEqual(expect.objectContaining({
+      availableMethods: [],
+      methodAvailable: false,
+      methodProbeStatus: 'method-surface-absent',
+      successfulInvocations: 0,
+    }));
+    const forbiddenPost = await api(tokenA, companyA, 'POST', `/v1/accounting/drafts/${saved.id}/post`, {
+      key: randomUUID(), etag: `"${saved.version}"`,
+    });
+    expect(forbiddenPost.status).toBe(404);
+    journey.postingProbe = {
+      capabilityStatus: capabilities.status,
+      postingFeatureEnabled: capabilities.body.postingEnabled,
+      forbiddenRouteStatus: forbiddenPost.status,
+      ...(postingMethodProbe as Record<string, unknown>),
+    };
 
     journey.race = {
       barrierId, starts, accountId: account.id, initialVersion: account.version,
@@ -256,6 +276,8 @@ test.describe.serial('Accounting Foundation Story 1 owned production journey', (
       validationAuditEventId: validation.body.auditEventId,
       errors: validationResult.errors,
     };
+    journey.ledgerAfter = { tenantA: await ledgerSnapshot(tenantADb), tenantB: await ledgerSnapshot(tenantBDb) };
+    expect(journey.ledgerAfter).toEqual(journey.ledgerBefore);
   });
 });
 
