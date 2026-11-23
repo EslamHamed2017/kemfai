@@ -20,6 +20,9 @@ class InfraComposeTests(unittest.TestCase):
         self.assertEqual(healthcheck[0], "CMD-SHELL")
         command = shlex.split(healthcheck[1])
 
+        self.assertEqual(command[0], "pg_isready")
+        self.assertIn("-h", command)
+        self.assertEqual(command[command.index("-h") + 1], "127.0.0.1")
         self.assertIn("-d", command)
         selected_database = command[command.index("-d") + 1]
         self.assertEqual(selected_database, database["environment"]["POSTGRES_DB"])
