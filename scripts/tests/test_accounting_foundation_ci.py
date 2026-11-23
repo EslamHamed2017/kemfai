@@ -316,9 +316,9 @@ def _assert_story_four_vertical_slice_semantics(posting_tasks: str) -> None:
 def _assert_story_four_addendum_identity(
     posting_tasks: str, addendum_bytes: bytes
 ) -> None:
-    expected_blob_oid = "db622f8869c07b188a18c520d4a6065d2655ddae"
+    expected_blob_oid = "19555ea934fe71e9d9ab864e0a2b83c08aa287dc"
     expected_digest = (
-        "b840cc98ad50460c6b13d7b0323c84d87f032a9435be35eea7333bc0b01382fa"
+        "b3da3d1d40e5de02900541e0cc22815f99153460fb5450562dd58fd2ad5f463d"
     )
     blob_oid = hashlib.sha1(
         f"blob {len(addendum_bytes)}\0".encode("ascii") + addendum_bytes
@@ -340,7 +340,7 @@ def _assert_story_four_vertical_slice_contract(posting_tasks: str) -> None:
     _assert_story_four_checker_review_contract(posting_tasks)
     _assert_story_four_approval_revalidation_and_usability_contract(posting_tasks)
     commissioned_document_digest = (
-        "08bcfd93d88b87317e0567b86163a1348bf0a9eed603e47fcde8f1a33e9b52d5"
+        "c465be4c4e0ff8c9bca5b1b4ff7c7e754b60dcba8e10ce69f9d5ec96505a8852"
     )
     if (
         hashlib.sha256(posting_tasks.encode("utf-8")).hexdigest()
@@ -351,7 +351,7 @@ def _assert_story_four_vertical_slice_contract(posting_tasks: str) -> None:
         )
 
     commissioned_runtime_digest = (
-        "c9ca6222c693a589a4b632e7c418c442a18dc3ebd26af256ea0a92ad48c8d86b"
+        "27188ef7bd561687ccd0b73b16a28a05d61942723ec5054b931ca4eb8ad0f881"
     )
     runtime_tasks = "\n".join(
         _story_four_task_block(posting_tasks, number)

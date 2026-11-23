@@ -204,9 +204,25 @@ class AccountingFoundationTaskGraphTests(unittest.TestCase):
             "cannot create another move, approval, receipt, or authoritative tenant mutation event",
             posting_addendum,
         )
-        self.assertIn(
-            "Fingerprint conflicts create no financial mutation, receipt, or tenant mutation event; "
+        self.assertNotIn(
             "each conflict correlation creates one deduplicated authoritative denial audit event",
+            posting_addendum,
+        )
+        self.assertIn(
+            "Each complete denied-attempt identity creates one authoritative denial audit event",
+            posting_addendum,
+        )
+        self.assertIn(
+            "domain-separated denied-attempt identity",
+            posting_addendum,
+        )
+        self.assertIn(
+            "tenant, company, authenticated actor, action, scoped idempotency-key hash, "
+            "denied request fingerprint, winning operation identifier and fingerprint, and correlation ID",
+            posting_addendum,
+        )
+        self.assertIn(
+            "A reused correlation ID with a different denied request fingerprint is a distinct attempt",
             posting_addendum,
         )
         for task_id in ("T163", "T190"):
@@ -218,11 +234,15 @@ class AccountingFoundationTaskGraphTests(unittest.TestCase):
                 task,
             )
             self.assertIn(
-                "exactly one authoritative denial audit event per conflict correlation",
+                "exactly one authoritative denial audit event per domain-separated denied-attempt identity",
                 task,
             )
             self.assertIn(
-                "repeated delivery of the same correlation is deduplicated",
+                "repeated delivery of the same denied-attempt identity is deduplicated",
+                task,
+            )
+            self.assertIn(
+                "tenant, company, authenticated actor, action, scoped-key hash, denied fingerprint and winning operation identifier/fingerprint",
                 task,
             )
 
