@@ -192,6 +192,21 @@ class AccountingFoundationTaskGraphTests(unittest.TestCase):
             self.assertNotIn(stale_claim, research)
             self.assertNotIn(stale_claim, plan)
 
+    def test_posting_conflict_audit_does_not_contradict_idempotency(self) -> None:
+        posting_addendum = (
+            ROOT / "specs/003-accounting-foundation/posting-addendum.md"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn(
+            "cannot create another move, approval, receipt, or authoritative tenant mutation event",
+            posting_addendum,
+        )
+        self.assertIn(
+            "Fingerprint conflicts create no financial mutation, receipt, or tenant mutation event; "
+            "each conflict correlation creates one deduplicated authoritative denial audit event",
+            posting_addendum,
+        )
+
     def test_approved_reversal_policy_gate_is_reconciled(self) -> None:
         matrix = (
             ROOT / "specs/003-accounting-foundation/accounting-policy-matrix.md"

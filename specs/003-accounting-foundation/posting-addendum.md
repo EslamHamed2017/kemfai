@@ -23,7 +23,7 @@ Story 5 reversal/correction, Story 6 opening balances, and Story 7 period mainte
 6. A posted move is immutable through KEMFAI. No update or delete route exists. Correction is exclusively Story 5.
 7. The exact applicable Accounting Policy Matrix version is evaluated at execution time and retained on the posted move. v1.0 is the only approved version for this addendum; absent, inapplicable, superseded-without-effective-resolution, or changed policy fails closed.
 8. Period permission is evaluated against the draft accounting date at execution time. System-clock changes cannot select another period.
-9. Idempotent replay returns the original outcome. A changed fingerprint under the same scoped key conflicts and cannot create another move, approval, receipt, or event.
+9. Idempotent replay returns the original outcome. A changed fingerprint under the same scoped key conflicts and cannot create another move, approval, receipt, or authoritative tenant mutation event; it creates only the deduplicated denial audit event required below for that conflict correlation.
 10. `module.accounting_posting` remains absent/false until the complete implementation passes independent acceptance and release approval. While disabled, the posting-preview, pending-approval collection, approval-detail, and mutation routes are absent, not merely hidden in the UI; the separately authorized immutable posted-entry and source-traversal reads remain mounted so historical accounting evidence stays available.
 
 ## 3. Boundary and routes
@@ -77,7 +77,7 @@ The approval command body includes the exact `previewDigest` returned by the det
 
 Errors use stable KEMFAI codes, localized message keys/parameters, optional line/field paths, and no native details. A failed outcome proves zero new move/line/balance/source rows.
 
-Every attempt has immutable audit evidence. A denial before tenant routing/domain entry is recorded in the control-plane audit as the authoritative denial event with opaque submitted identifiers, actor/company scope, reason code, idempotency key hash, and correlation ID. A denial evaluated inside the tenant domain is written to the tenant audit and mirrored to the platform. An exact idempotent replay references the original receipt/event and appends one deduplicated `posting.replayed` platform event per replay correlation ID; it creates no second tenant mutation event. Fingerprint conflicts and stale requests are independently audited as denied attempts.
+Every attempt has immutable audit evidence. A denial before tenant routing/domain entry is recorded in the control-plane audit as the authoritative denial event with opaque submitted identifiers, actor/company scope, reason code, idempotency key hash, and correlation ID. A denial evaluated inside the tenant domain is written to the tenant audit and mirrored to the platform. An exact idempotent replay references the original receipt/event and appends one deduplicated `posting.replayed` platform event per replay correlation ID; it creates no second tenant mutation event. Fingerprint conflicts create no financial mutation, receipt, or tenant mutation event; each conflict correlation creates one deduplicated authoritative denial audit event in the applicable control-plane or tenant audit and is mirrored to the platform. Stale requests are likewise independently audited as denied attempts.
 
 ## 4. Authorization and maker-checker
 

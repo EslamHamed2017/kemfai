@@ -316,9 +316,9 @@ def _assert_story_four_vertical_slice_semantics(posting_tasks: str) -> None:
 def _assert_story_four_addendum_identity(
     posting_tasks: str, addendum_bytes: bytes
 ) -> None:
-    expected_blob_oid = "179eee4011b81c797fe595355b8a981f9af8a675"
+    expected_blob_oid = "db622f8869c07b188a18c520d4a6065d2655ddae"
     expected_digest = (
-        "ebf65281ddc1a2d0ffac7a02ed306e57312cff14d445da4aab0988d4bb83fa3d"
+        "b840cc98ad50460c6b13d7b0323c84d87f032a9435be35eea7333bc0b01382fa"
     )
     blob_oid = hashlib.sha1(
         f"blob {len(addendum_bytes)}\0".encode("ascii") + addendum_bytes
@@ -340,7 +340,7 @@ def _assert_story_four_vertical_slice_contract(posting_tasks: str) -> None:
     _assert_story_four_checker_review_contract(posting_tasks)
     _assert_story_four_approval_revalidation_and_usability_contract(posting_tasks)
     commissioned_document_digest = (
-        "1fd0dab412a405cd6fda3e3a32446f02dbbfe5334bdacbbe8197101885a87ced"
+        "99c48745e48e8a97f0dad59ae95d7a6250e115d2bfeae745ac79bf7ca290487e"
     )
     if (
         hashlib.sha256(posting_tasks.encode("utf-8")).hexdigest()
