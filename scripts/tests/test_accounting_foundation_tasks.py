@@ -196,6 +196,9 @@ class AccountingFoundationTaskGraphTests(unittest.TestCase):
         posting_addendum = (
             ROOT / "specs/003-accounting-foundation/posting-addendum.md"
         ).read_text(encoding="utf-8")
+        posting_tasks = (
+            ROOT / "specs/003-accounting-foundation/posting-tasks.md"
+        ).read_text(encoding="utf-8")
 
         self.assertIn(
             "cannot create another move, approval, receipt, or authoritative tenant mutation event",
@@ -206,6 +209,22 @@ class AccountingFoundationTaskGraphTests(unittest.TestCase):
             "each conflict correlation creates one deduplicated authoritative denial audit event",
             posting_addendum,
         )
+        for task_id in ("T163", "T190"):
+            task = next(
+                line for line in posting_tasks.splitlines() if f"] {task_id} " in line
+            )
+            self.assertIn(
+                "zero financial, approval, receipt, and tenant-mutation loser rows",
+                task,
+            )
+            self.assertIn(
+                "exactly one authoritative denial audit event per conflict correlation",
+                task,
+            )
+            self.assertIn(
+                "repeated delivery of the same correlation is deduplicated",
+                task,
+            )
 
     def test_approved_reversal_policy_gate_is_reconciled(self) -> None:
         matrix = (
