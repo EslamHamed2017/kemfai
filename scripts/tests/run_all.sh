@@ -90,6 +90,7 @@ run_accounting_foundation_suite() {
   echo ""
 }
 
+run_accounting_foundation_suite test_infra_compose
 run_accounting_foundation_suite test_accounting_foundation_owned_live
 run_accounting_foundation_suite test_accounting_foundation_evidence
 run_accounting_foundation_suite test_accounting_foundation_ci
