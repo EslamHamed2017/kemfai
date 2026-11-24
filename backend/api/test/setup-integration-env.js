@@ -7,8 +7,5 @@ if (process.env.KEMFAI_LIVE_PROVISION !== '1') {
 }
 
 // Jest-only Redis isolation: never enqueue test jobs into production DB 0.
-{
-  const url = new URL(process.env.REDIS_URL || 'redis://localhost:6379');
-  url.pathname = '/14';
-  process.env.REDIS_URL = url.toString();
-}
+const { integrationRedisUrl } = require('./integration-redis-url');
+process.env.REDIS_URL = integrationRedisUrl();

@@ -8,6 +8,7 @@ const net = require('node:net');
 const path = require('node:path');
 const { spawn, spawnSync } = require('node:child_process');
 const { Client } = require('pg');
+const { integrationRedisUrl } = require('./integration-redis-url');
 
 const CONFIG = 'test/jest-integration.json';
 const JEST = require.resolve('jest/bin/jest');
@@ -244,7 +245,7 @@ function assertNoIncompleteTests(results, suite) {
   }
 }
 
-function runJestSuite(suite, database, extraArgs, cwd = process.cwd()) {
+function runJestSuite(suite, database, extraArgs, cwd = process.cwd(), env = process.env) {
   const passthrough = parseRunnerArgs(extraArgs).passthrough.filter(
     (arg) => arg !== '--runInBand',
   );
@@ -266,7 +267,7 @@ function runJestSuite(suite, database, extraArgs, cwd = process.cwd()) {
       ],
       {
         cwd,
-        env: { ...process.env, CONTROL_DB_NAME: database },
+        env: { ...env, CONTROL_DB_NAME: database },
         stdio: 'inherit',
       },
     );
@@ -333,12 +334,15 @@ async function run(options = {}) {
       try {
         await admin.query(`CREATE DATABASE "${database}"`);
         createdDatabase = true;
-        await (options.flush || flushRedis)();
+        const suiteEnv = options.env || process.env;
+        const redisUrl = integrationRedisUrl(suiteEnv.REDIS_URL);
+        await (options.flush || flushRedis)(redisUrl);
         const result = await (options.runSuite || runJestSuite)(
           suite,
           database,
           suiteArgs,
           cwd,
+          { ...suiteEnv, REDIS_URL: redisUrl },
         );
         if (result) suiteResults.push(result);
       } catch (error) {

@@ -96,6 +96,27 @@ test("database names are unique, safe, deterministic, and PostgreSQL-sized", () 
   );
 });
 
+test("runner flushes the same isolated Redis database that Jest consumes", async () => {
+  const flushed = [];
+  const childUrls = [];
+  const admin = {
+    connect: async () => {},
+    end: async () => {},
+    query: async () => ({ rowCount: 0 }),
+  };
+  await runner.run({
+    admin,
+    env: { ...process.env, REDIS_URL: "redis://127.0.0.1:6379/0" },
+    nonce: "redis_db",
+    discover: () => ["/redis.integration-spec.ts"],
+    flush: async (url) => flushed.push(url),
+    runSuite: async (_suite, _database, _args, _cwd, env) =>
+      childUrls.push(env.REDIS_URL),
+  });
+  assert.deepEqual(flushed, ["redis://127.0.0.1:6379/14"]);
+  assert.deepEqual(childUrls, flushed);
+});
+
 test("suite failure propagates after cleanup and subsequent selected suites still run", async () => {
   const events = [];
   const databases = new Set();
