@@ -316,9 +316,9 @@ def _assert_story_four_vertical_slice_semantics(posting_tasks: str) -> None:
 def _assert_story_four_addendum_identity(
     posting_tasks: str, addendum_bytes: bytes
 ) -> None:
-    expected_blob_oid = "19555ea934fe71e9d9ab864e0a2b83c08aa287dc"
+    expected_blob_oid = "3f131f478a2a79c260a6a49c1abe89795e362bdb"
     expected_digest = (
-        "b3da3d1d40e5de02900541e0cc22815f99153460fb5450562dd58fd2ad5f463d"
+        "f657fe36104769696a526626f8a40583dfa0f221a921755cebf2b72dc10270bf"
     )
     blob_oid = hashlib.sha1(
         f"blob {len(addendum_bytes)}\0".encode("ascii") + addendum_bytes
@@ -340,7 +340,7 @@ def _assert_story_four_vertical_slice_contract(posting_tasks: str) -> None:
     _assert_story_four_checker_review_contract(posting_tasks)
     _assert_story_four_approval_revalidation_and_usability_contract(posting_tasks)
     commissioned_document_digest = (
-        "2b11a1e0633fd51a8aee6fc478bc152e0a9c6346430b1fbd42ddad76626b92b4"
+        "0ca475c70d4f3e45093cad2855578b4923569d303ba6fc838afa2be2da34a74b"
     )
     if (
         hashlib.sha256(posting_tasks.encode("utf-8")).hexdigest()
@@ -1207,6 +1207,31 @@ class AccountingFoundationCiStructureTests(unittest.TestCase):
             "return `422`",
         ):
             self.assertIn(phrase, approval_contract)
+
+    def test_story_four_current_authorization_precedes_idempotent_replay(self) -> None:
+        posting_addendum = (
+            ROOT / "specs/003-accounting-foundation/posting-addendum.md"
+        ).read_text(encoding="utf-8")
+        maker_transaction = posting_addendum.split(
+            "### 6.2 Pending-approval transaction", 1
+        )[1].split("### 6.3 Immediate-post", 1)[0].lower()
+        posting_transaction = posting_addendum.split(
+            "### 6.3 Immediate-post or approval-post transaction", 1
+        )[1].split("### 6.4 Mirror", 1)[0].lower()
+
+        self.assertLess(
+            maker_transaction.index("verifies the human maker's current `post` authority"),
+            maker_transaction.index("replays an existing matching request receipt"),
+        )
+        self.assertLess(
+            posting_transaction.index("verifies current command authorization"),
+            posting_transaction.index("replays an existing matching posting receipt"),
+        )
+        for contract in (maker_transaction, posting_transaction):
+            self.assertIn(
+                "authorization revoked since the original command cannot retrieve its terminal outcome",
+                contract,
+            )
 
     def test_story_four_disabled_route_behavior_is_explicit_per_operation(self) -> None:
         posting_addendum = (

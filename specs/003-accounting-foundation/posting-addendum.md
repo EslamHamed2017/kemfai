@@ -155,31 +155,33 @@ NestJS claims a company/draft/action-scoped idempotency handoff using the canoni
 When maker-checker applies, the initial post request runs one guarded tenant transaction that:
 
 1. acquires the shared mutation-compatible selector/version locks for policy, period, entry classification, approval, rounding, FX, dimension, source, master-data, and authority selectors, then locks the request receipt key, draft, validation run, resolved rows and affected masters;
-2. replays an existing matching request receipt or rejects a fingerprint conflict;
-3. verifies the human maker's `Post` authority and exact draft/validation versions, re-resolves every locked selector and posting invariant, recomputes the maker-visible preview and canonical digest, and requires the bound preview to remain current before creating the frozen candidate;
-4. locks the draft-version/candidate-fingerprint approval uniqueness key and rejects any competing non-stale chain;
-5. creates exactly one immutable `pending` approval containing the frozen candidate, with no native move, move line, source link or balance mutation;
-6. writes one authoritative tenant `posting.approval_requested` audit event and immutable request receipt in the same transaction; and
-7. commits the approval, event and receipt together.
+2. verifies the human maker's current `Post` authority and scope before consulting any request receipt; a maker with authorization revoked since the original command cannot retrieve its terminal outcome;
+3. replays an existing matching request receipt or rejects a fingerprint conflict;
+4. verifies the exact draft/validation versions, re-resolves every locked selector and posting invariant, recomputes the maker-visible preview and canonical digest, and requires the bound preview to remain current before creating the frozen candidate;
+5. locks the draft-version/candidate-fingerprint approval uniqueness key and rejects any competing non-stale chain;
+6. creates exactly one immutable `pending` approval containing the frozen candidate, with no native move, move line, source link or balance mutation;
+7. writes one authoritative tenant `posting.approval_requested` audit event and immutable request receipt in the same transaction; and
+8. commits the approval, event and receipt together.
 
-Any exception rolls back all seven steps. Simultaneous same-key requests replay one approval/receipt/event; different keys for the same candidate produce one approval and one deterministic conflict. A platform-mirror failure withholds success and recovery mirrors the committed request without creating another approval. The `202` response is returned only after the request handoff is audited.
+Any exception rolls back all eight steps. Simultaneous same-key requests replay one approval/receipt/event; different keys for the same candidate produce one approval and one deterministic conflict. A platform-mirror failure withholds success and recovery mirrors the committed request without creating another approval. The `202` response is returned only after the request handoff is audited.
 
 ### 6.3 Immediate-post or approval-post transaction
 
 When maker-checker does not apply, the authorized post request enters this transaction directly. When it applies, only the approval command enters it, using its own action-scoped idempotency key and authenticated checker authorization. In one guarded tenant transaction it:
 
 1. acquires the shared mutation-compatible selector/version locks for policy, period, entry classification, approval, rounding, FX, dimension, source, master-data, and authority selectors, then locks the posting receipt key, draft, pending approval if any, validation run, resolved rows and affected masters;
-2. replays an existing matching posting receipt or rejects a fingerprint conflict;
-3. for immediate posting, verifies the requesting human’s `Post` authority; for approval posting, revalidates the recorded maker’s `Post` authority/scope, verifies the distinct checker’s `Approve` authority/scope, and atomically claims the still-pending approval;
-4. verifies exact draft/validation/candidate versions and, for immediate posting, binds the supplied digest to the server-rendered immediate-post preview and confirmation, then recomputes canonical totals, preview digest and snapshots;
-5. re-evaluates company, active posting accounts/journal/currencies, dimensions, source, FX provenance, rounding treatment and applicable matrix/period/approval result, marking a changed approval candidate stale without ledger movement;
-6. locks the draft terminal-post uniqueness key so simultaneous immediate/approval commands have one winner;
-7. creates the native move and lines in draft state internally, applies KEMFAI/source/policy/dimension metadata, and invokes the single guarded native posting transition;
-8. verifies the resulting move is posted, balanced in company base currency, linked exactly once, and contains no transformed or omitted accepted value;
-9. transitions the claimed approval to `approved` when applicable and writes the authoritative tenant posting audit event and immutable posting receipt; and
-10. commits move, lines, source links, approval transition, event and receipt together.
+2. verifies current command authorization before consulting any posting receipt: the requesting human's current `Post` authority/scope for immediate posting, or the distinct checker's current `Approve` authority/scope for approval posting; an actor with authorization revoked since the original command cannot retrieve its terminal outcome;
+3. replays an existing matching posting receipt or rejects a fingerprint conflict;
+4. for approval posting, revalidates the recorded maker's `Post` authority/scope and atomically claims the still-pending approval;
+5. verifies exact draft/validation/candidate versions and, for immediate posting, binds the supplied digest to the server-rendered immediate-post preview and confirmation, then recomputes canonical totals, preview digest and snapshots;
+6. re-evaluates company, active posting accounts/journal/currencies, dimensions, source, FX provenance, rounding treatment and applicable matrix/period/approval result, marking a changed approval candidate stale without ledger movement;
+7. locks the draft terminal-post uniqueness key so simultaneous immediate/approval commands have one winner;
+8. creates the native move and lines in draft state internally, applies KEMFAI/source/policy/dimension metadata, and invokes the single guarded native posting transition;
+9. verifies the resulting move is posted, balanced in company base currency, linked exactly once, and contains no transformed or omitted accepted value;
+10. transitions the claimed approval to `approved` when applicable and writes the authoritative tenant posting audit event and immutable posting receipt; and
+11. commits move, lines, source links, approval transition, event and receipt together.
 
-Any exception rolls back all ten steps. No caller can invoke the internal native transition directly. Simultaneous approval commands or immediate-post keys produce one posted entry/receipt/event and deterministic replay or conflict; no losing command can leave an approval transition or ledger row.
+Any exception rolls back all eleven steps. No caller can invoke the internal native transition directly. Simultaneous approval commands or immediate-post keys produce one posted entry/receipt/event and deterministic replay or conflict; no losing command can leave an approval transition or ledger row.
 
 ### 6.4 Mirror and response
 
