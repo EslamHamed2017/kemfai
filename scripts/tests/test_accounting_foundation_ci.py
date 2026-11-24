@@ -316,9 +316,9 @@ def _assert_story_four_vertical_slice_semantics(posting_tasks: str) -> None:
 def _assert_story_four_addendum_identity(
     posting_tasks: str, addendum_bytes: bytes
 ) -> None:
-    expected_blob_oid = "3f131f478a2a79c260a6a49c1abe89795e362bdb"
+    expected_blob_oid = "0bcbf4967902946b992183a957b79f0db69420a8"
     expected_digest = (
-        "f657fe36104769696a526626f8a40583dfa0f221a921755cebf2b72dc10270bf"
+        "78d144ce46dbe41e6538db763108849352890ffae3346e4fb8ff6fdec7e7d1a0"
     )
     blob_oid = hashlib.sha1(
         f"blob {len(addendum_bytes)}\0".encode("ascii") + addendum_bytes
@@ -340,7 +340,7 @@ def _assert_story_four_vertical_slice_contract(posting_tasks: str) -> None:
     _assert_story_four_checker_review_contract(posting_tasks)
     _assert_story_four_approval_revalidation_and_usability_contract(posting_tasks)
     commissioned_document_digest = (
-        "0ca475c70d4f3e45093cad2855578b4923569d303ba6fc838afa2be2da34a74b"
+        "e5b2e3319bd25c463f29b268be78e4ad97f7e954ca1449f68d6c826845af9b65"
     )
     if (
         hashlib.sha256(posting_tasks.encode("utf-8")).hexdigest()
@@ -351,7 +351,7 @@ def _assert_story_four_vertical_slice_contract(posting_tasks: str) -> None:
         )
 
     commissioned_runtime_digest = (
-        "27188ef7bd561687ccd0b73b16a28a05d61942723ec5054b931ca4eb8ad0f881"
+        "8f42f3eab2b2fa315973dff438992a46fee9fe15129f596845fc530296501d0b"
     )
     runtime_tasks = "\n".join(
         _story_four_task_block(posting_tasks, number)
@@ -1221,11 +1221,11 @@ class AccountingFoundationCiStructureTests(unittest.TestCase):
 
         self.assertLess(
             maker_transaction.index("verifies the human maker's current `post` authority"),
-            maker_transaction.index("replays an existing matching request receipt"),
+            maker_transaction.index("replays an existing actor-bound matching receipt"),
         )
         self.assertLess(
             posting_transaction.index("verifies current command authorization"),
-            posting_transaction.index("replays an existing matching posting receipt"),
+            posting_transaction.index("replays an existing actor-bound matching receipt"),
         )
         for contract in (maker_transaction, posting_transaction):
             self.assertIn(

@@ -426,5 +426,34 @@ class AccountingFoundationTaskGraphTests(unittest.TestCase):
         )
 
 
+    def test_posting_receipt_replay_is_actor_bound(self) -> None:
+        posting_addendum = (
+            ROOT / "specs/003-accounting-foundation/posting-addendum.md"
+        ).read_text(encoding="utf-8")
+        posting_tasks = (
+            ROOT / "specs/003-accounting-foundation/posting-tasks.md"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn(
+            "Every handoff and tenant receipt identity and canonical fingerprint immutably "
+            "bind the server-derived tenant, company, authenticated actor, draft or approval, "
+            "and action.",
+            posting_addendum,
+        )
+        self.assertIn(
+            "A receipt is replayable only when the current authenticated actor equals the "
+            "receipt's recorded actor",
+            posting_addendum,
+        )
+        self.assertIn(
+            "cross-actor same-key/same-payload receipt races",
+            next(line for line in posting_tasks.splitlines() if "] T163 " in line),
+        )
+        self.assertIn(
+            "only the same authenticated actor may replay the original terminal outcome",
+            next(line for line in posting_tasks.splitlines() if "] T190 " in line),
+        )
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

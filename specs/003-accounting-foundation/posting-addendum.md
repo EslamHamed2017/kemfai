@@ -148,7 +148,7 @@ This addendum does not define who may transition or reopen periods; it only cons
 
 ### 6.1 Pre-transaction handoff
 
-NestJS claims a company/draft/action-scoped idempotency handoff using the canonical request fingerprint and records the authenticated human authorization envelope. Existing pending/committed/audited lease and backoff semantics are reused. Payloads remain minimal and redacted.
+NestJS claims a tenant/company/authenticated-actor/draft-or-approval/action-scoped idempotency handoff using the canonical request fingerprint and records the authenticated human authorization envelope. Every handoff and tenant receipt identity and canonical fingerprint immutably bind the server-derived tenant, company, authenticated actor, draft or approval, and action. A receipt is replayable only when the current authenticated actor equals the receipt's recorded actor; cross-actor reuse of the same raw key and payload is never an exact replay, cannot disclose the original terminal outcome, and follows the applicable opaque conflict/denial path with zero new financial, approval, receipt, or tenant-mutation rows. Existing pending/committed/audited lease and backoff semantics are reused. Payloads remain minimal and redacted.
 
 ### 6.2 Pending-approval transaction
 
@@ -156,7 +156,7 @@ When maker-checker applies, the initial post request runs one guarded tenant tra
 
 1. acquires the shared mutation-compatible selector/version locks for policy, period, entry classification, approval, rounding, FX, dimension, source, master-data, and authority selectors, then locks the request receipt key, draft, validation run, resolved rows and affected masters;
 2. verifies the human maker's current `Post` authority and scope before consulting any request receipt; a maker with authorization revoked since the original command cannot retrieve its terminal outcome;
-3. replays an existing matching request receipt or rejects a fingerprint conflict;
+3. requires the current maker to equal the request receipt's recorded actor, then replays an existing actor-bound matching receipt or rejects a fingerprint/actor conflict without disclosing another actor's terminal outcome;
 4. verifies the exact draft/validation versions, re-resolves every locked selector and posting invariant, recomputes the maker-visible preview and canonical digest, and requires the bound preview to remain current before creating the frozen candidate;
 5. locks the draft-version/candidate-fingerprint approval uniqueness key and rejects any competing non-stale chain;
 6. creates exactly one immutable `pending` approval containing the frozen candidate, with no native move, move line, source link or balance mutation;
@@ -171,7 +171,7 @@ When maker-checker does not apply, the authorized post request enters this trans
 
 1. acquires the shared mutation-compatible selector/version locks for policy, period, entry classification, approval, rounding, FX, dimension, source, master-data, and authority selectors, then locks the posting receipt key, draft, pending approval if any, validation run, resolved rows and affected masters;
 2. verifies current command authorization before consulting any posting receipt: the requesting human's current `Post` authority/scope for immediate posting, or the distinct checker's current `Approve` authority/scope for approval posting; an actor with authorization revoked since the original command cannot retrieve its terminal outcome;
-3. replays an existing matching posting receipt or rejects a fingerprint conflict;
+3. requires the current requester or checker to equal the posting receipt's recorded actor, then replays an existing actor-bound matching receipt or rejects a fingerprint/actor conflict without disclosing another actor's terminal outcome;
 4. for approval posting, revalidates the recorded maker's `Post` authority/scope and atomically claims the still-pending approval;
 5. verifies exact draft/validation/candidate versions and, for immediate posting, binds the supplied digest to the server-rendered immediate-post preview and confirmation, then recomputes canonical totals, preview digest and snapshots;
 6. re-evaluates company, active posting accounts/journal/currencies, dimensions, source, FX provenance, rounding treatment and applicable matrix/period/approval result, marking a changed approval candidate stale without ledger movement;
