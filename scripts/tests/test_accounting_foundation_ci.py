@@ -316,9 +316,9 @@ def _assert_story_four_vertical_slice_semantics(posting_tasks: str) -> None:
 def _assert_story_four_addendum_identity(
     posting_tasks: str, addendum_bytes: bytes
 ) -> None:
-    expected_blob_oid = "0bcbf4967902946b992183a957b79f0db69420a8"
+    expected_blob_oid = "ddc8b90a087bc6326c74b08f83994c63d39cfefb"
     expected_digest = (
-        "78d144ce46dbe41e6538db763108849352890ffae3346e4fb8ff6fdec7e7d1a0"
+        "609f6c26db8cc97cab4c561a5229b7cb8a85a689897fc47b8188956aa71385d6"
     )
     blob_oid = hashlib.sha1(
         f"blob {len(addendum_bytes)}\0".encode("ascii") + addendum_bytes
@@ -340,7 +340,7 @@ def _assert_story_four_vertical_slice_contract(posting_tasks: str) -> None:
     _assert_story_four_checker_review_contract(posting_tasks)
     _assert_story_four_approval_revalidation_and_usability_contract(posting_tasks)
     commissioned_document_digest = (
-        "e5b2e3319bd25c463f29b268be78e4ad97f7e954ca1449f68d6c826845af9b65"
+        "59bb184d77995f34a1e79e67a91ba7f4ce7f834b35bef969a949ea4278c21a64"
     )
     if (
         hashlib.sha256(posting_tasks.encode("utf-8")).hexdigest()
@@ -1212,6 +1212,12 @@ class AccountingFoundationCiStructureTests(unittest.TestCase):
         posting_addendum = (
             ROOT / "specs/003-accounting-foundation/posting-addendum.md"
         ).read_text(encoding="utf-8")
+        posting_tasks = (
+            ROOT / "specs/003-accounting-foundation/posting-tasks.md"
+        ).read_text(encoding="utf-8")
+        handoff_contract = posting_addendum.split(
+            "### 6.1 Pre-transaction handoff", 1
+        )[1].split("### 6.2 Pending-approval transaction", 1)[0].lower()
         maker_transaction = posting_addendum.split(
             "### 6.2 Pending-approval transaction", 1
         )[1].split("### 6.3 Immediate-post", 1)[0].lower()
@@ -1219,6 +1225,19 @@ class AccountingFoundationCiStructureTests(unittest.TestCase):
             "### 6.3 Immediate-post or approval-post transaction", 1
         )[1].split("### 6.4 Mirror", 1)[0].lower()
 
+        self.assertIn(
+            "before any handoff lookup, status/result replay, or terminal response",
+            handoff_contract,
+        )
+        self.assertIn(
+            "current server-derived tenant, company, authenticated actor, and current `post` "
+            "or `approve` authority/scope",
+            handoff_contract,
+        )
+        self.assertIn(
+            "revoked-after-success maker, immediate-poster, and checker handoff replays",
+            posting_tasks.lower(),
+        )
         self.assertLess(
             maker_transaction.index("verifies the human maker's current `post` authority"),
             maker_transaction.index("replays an existing actor-bound matching receipt"),
