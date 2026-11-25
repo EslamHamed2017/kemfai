@@ -455,5 +455,23 @@ class AccountingFoundationTaskGraphTests(unittest.TestCase):
         )
 
 
+    def test_finance_review_slice_depends_on_pending_approval_workflow(self) -> None:
+        posting_tasks = (
+            ROOT / "specs/003-accounting-foundation/posting-tasks.md"
+        ).read_text(encoding="utf-8")
+        task = next(line for line in posting_tasks.splitlines() if "] T188 " in line)
+
+        self.assertIn("Deps: T177, T181", task)
+
+    def test_runtime_rollback_slice_covers_checker_evidence(self) -> None:
+        posting_tasks = (
+            ROOT / "specs/003-accounting-foundation/posting-tasks.md"
+        ).read_text(encoding="utf-8")
+        task = next(line for line in posting_tasks.splitlines() if "] T192 " in line)
+
+        self.assertIn("failure after checker confirmation", task)
+        self.assertIn("zero retained checker decision evidence", task)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

@@ -340,7 +340,7 @@ def _assert_story_four_vertical_slice_contract(posting_tasks: str) -> None:
     _assert_story_four_checker_review_contract(posting_tasks)
     _assert_story_four_approval_revalidation_and_usability_contract(posting_tasks)
     commissioned_document_digest = (
-        "9d5bd926a7dcd6249732a304aea26342688b7e0f6bfa9f14ca2a78b17bff20df"
+        "74bb6c4568c35f0e81833a3e19848170fed652200c4f2cd05c7ebcb86119da30"
     )
     if (
         hashlib.sha256(posting_tasks.encode("utf-8")).hexdigest()
@@ -351,7 +351,7 @@ def _assert_story_four_vertical_slice_contract(posting_tasks: str) -> None:
         )
 
     commissioned_runtime_digest = (
-        "1c0478c9d977e8050e4d493a7a3c93096dc74d74ff8f40018f33401559824dca"
+        "65213549f7cbac27c4367956add8fb8e5ed142d2176faa7af45f2fb1be81ed98"
     )
     runtime_tasks = "\n".join(
         _story_four_task_block(posting_tasks, number)
