@@ -316,9 +316,9 @@ def _assert_story_four_vertical_slice_semantics(posting_tasks: str) -> None:
 def _assert_story_four_addendum_identity(
     posting_tasks: str, addendum_bytes: bytes
 ) -> None:
-    expected_blob_oid = "ddc8b90a087bc6326c74b08f83994c63d39cfefb"
+    expected_blob_oid = "054641d7d6ab226480335078fd22fa3e8c5c68e8"
     expected_digest = (
-        "609f6c26db8cc97cab4c561a5229b7cb8a85a689897fc47b8188956aa71385d6"
+        "65a2b2948daad51cbb78a7bb1d2da002972eea25a83c60ed277a61e9a14e5ae5"
     )
     blob_oid = hashlib.sha1(
         f"blob {len(addendum_bytes)}\0".encode("ascii") + addendum_bytes
@@ -340,7 +340,7 @@ def _assert_story_four_vertical_slice_contract(posting_tasks: str) -> None:
     _assert_story_four_checker_review_contract(posting_tasks)
     _assert_story_four_approval_revalidation_and_usability_contract(posting_tasks)
     commissioned_document_digest = (
-        "59bb184d77995f34a1e79e67a91ba7f4ce7f834b35bef969a949ea4278c21a64"
+        "9d5bd926a7dcd6249732a304aea26342688b7e0f6bfa9f14ca2a78b17bff20df"
     )
     if (
         hashlib.sha256(posting_tasks.encode("utf-8")).hexdigest()
@@ -351,7 +351,7 @@ def _assert_story_four_vertical_slice_contract(posting_tasks: str) -> None:
         )
 
     commissioned_runtime_digest = (
-        "8f42f3eab2b2fa315973dff438992a46fee9fe15129f596845fc530296501d0b"
+        "1c0478c9d977e8050e4d493a7a3c93096dc74d74ff8f40018f33401559824dca"
     )
     runtime_tasks = "\n".join(
         _story_four_task_block(posting_tasks, number)
@@ -375,7 +375,7 @@ def _assert_story_four_vertical_slice_contract(posting_tasks: str) -> None:
     commissioned_tasks = {
         178: '- [ ] t178 [us4] [p: glm-5.2 | b: claude | r: codex] deliver the authorized english immediate-posting command happy-path vertical slice across browser ui→next bff→nest→odoo→tenant audit — deps: t177; ac: one balanced draft uses the non-mutating posting-preview read to show the minimum impact summary and unselected explicit confirmation bound to its exact strong draft etag and server preview digest, then re-resolves every locked preview input, fails closed on drift, posts atomically, returns only public uuid/receipt data, mirrors audit, and passes focused accessibility/contract/integration/browser tests while production remains disabled.',
         181: '- [ ] t181 [us4] [p: glm-5.2 | b: claude | r: codex] deliver the english maker human ui, impact review, explicit confirmation, and pending-approval request vertical slice across browser ui→next bff→nest→odoo→tenant audit — deps: t177; ac: one human-confirmed applicable approval configuration first uses the non-mutating posting-preview read and binds the request to its exact strong draft etag and server preview digest; after client bindings match, every locked input is re-resolved so changed but still valid preview inputs conflict with `409`, invalid execution facts fail validation with `422`, and neither outcome creates approval or ledger state; only an unchanged valid preview creates one immutable pending approval, request receipt, and authoritative audit event atomically with zero ledger movement, deterministic replay/conflict, preserved input on failure, and focused accessibility/browser tests.',
-        183: "- [ ] t183 [us4] [p: glm-5.2 | b: claude | r: codex] deliver the english distinct-checker human ui, frozen-evidence review, explicit confirmation, and approval-to-post vertical slice across browser ui→next bff→nest→odoo→tenant audit — deps: t181, t182; ac: a non-maker checker with approve scope explicitly confirms and posts the frozen candidate once in one guarded transaction that revalidates the maker's post authority/scope, checker authority/scope, exact draft/candidate integrity, and company-scoped policy, period, posting masters, dimensions, source, fx, rounding, and approval facts; the approval body supplies the canonical `previewdigest` from the detail response with the exact strong approval etag, and the final locked recomputation exactly matches the checker-confirmed preview and digest or marks the candidate stale with zero ledger effect; self-approval or an unauthorized checker fails closed without changing the still-pending candidate; only changed draft/candidate or invalidated execution facts mark it stale without ledger effect, receipt plus tenant/platform audit complete before success, input survives failure, and focused accessibility/browser tests pass.",
+        183: "- [ ] t183 [us4] [p: glm-5.2 | b: claude | r: codex] deliver the english distinct-checker human ui, frozen-evidence review, explicit confirmation, and approval-to-post vertical slice across browser ui→next bff→nest→odoo→tenant audit — deps: t181, t182; ac: a non-maker checker with approve scope explicitly confirms and posts the frozen candidate once in one guarded transaction that revalidates the maker's post authority/scope, checker authority/scope, exact draft/candidate integrity, and company-scoped policy, period, posting masters, dimensions, source, fx, rounding, and approval facts; the approval body supplies the canonical `previewdigest` from the detail response with the exact strong approval etag and literal `confirmation: approve`; while the approval is locked and still pending, the transaction records the distinct checker identity/time and matching final locked recomputation as checker-confirmed evidence; the final locked recomputation exactly matches the checker-confirmed preview and digest before the approval becomes approved and the move becomes posted, or marks the candidate stale with zero ledger effect; self-approval or an unauthorized checker fails closed without changing the still-pending candidate; only changed draft/candidate or invalidated execution facts mark it stale without ledger effect, receipt plus tenant/platform audit complete before success, input survives failure, and focused accessibility/browser tests pass.",
         196: '- [ ] t196 [us4] [p: claude | b: glm-5.2 | r: codex] run the immediate-post/read/source accessibility acceptance gate across the complete real candidate path — deps: t179, t180, t185, t186; ac: en/ltr and ar/rtl keyboard flow, semantic headings/tables, linked errors, focus, live status, visible focus, axe, and 200% zoom pass without retrofitting or waiving any slice-level accessibility requirement.',
         197: '- [ ] t197 [us4] [p: claude | b: glm-5.2 | r: codex] run the maker/checker/recovery accessibility acceptance gate across the complete real candidate path — deps: t182, t184, t194, t195; ac: both locales pass keyboard, focus, linked-error, live-status, axe, and 200%-zoom checks for pending, checker, stale, failure, and recovery states without clipping, traps, retrofits, or waivers.',
         198: '- [ ] t198 [us4] [p: glm-5.2 | b: claude | r: codex] run the integrated story 4 candidate acceptance gate across browser ui→next bff→nest→odoo→tenant audit in disposable upgraded tenant dbs — deps: t177–t197; ac: additive install/upgrade, static, contract, odoo, nestjs, frontend, accessibility, migration, race, failure, recovery, and playwright discovery suites pass nonzero with zero failed/skipped/unexpected/flaky while production entitlement remains false, posting-preview, pending-approval collection, approval-detail, and mutation routes are absent, and authorized posted-entry and source-traversal reads remain mounted.',
@@ -1139,6 +1139,36 @@ class AccountingFoundationCiStructureTests(unittest.TestCase):
             "marks the candidate stale with zero ledger effect",
         ):
             self.assertIn(phrase, posting_addendum)
+
+    def test_story_four_finance_review_precedence_and_atomic_checker_contract(self) -> None:
+        posting_addendum = (
+            ROOT / "specs/003-accounting-foundation/posting-addendum.md"
+        ).read_text(encoding="utf-8")
+        posting_tasks = (
+            ROOT / "specs/003-accounting-foundation/posting-tasks.md"
+        ).read_text(encoding="utf-8")
+
+        for phrase in (
+            "effective maker-checker requirement is the logical OR",
+            "`makerCheckerEnabled: false` permits immediate posting only when the period evaluator also permits immediate posting",
+            "Finance Review always requires maker-checker",
+            "checker-confirmed in-transaction evidence",
+            "still-`pending` approval",
+            "literal `confirmation: APPROVE`",
+            "before the approval becomes `approved` and the move becomes `posted`",
+            "rolls back the checker decision evidence, approval transition, move, lines, source links, event, and receipt together",
+            "Finance Review adjustment succeeds when company `makerCheckerEnabled` is `false`",
+        ):
+            self.assertIn(phrase, posting_addendum)
+
+        for phrase in (
+            "finance review with company `makercheckerenabled: false` still creates a pending approval",
+            "checker decision evidence, approval transition, and ledger posting roll back together",
+            "finance review/company-configuration races",
+            "one approved-and-posted winner",
+            "company `makercheckerenabled: false` cannot select the immediate path",
+        ):
+            self.assertIn(phrase, posting_tasks.lower())
 
     def test_story_four_immediate_post_binds_confirmation_to_preview(self) -> None:
         posting_addendum = (
