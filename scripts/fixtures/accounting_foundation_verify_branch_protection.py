@@ -12,8 +12,6 @@ from typing import Any
 from urllib.parse import quote
 
 REQUIRED_CHECK = "accounting-foundation-owned-live"
-READ_EVENTS = {"pull_request", "pull_request_target", "merge_group"}
-
 
 def fail(message: str) -> int:
     print(f"FAIL: {message}", file=sys.stderr)
@@ -31,16 +29,15 @@ def required_contexts(payload: Any) -> set[str]:
 
 
 def main() -> int:
-    event = os.environ.get("GITHUB_EVENT_NAME", "")
-    if event not in READ_EVENTS:
-        print(f"PASS: branch-protection lookup is not required for event {event or 'local'}")
-        return 0
     repository = os.environ.get("GITHUB_REPOSITORY", "")
-    branch = os.environ.get("GITHUB_BASE_REF") or os.environ.get("KEMFAI_BRANCH_PROTECTION_BRANCH", "")
+    branch = os.environ.get("KEMFAI_BRANCH_PROTECTION_BRANCH") or os.environ.get("GITHUB_BASE_REF", "")
     if re.fullmatch(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+", repository) is None:
         return fail("GITHUB_REPOSITORY is absent or malformed")
     if re.fullmatch(r"[A-Za-z0-9._/-]+", branch) is None or ".." in branch:
         return fail("target branch is absent or malformed")
+    token = os.environ.get("GITHUB_TOKEN", "")
+    if not token or "\r" in token or "\n" in token:
+        return fail("GITHUB_TOKEN is absent or malformed")
     endpoint = f"https://api.github.com/repos/{repository}/branches/{quote(branch, safe='')}"
     result = subprocess.run(
         [
@@ -52,6 +49,8 @@ def main() -> int:
             "--proto",
             "=https",
             "--tlsv1.2",
+            "--config",
+            "-",
             "-H",
             "Accept: application/vnd.github+json",
             "-H",
@@ -59,6 +58,7 @@ def main() -> int:
             endpoint,
         ],
         text=True,
+        input=f'header = "Authorization: Bearer {token}"\n',
         capture_output=True,
         check=False,
     )

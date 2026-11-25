@@ -1,11 +1,11 @@
 # Story 4 Addendum — Authorized Double-Entry Posting
 
 **Feature:** `003-accounting-foundation`
-**Addendum version:** 1.0
-**Status:** INDEPENDENTLY REVIEWED — specification accepted; no implementation or production activation authorized
+**Addendum version:** 1.1
+**Status:** SPECIFICATION AMENDMENT CANDIDATE — exact-content independent re-review and protected PR approval required; no implementation or production activation authorized
 **Policy authority:** `accounting-policy-matrix.md` v1.0, approved 2026-11-07
 **Scope:** User Story 4 only: approval-aware posting of an existing KEMFAI journal draft
-**Independent review:** Codex — ACCEPT; verified against T152, matrix v1.0, Story 4, and repository guardrails
+**Review binding:** v1.0 was independently accepted under T152; v1.1 must be independently reviewed as exact content at the graph-review head, and any amendment invalidates that evidence
 
 ## 1. Purpose and gate
 
@@ -23,27 +23,30 @@ Story 5 reversal/correction, Story 6 opening balances, and Story 7 period mainte
 6. A posted move is immutable through KEMFAI. No update or delete route exists. Correction is exclusively Story 5.
 7. The exact applicable Accounting Policy Matrix version is evaluated at execution time and retained on the posted move. v1.0 is the only approved version for this addendum; absent, inapplicable, superseded-without-effective-resolution, or changed policy fails closed.
 8. Period permission is evaluated against the draft accounting date at execution time. System-clock changes cannot select another period.
-9. Idempotent replay returns the original outcome. A changed fingerprint under the same scoped key conflicts and cannot create another move, approval, receipt, or event.
-10. `module.accounting_posting` remains absent/false until the complete implementation passes independent acceptance and release approval. Disabled capability means route absence, not only UI hiding.
+9. Idempotent replay returns the original outcome. A changed fingerprint under the same scoped key conflicts and cannot create another move, approval, receipt, or authoritative tenant mutation event; it creates only the denial audit event required below for that domain-separated denied-attempt identity. A reused correlation ID with a different denied request fingerprint is a distinct attempt and cannot be deduplicated with the earlier denial.
+10. `module.accounting_posting` remains absent/false until the complete implementation passes independent acceptance and release approval. While disabled, the posting-preview, pending-approval collection, approval-detail, and mutation routes are absent, not merely hidden in the UI; the separately authorized immutable posted-entry and source-traversal reads remain mounted so historical accounting evidence stays available.
 
 ## 3. Boundary and routes
 
 All customer calls follow browser → Next.js BFF → NestJS → guarded Odoo ORM → exact tenant DB. Public identifiers are UUIDs; native model names, integer IDs, database names, RPC details, and Odoo URLs never cross the API boundary.
 
-A future additive OpenAPI contract may expose only these Story 4 commands:
+A future additive OpenAPI contract may expose only these seven Story 4 operations:
 
 | Method and path | Purpose | Success |
 |---|---|---|
-| `POST /v1/accounting/drafts/{draftId}/post` | Human requests posting of one exact draft version. It either posts immediately or creates/replays a required approval request. | `201` posted; `202` approval required; `200` exact replay |
+| `GET /v1/accounting/drafts/{draftId}/posting-preview?validationRunId={validationRunId}` | Authorized maker reads a non-mutating, server-rendered posting-impact preview for one exact draft version/validation run, with the exact strong draft ETag and canonical `previewDigest`; it never posts, creates an approval, or mutates the draft. | `200` |
+| `POST /v1/accounting/drafts/{draftId}/post` | Human requests posting of one exact preview-bound draft version. It either posts immediately or creates/replays a required approval request. | `201` posted; `202` approval required; `200` exact replay |
+| `GET /v1/accounting/posting-approvals?status=pending` | An authorized checker discovers only pending approvals within their tenant, selected company, `Approve` permission, and amount scope; results contain public UUIDs and summary evidence only, use stable cursor pagination, and never claim or mutate an approval. | `200` |
+| `GET /v1/accounting/posting-approvals/{approvalId}` | Authorized maker or distinct in-scope checker reads the immutable frozen candidate and current non-mutating preview evidence required for review; this operation never claims, approves, posts, or mutates the candidate. | `200` |
 | `POST /v1/accounting/posting-approvals/{approvalId}/approve` | Distinct authorized checker approves and atomically posts the frozen candidate. | `201` posted; `200` exact replay |
 | `GET /v1/accounting/posted-entries/{entryId}` | Read immutable KEMFAI entry, source, dimensions, policy and audit links within scope. | `200` |
 | `GET /v1/accounting/sources/{sourceId}/posted-entries` | Resolve an authorized KEMFAI source UUID to immutable posted-entry links; the draft UUID is always a valid canonical source. | `200` |
 
-No generic native action endpoint is permitted. There is no posted-entry PUT/PATCH/DELETE. Story 5 routes are not introduced here.
+No generic native action endpoint is permitted. There is no posted-entry PUT/PATCH/DELETE. Story 5 routes are not introduced here. While `module.accounting_posting` is absent/false, posting-preview, pending-approval collection, approval-detail, and mutation routes are absent at both Next.js and NestJS; authorized posted-entry and source-traversal reads remain mounted and continue to enforce tenant, company, and resource scope.
 
 ### 3.1 Command headers
 
-Mutation commands require authenticated user context, `X-KEMFAI-Company-Id`, `Idempotency-Key`, `If-Match` with the exact strong draft or approval ETag, and correlation context. The server derives tenant and actor. Wildcard preconditions are rejected.
+Mutation commands require authenticated user context, `X-KEMFAI-Company-Id`, `Idempotency-Key`, `If-Match` with the exact strong draft or approval ETag, and correlation context. The server derives tenant and actor. Wildcard preconditions are rejected. The strong approval ETag covers the preview digest inputs and every mutable policy, period, approval-configuration, master-data, dimension, source, FX, rounding, candidate, selector, and authority version used to produce the checker-visible preview. The strong draft ETag covers the corresponding digest inputs and mutable versions used to produce the maker-visible immediate-post preview.
 
 ### 3.2 Post request
 
@@ -51,23 +54,30 @@ The body contains only:
 
 - `draftVersion`: exact integer version duplicated for explicit signing/fingerprinting;
 - `validationRunId`: immutable validation result for that draft version;
+- `previewDigest`: exact opaque canonical digest returned with the server-rendered posting-impact review for that draft version and validation run;
 - `confirmation`: literal `POST` supplied by the human confirmation UI;
 - `reason`: required when the effective period rule or configured approval rule requires one.
 
-Client-supplied matrix versions, Odoo IDs, calculated totals, permission claims, approval decisions, or period states are rejected. The server resolves and snapshots them.
+Client-supplied matrix versions, Odoo IDs, calculated totals, permission claims, approval decisions, or period states are rejected. The server resolves and snapshots them. The post request body includes the exact `previewDigest`; the immediate-post preview and confirmation use the same domain-separated, contract-versioned canonical serialization as approval review, covering the complete human-visible preview and every mutable input/version that can affect posting. Under the guarded transaction, the server first compares the submitted `If-Match` and `previewDigest` with the immutable server-issued preview record reconstructed from the exact draft version, validation run, and ETag-bound version vector. Only a mismatch at that client-binding step returns `412`. After those preconditions match, the server acquires the shared selector locks, re-resolves current facts, and recomputes the preview and digest: changed but still valid preview inputs return `409` and require a fresh preview; invalid execution facts return `422` with ordered validation issues; every outcome creates zero ledger state. This ordering is normative, so a current-state drift is never reclassified as a client-binding mismatch. Exact replay returns only the original terminal outcome.
 
-### 3.3 Outcomes and stable errors
+### 3.3 Approval review and command binding
+
+The pending collection and approval-detail reads are non-mutating and scope-filtered. The detail response returns the exact frozen candidate, current preview evidence, a strong approval ETag, and a server-generated canonical `previewDigest`. The digest is computed from a domain-separated, versioned canonical serialization of the approval public ID/version, candidate fingerprint, complete checker-visible preview payload, and every policy, period, approval-configuration, master-data, dimension, source, FX, rounding, selector, and authority version that can affect approval-time posting. The canonical serialization and digest algorithm are contract-versioned; clients never construct or alter the digest.
+
+The approval command body includes the exact `previewDigest` returned by the detail read and a literal `confirmation: APPROVE`; no calculated amount, policy decision, or approval result is accepted from the client. The `If-Match` value and `previewDigest` jointly bind the human confirmation to one exact server-rendered preview. Under the guarded posting transaction and selector locks, the server applies this ordered decision contract. Checker authorization is evaluated before candidate staleness: an unauthenticated, unauthorized, self-approving, or out-of-scope checker receives the applicable opaque `401`/`403`/`404` or `422` outcome and the candidate remains pending. Next, a submitted approval ETag or `previewDigest` that does not match the server-issued detail record returns `412`; the candidate remains pending and no current fact is disclosed. After those bindings match, the server re-resolves all mutable facts and recomputes both the preview and digest. Changed but still valid execution facts atomically mark the candidate `stale`, return `409`, and produce zero ledger effect. Invalid execution facts — including maker authority/scope revocation, inactive posting masters, unavailable policy, disallowed period, or source-scope invalidation — atomically mark the candidate `stale`, return `422` with ordered validation issues, and produce zero ledger effect. Exact idempotent replay returns only the original terminal outcome.
+
+### 3.4 Outcomes and stable errors
 
 - `401/403`: unauthenticated or unauthorized, with opaque foreign-resource behavior.
 - `404`: absent or out-of-scope public resource; no existence disclosure.
 - `409`: idempotency fingerprint conflict, stale/non-current validation, already terminal draft, duplicate approval chain, or immutable-state conflict.
-- `412`: ETag mismatch.
+- `412`: exact strong ETag or canonical `previewDigest` mismatch.
 - `422`: complete ordered validation issues, including unbalanced base totals, non-posting/inactive account, inactive journal/currency, missing/invalid dimensions, incomplete FX provenance, excess-scale/rounding policy failure, disallowed period, unavailable policy, maker-checker self-approval, or source-scope failure.
 - `503`: authoritative mutation or audit completion cannot be proven; success is withheld and recovery remains safe.
 
 Errors use stable KEMFAI codes, localized message keys/parameters, optional line/field paths, and no native details. A failed outcome proves zero new move/line/balance/source rows.
 
-Every attempt has immutable audit evidence. A denial before tenant routing/domain entry is recorded in the control-plane audit as the authoritative denial event with opaque submitted identifiers, actor/company scope, reason code, idempotency key hash, and correlation ID. A denial evaluated inside the tenant domain is written to the tenant audit and mirrored to the platform. An exact idempotent replay references the original receipt/event and appends one deduplicated `posting.replayed` platform event per replay correlation ID; it creates no second tenant mutation event. Fingerprint conflicts and stale requests are independently audited as denied attempts.
+Every attempt has immutable audit evidence. A denial before tenant routing/domain entry is recorded in the control-plane audit as the authoritative denial event with opaque submitted identifiers, actor/company scope, reason code, idempotency key hash, and correlation ID. A denial evaluated inside the tenant domain is written to the tenant audit and mirrored to the platform. An exact idempotent replay references the original receipt/event and appends one deduplicated `posting.replayed` platform event per replay correlation ID; it creates no second tenant mutation event. Fingerprint conflicts create no financial mutation, receipt, or tenant mutation event. Each complete denied-attempt identity creates one authoritative denial audit event in the applicable control-plane or tenant audit and is mirrored to the platform. Conflict-denial deduplication uses a domain-separated denied-attempt identity that immutably binds tenant, company, authenticated actor, action, scoped idempotency-key hash, denied request fingerprint, winning operation identifier and fingerprint, and correlation ID. Only redelivery of that complete identity is deduplicated; a reused correlation ID with a different denied request fingerprint is a distinct attempt and receives its own denial event. Stale requests are likewise independently audited as denied attempts.
 
 ## 4. Authorization and maker-checker
 
@@ -75,9 +85,9 @@ Every attempt has immutable audit evidence. A denial before tenant routing/domai
 
 The company approval configuration is versioned data. It may activate maker-checker by amount or another configured criterion; this addendum hard-codes no threshold or criterion. A configuration row names a registered criterion key, effective date range, company/localization scope, priority, typed criterion parameters, maker/checker permission keys, amount-scope basis, and reason requirements. Criterion implementations are allow-listed, deterministic, side-effect free, and consume only the canonical candidate snapshot plus authenticated server context. Unknown criterion keys or invalid parameters fail closed.
 
-An approval resolver selects exactly one effective configuration under a company-scoped approval-selector lock. Exactly one effective configuration is mandatory and explicitly sets `makerCheckerEnabled: true|false`. Absence, multiple matches, overlapping ranges, unknown criteria, or evaluator errors block posting. Only an explicit effective `false` permits immediate posting; `true` requires approval. The exact configuration ID/version, criterion key/parameters, canonical inputs, and result are frozen with the candidate. Approval-configuration mutations acquire the same selector lock and increment the selector version, so either the mutation wins and the post evaluates the new version, or the post wins and retains the old immutable snapshot; an approval decision re-resolves and marks the candidate stale if the selector version changed.
+An approval resolver selects exactly one effective configuration under a company-scoped approval-selector lock. Exactly one effective configuration is mandatory and explicitly sets `makerCheckerEnabled: true|false`. Absence, multiple matches, overlapping ranges, unknown criteria, or evaluator errors block posting. The effective maker-checker requirement is the logical OR of the company configuration result and the locked period evaluator's maker-checker requirement. Therefore `makerCheckerEnabled: false` permits immediate posting only when the period evaluator also permits immediate posting; Finance Review always requires maker-checker, while company `true` may require it in a period that otherwise permits immediate posting. The exact configuration ID/version, criterion key/parameters, canonical inputs, company result, period result, and effective result are frozen with the candidate. Approval-configuration mutations acquire the same selector lock and increment the selector version, so either the mutation wins and the post evaluates the new version, or the post wins and retains the old immutable snapshot; an approval decision re-resolves and marks the candidate stale if the selector version changed.
 
-When maker-checker does not apply, an authorized human post request may execute atomically. When it applies:
+When the effective maker-checker requirement is false, an authorized human post request may execute atomically. When it is true:
 
 1. the post request freezes the exact draft version, validation run, fingerprint, policy, period evaluation, source, totals, and configuration snapshot;
 2. no ledger movement occurs and a `pending` approval is returned;
@@ -132,44 +142,49 @@ Posting consumes two fail-closed interfaces:
 
 Entry classification is data-driven: a versioned company configuration maps the draft `transactionTypeKey` to `routine` or `adjustment`, with an adjustment permission key and approved workflow key. Unknown or overlapping mappings block. Open accepts either class subject to ordinary posting authority. Soft Close accepts only `adjustment` plus the mapped specific permission and a reason. Finance Review accepts only `adjustment` plus that permission, reason, and a completed maker-checker approval under the mapped workflow. Hard Close always blocks. No transaction type is hard-coded as an adjustment.
 
-This addendum does not define who may transition or reopen periods; it only consumes the locked, versioned result above.
+For Finance Review, "completed" is evaluated only inside the guarded approval-post transaction. The checker-confirmed in-transaction evidence consists of the locked still-`pending` approval and frozen mapped-workflow candidate; a distinct authenticated checker identity with current `Approve` company/amount scope and timestamp; the exact strong approval ETag; the server-issued canonical `previewDigest`; the literal `confirmation: APPROVE`; and a final locked recomputation that exactly matches the frozen candidate, preview, digest, policy, period, workflow, and all execution facts. That evidence must exist and satisfy the Finance Review predicate before the approval becomes `approved` and the move becomes `posted`; neither a company `false`, a preview read, a prior checker identity, nor a client assertion satisfies it.
+
+This addendum does not define who may transition or reopen periods; it only consumes the locked, versioned result above. Every posting-path resolution uses shared mutation-compatible selector/version locks for policy, period, classification, approval, rounding, FX, dimension, source, master-data, and authority selectors. Every mutation that can change one of those resolved inputs acquires the same applicable lock and increments its selector/version before commit. The locking protocol prevents phantom or overlapping configuration rows and authority/configuration drift: either the mutation wins and posting re-resolves the new version before any ledger write, or posting wins with the locked immutable versions; serializable/predicate-conflict losers retry resolution before mutation.
 
 ## 6. Posting transaction and recovery
 
 ### 6.1 Pre-transaction handoff
 
-NestJS claims a company/draft/action-scoped idempotency handoff using the canonical request fingerprint and records the authenticated human authorization envelope. Existing pending/committed/audited lease and backoff semantics are reused. Payloads remain minimal and redacted.
+Before any handoff lookup, status/result replay, or terminal response, NestJS re-derives and verifies the current server-derived tenant, company, authenticated actor, and current `Post` or `Approve` authority/scope for the command; a revoked or moved actor cannot retrieve a prior terminal outcome. NestJS then claims a tenant/company/authenticated-actor/draft-or-approval/action-scoped idempotency handoff using the canonical request fingerprint and records the authenticated human authorization envelope. Every handoff and tenant receipt identity and canonical fingerprint immutably bind the server-derived tenant, company, authenticated actor, draft or approval, and action. A receipt is replayable only when the current authenticated actor equals the receipt's recorded actor; cross-actor reuse of the same raw key and payload is never an exact replay, cannot disclose the original terminal outcome, and follows the applicable opaque conflict/denial path with zero new financial, approval, receipt, or tenant-mutation rows. Existing pending/committed/audited lease and backoff semantics are reused. Payloads remain minimal and redacted.
 
 ### 6.2 Pending-approval transaction
 
 When maker-checker applies, the initial post request runs one guarded tenant transaction that:
 
-1. acquires the policy, period, entry-classification and approval selector locks, then locks the request receipt key, draft, validation run and resolved configuration rows;
-2. replays an existing matching request receipt or rejects a fingerprint conflict;
-3. verifies the human maker's `Post` authority, exact draft/validation versions, all posting invariants, and the current policy/period/approval evaluations;
-4. locks the draft-version/candidate-fingerprint approval uniqueness key and rejects any competing non-stale chain;
-5. creates exactly one immutable `pending` approval containing the frozen candidate, with no native move, move line, source link or balance mutation;
-6. writes one authoritative tenant `posting.approval_requested` audit event and immutable request receipt in the same transaction; and
-7. commits the approval, event and receipt together.
+1. acquires the shared mutation-compatible selector/version locks for policy, period, entry classification, approval, rounding, FX, dimension, source, master-data, and authority selectors, then locks the request receipt key, draft, validation run, resolved rows and affected masters;
+2. verifies the human maker's current `Post` authority and scope before consulting any request receipt; a maker with authorization revoked since the original command cannot retrieve its terminal outcome;
+3. requires the current maker to equal the request receipt's recorded actor, then replays an existing actor-bound matching receipt or rejects a fingerprint/actor conflict without disclosing another actor's terminal outcome;
+4. verifies the exact draft/validation versions, re-resolves every locked selector and posting invariant, recomputes the maker-visible preview and canonical digest, and requires the bound preview to remain current before creating the frozen candidate;
+5. locks the draft-version/candidate-fingerprint approval uniqueness key and rejects any competing non-stale chain;
+6. creates exactly one immutable `pending` approval containing the frozen candidate, with no native move, move line, source link or balance mutation;
+7. writes one authoritative tenant `posting.approval_requested` audit event and immutable request receipt in the same transaction; and
+8. commits the approval, event and receipt together.
 
-Any exception rolls back all seven steps. Simultaneous same-key requests replay one approval/receipt/event; different keys for the same candidate produce one approval and one deterministic conflict. A platform-mirror failure withholds success and recovery mirrors the committed request without creating another approval. The `202` response is returned only after the request handoff is audited.
+Any exception rolls back all eight steps. Simultaneous same-key requests replay one approval/receipt/event; different keys for the same candidate produce one approval and one deterministic conflict. A platform-mirror failure withholds success and recovery mirrors the committed request without creating another approval. The `202` response is returned only after the request handoff is audited.
 
 ### 6.3 Immediate-post or approval-post transaction
 
 When maker-checker does not apply, the authorized post request enters this transaction directly. When it applies, only the approval command enters it, using its own action-scoped idempotency key and authenticated checker authorization. In one guarded tenant transaction it:
 
-1. acquires the shared policy, period, entry-classification and approval selector locks, then locks the posting receipt key, draft, pending approval if any, resolved policy/period/configuration rows and affected masters;
-2. replays an existing matching posting receipt or rejects a fingerprint conflict;
-3. for immediate posting, verifies the requesting human’s `Post` authority; for approval posting, revalidates the recorded maker’s `Post` authority/scope, verifies the distinct checker’s `Approve` authority/scope, and atomically claims the still-pending approval;
-4. verifies exact draft/validation/candidate versions and recomputes canonical totals and snapshots;
-5. re-evaluates company, active posting accounts/journal/currencies, dimensions, source, FX provenance, rounding treatment and applicable matrix/period/approval result, marking a changed approval candidate stale without ledger movement;
-6. locks the draft terminal-post uniqueness key so simultaneous immediate/approval commands have one winner;
-7. creates the native move and lines in draft state internally, applies KEMFAI/source/policy/dimension metadata, and invokes the single guarded native posting transition;
-8. verifies the resulting move is posted, balanced in company base currency, linked exactly once, and contains no transformed or omitted accepted value;
-9. transitions the claimed approval to `approved` when applicable and writes the authoritative tenant posting audit event and immutable posting receipt; and
-10. commits move, lines, source links, approval transition, event and receipt together.
+1. acquires the shared mutation-compatible selector/version locks for policy, period, entry classification, approval, rounding, FX, dimension, source, master-data, and authority selectors, then locks the posting receipt key, draft, pending approval if any, validation run, resolved rows and affected masters;
+2. verifies current command authorization before consulting any posting receipt: the requesting human's current `Post` authority/scope for immediate posting, or the distinct checker's current `Approve` authority/scope for approval posting; an actor with authorization revoked since the original command cannot retrieve its terminal outcome;
+3. requires the current requester or checker to equal the posting receipt's recorded actor, then replays an existing actor-bound matching receipt or rejects a fingerprint/actor conflict without disclosing another actor's terminal outcome;
+4. for approval posting, revalidates the recorded maker's `Post` authority/scope and atomically claims the still-`pending` approval;
+5. verifies exact draft/validation/candidate versions and, for immediate posting, binds the supplied digest to the server-rendered immediate-post preview and confirmation, then recomputes canonical totals, preview digest and snapshots;
+6. re-evaluates company, active posting accounts/journal/currencies, dimensions, source, FX provenance, rounding treatment and applicable matrix/period/approval result, marking a changed approval candidate stale without ledger movement;
+7. for approval posting, constructs and records on the claimed approval the checker-confirmed in-transaction evidence defined in §5.4, including checker identity/time, exact ETag, canonical `previewDigest`, literal `confirmation: APPROVE`, and the matching final locked recomputation; Finance Review is not satisfied before this step;
+8. locks the draft terminal-post uniqueness key so simultaneous immediate/approval commands have one winner;
+9. creates the native move and lines in draft state internally and applies KEMFAI/source/policy/dimension metadata;
+10. only after the required checker evidence exists, invokes the single guarded native posting transition, verifies the resulting move is posted, balanced in company base currency, linked exactly once, and contains no transformed or omitted accepted value, and transitions the claimed approval to `approved` in the same transaction;
+11. writes the authoritative tenant posting audit event and immutable posting receipt; and
+12. commits move, lines, source links, checker decision evidence, approval transition, event and receipt together.
 
-Any exception rolls back all ten steps. No caller can invoke the internal native transition directly. Simultaneous approval commands or immediate-post keys produce one posted entry/receipt/event and deterministic replay or conflict; no losing command can leave an approval transition or ledger row.
+Any exception rolls back all twelve steps and rolls back the checker decision evidence, approval transition, move, lines, source links, event, and receipt together; a downstream failure cannot leave a Finance Review approval completed without its posted move. No caller can invoke the internal native transition directly. Simultaneous approval commands or immediate-post keys produce one posted entry/receipt/event and deterministic replay or conflict; no losing command can leave checker decision evidence, an approval transition, or a ledger row.
 
 ### 6.4 Mirror and response
 
@@ -191,7 +206,7 @@ Rate lookup, realized FX and revaluation are outside this addendum. Posting cons
 
 The existing draft composer gains a posting-impact review only when capability is enabled. It shows exact lines, base/transaction totals, dimensions, source, period result, matrix v1.0, rounding line if any, approval requirement, and explicit irreversible-posting language. The user must actively confirm; no preselected or AI-triggered confirmation exists.
 
-EN/LTR and AR/RTL flows require keyboard-complete grid/review/dialog operation, visible focus, semantic headings/tables, error summary linked to line fields, announced pending/success/failure status, duplicate-submit prevention, 200% zoom, and localized empty/loading/recoverable-error states. Input is preserved on failure. Approval inbox and decisions expose the same evidence and clearly identify maker/checker separation.
+EN/LTR and AR/RTL flows require keyboard-complete grid/review/dialog operation, visible focus, semantic headings/tables, error summary linked to line fields, announced pending/success/failure status, duplicate-submit prevention, 200% zoom, and localized empty/loading/recoverable-error states. Input is preserved on failure. The approval inbox uses the scope-filtered pending-approval collection, then the authorized non-mutating approval-detail read operation to expose the exact evidence and clearly identify maker/checker separation. Checker-visible totals and rounding are preview computations only. The UI must submit the returned canonical `previewDigest` with the checker’s explicit `APPROVE` confirmation and exact strong approval ETag. After explicit checker confirmation, the approval command performs the final recomputation under the guarded transaction locks; it posts only if the final evidence exactly matches the checker-confirmed preview and its digest, otherwise it marks the candidate stale with zero ledger effect and requires a new review.
 
 ## 9. Test-first implementation gate
 
@@ -199,7 +214,7 @@ A future generated task graph must place all tests before first posting implemen
 
 - contract tests for exact routes, schemas, auth, headers, ETags, status/error codes, route absence while disabled, and no native leakage;
 - Odoo tests for balance, atomic rollback, immutable posted state, scope, exact values, source/dimension/policy snapshots, rounding limits, native transition guard, and receipt/audit failure;
-- true two-connection races for same key, same draft with different keys, approval decisions, and approval/policy/entry-classification/period configuration changes;
+- true two-connection races for same key, same draft with different keys, approval decisions, immediate-post preview-input drift, and approval/policy/entry-classification/period/rounding/FX/dimension/source/master-data/authority selector changes, including phantom/overlapping rows;
 - Nest integration tests for real RPC, handoff leases, lost responses, mirror outage/recovery, opaque cross-tenant/company denial, and exactly-once results;
 - frontend unit/accessibility tests in EN/AR/RTL and a no-interception browser journey; and
 - fail-closed evidence validator tests written and observed red before fixture/evidence implementation.
@@ -215,8 +230,8 @@ Final acceptance runs against exact-owned control DB, Redis, Keycloak, productio
 3. Same-key simultaneous and lost-response retries return one entry/receipt/tenant-mutation event, each replay has one deduplicated platform replay event, and changed payload conflicts with an audited denial.
 4. Two different simultaneous keys for one draft produce one winner and one deterministic terminal conflict.
 5. Unbalanced, parent/inactive/cross-company inputs, missing dimensions, invalid FX/rounding, unauthorized or reasonless manual FX override, unavailable policy, unknown/overlapping entry classification, Soft Close without adjustment authority/reason, Finance Review without the mapped approved maker-checker workflow, and Hard Close all create no ledger rows.
-6. Maker-checker creates no ledger movement before a different authorized checker approves; self-approval and duplicate decisions fail.
-7. Tenant-audit failure rolls back the move; platform-mirror failure withholds success and recovery completes one mirror without another move.
+6. A Finance Review adjustment succeeds when company `makerCheckerEnabled` is `false` only by creating a pending approval and then having a different authorized checker supply the exact checker-confirmed in-transaction evidence under the mapped workflow; the same candidate cannot use immediate posting. Self-approval and duplicate decisions fail. A true two-transaction company-configuration/period race has one locked ordering, and a duplicate-checker race has one approved-and-posted winner with no losing evidence or ledger rows.
+7. Failure injected after checker decision evidence but before commit rolls back the checker decision evidence, approval transition, move, lines, source links, event, and receipt together. Tenant-audit failure likewise rolls back the move; platform-mirror failure withholds success and recovery completes one mirror without another move.
 8. User B obtains a real foreign UUID and User A receives opaque denial through ordinary auth with no foreign mutation; the authoritative opaque denial event and its platform persistence are verified.
 9. Posted entry→source and source→entry traversal returns the exact authorized records.
 10. EN and AR/RTL keyboard journeys pass, including recoverable error and duplicate-submit prevention.
@@ -241,4 +256,4 @@ The reviewer must confirm:
 - atomic balance, immutable history, human authorization, tenant/company isolation, exact policy version, execution-time period evaluation, idempotency/races, audit/source linkage, release gating, real-path evidence, and cleanup are deterministic;
 - Stories 5–7 are not accidentally implemented or accepted;
 - no current production route, model, task, flag, or acceptance status is enabled by this document; and
-- ambiguities are resolved before T152 is checked complete.
+- T152 remains the completed historical review record for v1.0; all v1.1 ambiguities and review findings are resolved before this amendment is commissioned for Story 4 runtime implementation.

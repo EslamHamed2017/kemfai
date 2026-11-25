@@ -177,9 +177,10 @@ class AccountingFoundationTaskGraphTests(unittest.TestCase):
             ROOT / "specs/003-accounting-foundation/plan.md"
         ).read_text(encoding="utf-8")
 
-        self.assertIn("**Addendum version:** 1.0", posting_addendum)
-        self.assertIn("**Status:** INDEPENDENTLY REVIEWED", posting_addendum)
-        self.assertIn("**Independent review:** Codex — ACCEPT", posting_addendum)
+        self.assertIn("**Addendum version:** 1.1", posting_addendum)
+        self.assertIn("**Status:** SPECIFICATION AMENDMENT CANDIDATE", posting_addendum)
+        self.assertIn("exact-content independent re-review", posting_addendum)
+        self.assertIn("any amendment invalidates that evidence", posting_addendum)
         for stale_claim in (
             "If the Finance Owner later approves the matrix",
             "create a new reviewed contract/model/quickstart addendum",
@@ -190,6 +191,81 @@ class AccountingFoundationTaskGraphTests(unittest.TestCase):
             self.assertNotIn(stale_claim, quickstart)
             self.assertNotIn(stale_claim, research)
             self.assertNotIn(stale_claim, plan)
+
+    def test_posting_conflict_audit_does_not_contradict_idempotency(self) -> None:
+        posting_addendum = (
+            ROOT / "specs/003-accounting-foundation/posting-addendum.md"
+        ).read_text(encoding="utf-8")
+        posting_tasks = (
+            ROOT / "specs/003-accounting-foundation/posting-tasks.md"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn(
+            "cannot create another move, approval, receipt, or authoritative tenant mutation event",
+            posting_addendum,
+        )
+        self.assertNotIn(
+            "each conflict correlation creates one deduplicated authoritative denial audit event",
+            posting_addendum,
+        )
+        self.assertIn(
+            "Each complete denied-attempt identity creates one authoritative denial audit event",
+            posting_addendum,
+        )
+        self.assertIn(
+            "domain-separated denied-attempt identity",
+            posting_addendum,
+        )
+        self.assertIn(
+            "tenant, company, authenticated actor, action, scoped idempotency-key hash, "
+            "denied request fingerprint, winning operation identifier and fingerprint, and correlation ID",
+            posting_addendum,
+        )
+        self.assertIn(
+            "A reused correlation ID with a different denied request fingerprint is a distinct attempt",
+            posting_addendum,
+        )
+        for task_id in ("T163", "T190"):
+            task = next(
+                line for line in posting_tasks.splitlines() if f"] {task_id} " in line
+            )
+            self.assertIn(
+                "zero financial, approval, receipt, and tenant-mutation loser rows",
+                task,
+            )
+            self.assertIn(
+                "exactly one authoritative denial audit event per domain-separated denied-attempt identity",
+                task,
+            )
+            self.assertIn(
+                "repeated delivery of the same denied-attempt identity is deduplicated",
+                task,
+            )
+            self.assertIn(
+                "tenant, company, authenticated actor, action, scoped-key hash, denied fingerprint and winning operation identifier/fingerprint",
+                task,
+            )
+
+        for task_id in ("T175", "T200", "T201", "T205"):
+            task = next(
+                line for line in posting_tasks.splitlines() if f"] {task_id} " in line
+            )
+            self.assertIn(
+                "same correlation and same complete denied-attempt identity is deduplicated",
+                task,
+            )
+            self.assertIn(
+                "same correlation with a different denied fingerprint creates a separate authoritative denial event",
+                task,
+            )
+            self.assertIn(
+                "different correlation creates a separate denied-attempt identity",
+                task,
+            )
+            self.assertIn(
+                "tenant, company, authenticated actor, action, scoped-key hash, or winning operation identifier/fingerprint cannot collapse distinct denied attempts",
+                task,
+            )
 
     def test_approved_reversal_policy_gate_is_reconciled(self) -> None:
         matrix = (
@@ -348,6 +424,53 @@ class AccountingFoundationTaskGraphTests(unittest.TestCase):
                 "T008 Implement the exact-owned resource registry and dynamic port reservation in `/tmp/accounting-foundation-live-fixture.ts`",
             )
         )
+
+
+    def test_posting_receipt_replay_is_actor_bound(self) -> None:
+        posting_addendum = (
+            ROOT / "specs/003-accounting-foundation/posting-addendum.md"
+        ).read_text(encoding="utf-8")
+        posting_tasks = (
+            ROOT / "specs/003-accounting-foundation/posting-tasks.md"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn(
+            "Every handoff and tenant receipt identity and canonical fingerprint immutably "
+            "bind the server-derived tenant, company, authenticated actor, draft or approval, "
+            "and action.",
+            posting_addendum,
+        )
+        self.assertIn(
+            "A receipt is replayable only when the current authenticated actor equals the "
+            "receipt's recorded actor",
+            posting_addendum,
+        )
+        self.assertIn(
+            "cross-actor same-key/same-payload receipt races",
+            next(line for line in posting_tasks.splitlines() if "] T163 " in line),
+        )
+        self.assertIn(
+            "only the same authenticated actor may replay the original terminal outcome",
+            next(line for line in posting_tasks.splitlines() if "] T190 " in line),
+        )
+
+
+    def test_finance_review_slice_depends_on_pending_approval_workflow(self) -> None:
+        posting_tasks = (
+            ROOT / "specs/003-accounting-foundation/posting-tasks.md"
+        ).read_text(encoding="utf-8")
+        task = next(line for line in posting_tasks.splitlines() if "] T188 " in line)
+
+        self.assertIn("Deps: T177, T181", task)
+
+    def test_runtime_rollback_slice_covers_checker_evidence(self) -> None:
+        posting_tasks = (
+            ROOT / "specs/003-accounting-foundation/posting-tasks.md"
+        ).read_text(encoding="utf-8")
+        task = next(line for line in posting_tasks.splitlines() if "] T192 " in line)
+
+        self.assertIn("failure after checker confirmation", task)
+        self.assertIn("zero retained checker decision evidence", task)
 
 
 if __name__ == "__main__":

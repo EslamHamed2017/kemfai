@@ -5,14 +5,124 @@ repo_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 runner="$repo_dir/scripts/test_t071_live.sh"
 stage="$(mktemp)"
 probe_pid=""
+delayed_probe_pid=""
+registration_failure_pid_file=""
+pidfd_probe_pid=""
+freeze_failure_pid=""
+freeze_failure_dir=""
+transition_supervisor=""
+transition_child=""
+leaf_violation_parent=""
+leaf_violation_child=""
+leaf_violation_file=""
+cross_group_parent=""
+cross_group_child=""
+cross_group_child_start=""
+cross_group_file=""
+cross_session_leader=""
+cross_session_child=""
+cross_session_child_start=""
+cross_session_file=""
+lost_session_leader=""
+lost_session_leader_start=""
+lost_session_child=""
+lost_session_child_start=""
+lost_session_file=""
+thread_child_leader=""
+thread_child_pid=""
+thread_child_start=""
+thread_child_file=""
+adopted_zombie_leader=""
+adopted_zombie_pid=""
+adopted_zombie_start=""
+adopted_zombie_service=""
+adopted_zombie_service_start=""
+adopted_zombie_file=""
+reused_parent_leader=""
+reused_parent_service=""
+reused_parent_service_start=""
+reused_parent_guard_pid=""
+reused_parent_guard_start=""
+reused_parent_guard_dir=""
+exited_service_leader=""
+exited_service_child=""
+exited_service_child_start=""
+exited_service_file=""
+hold_cleanup_leader=""
+hold_cleanup_child=""
+hold_cleanup_child_start=""
+hold_cleanup_file=""
 private_home=""
 fixture_dir=""
 relay_dir=""
+relay_supervisor=""
+startup_env_dir=""
+startup_signal_dir=""
+startup_signal_supervisor=""
+post_leaf_race_dir=""
+post_leaf_race_supervisor=""
+post_leaf_race_child=""
+kill_boundary_race_dir=""
+kill_boundary_race_supervisor=""
+kill_boundary_race_child=""
+non_utf8_leader=""
+non_utf8_child=""
+non_utf8_file=""
 offline_cleanup() {
   [ -z "$probe_pid" ] || kill -KILL -- "-$probe_pid" 2>/dev/null || true
+  [ -z "$delayed_probe_pid" ] || kill -KILL -- "-$delayed_probe_pid" 2>/dev/null || kill -KILL -- "$delayed_probe_pid" 2>/dev/null || true
+  [ -z "$registration_failure_pid_file" ] || rm -f -- "$registration_failure_pid_file"
+  [ -z "$pidfd_probe_pid" ] || kill -KILL -- "$pidfd_probe_pid" 2>/dev/null || true
+  [ -z "$freeze_failure_pid" ] || kill -KILL -- "$freeze_failure_pid" 2>/dev/null || true
+  [ -z "$freeze_failure_dir" ] || rm -rf -- "$freeze_failure_dir"
+  [ -z "$transition_child" ] || kill -KILL -- "$transition_child" 2>/dev/null || true
+  [ -z "$transition_supervisor" ] || kill -KILL -- "$transition_supervisor" 2>/dev/null || true
+  [ -z "$leaf_violation_child" ] || kill -KILL -- "$leaf_violation_child" 2>/dev/null || true
+  [ -z "$leaf_violation_parent" ] || kill -KILL -- "$leaf_violation_parent" 2>/dev/null || true
+  [ -z "$leaf_violation_file" ] || rm -f -- "$leaf_violation_file"
+  [ -z "$cross_group_child" ] || signal_owned_pid "$cross_group_child" "$cross_group_child_start" KILL 2>/dev/null || true
+  [ -z "$cross_group_parent" ] || signal_owned_pid "$cross_group_parent" "${owned_pid_starttime[$cross_group_parent]:-}" KILL 2>/dev/null || true
+  [ -z "$cross_group_file" ] || rm -f -- "$cross_group_file"
+  [ -z "$cross_session_child" ] || signal_owned_pid "$cross_session_child" "$cross_session_child_start" KILL 2>/dev/null || true
+  [ -z "$cross_session_leader" ] || signal_owned_pid "$cross_session_leader" "${owned_pid_starttime[$cross_session_leader]:-}" KILL 2>/dev/null || true
+  [ -z "$cross_session_file" ] || rm -f -- "$cross_session_file"
+  [ -z "$lost_session_child" ] || signal_owned_pid "$lost_session_child" "$lost_session_child_start" KILL 2>/dev/null || true
+  [ -z "$lost_session_leader" ] || signal_owned_pid "$lost_session_leader" "$lost_session_leader_start" KILL 2>/dev/null || true
+  [ -z "$lost_session_file" ] || rm -f -- "$lost_session_file"
+  [ -z "$thread_child_pid" ] || signal_owned_pid "$thread_child_pid" "$thread_child_start" KILL 2>/dev/null || true
+  [ -z "$thread_child_leader" ] || terminate_owned_process_group "$thread_child_leader" python3 2>/dev/null || signal_owned_pid "$thread_child_leader" "${owned_pid_starttime[$thread_child_leader]:-}" KILL 2>/dev/null || true
+  [ -z "$thread_child_file" ] || rm -f -- "$thread_child_file"
+  [ -z "$adopted_zombie_pid" ] || [ -z "$adopted_zombie_start" ] || signal_owned_pid "$adopted_zombie_pid" "$adopted_zombie_start" KILL 2>/dev/null || true
+  [ -z "$adopted_zombie_service" ] || signal_owned_pid "$adopted_zombie_service" "$adopted_zombie_service_start" KILL 2>/dev/null || true
+  [ -z "$adopted_zombie_leader" ] || terminate_owned_process_group "$adopted_zombie_leader" python3 2>/dev/null || signal_owned_pid "$adopted_zombie_leader" "${owned_pid_starttime[$adopted_zombie_leader]:-}" KILL 2>/dev/null || true
+  [ -z "$adopted_zombie_file" ] || rm -f -- "$adopted_zombie_file"
+  [ -z "$reused_parent_service" ] || signal_owned_pid "$reused_parent_service" "$reused_parent_service_start" KILL 2>/dev/null || true
+  [ -z "$reused_parent_leader" ] || terminate_owned_process_group "$reused_parent_leader" sleep 2>/dev/null || signal_owned_pid "$reused_parent_leader" "${owned_pid_starttime[$reused_parent_leader]:-}" KILL 2>/dev/null || true
+  [ -z "$reused_parent_guard_pid" ] || signal_owned_pid "$reused_parent_guard_pid" "$reused_parent_guard_start" KILL 2>/dev/null || true
+  [ -z "$reused_parent_guard_dir" ] || rm -rf -- "$reused_parent_guard_dir"
+  [ -z "$exited_service_child" ] || signal_owned_pid "$exited_service_child" "$exited_service_child_start" KILL 2>/dev/null || true
+  [ -z "$exited_service_leader" ] || signal_owned_pid "$exited_service_leader" "${owned_pid_starttime[$exited_service_leader]:-}" KILL 2>/dev/null || true
+  [ -z "$exited_service_file" ] || rm -f -- "$exited_service_file"
+  [ -z "$hold_cleanup_child" ] || signal_owned_pid "$hold_cleanup_child" "$hold_cleanup_child_start" KILL 2>/dev/null || true
+  [ -z "$hold_cleanup_leader" ] || terminate_owned_process_group "$hold_cleanup_leader" python3 2>/dev/null || signal_owned_pid "$hold_cleanup_leader" "${owned_pid_starttime[$hold_cleanup_leader]:-}" KILL 2>/dev/null || true
+  [ -z "$hold_cleanup_file" ] || rm -f -- "$hold_cleanup_file"
   [ -z "$private_home" ] || rmdir "$private_home" 2>/dev/null || true
   [ -z "$fixture_dir" ] || rm -rf -- "$fixture_dir"
+  [ -z "$relay_supervisor" ] || terminate_owned_process_group "$relay_supervisor" t071_loopback_relay.py 2>/dev/null || true
   [ -z "$relay_dir" ] || rm -rf -- "$relay_dir"
+  [ -z "$startup_env_dir" ] || rm -rf -- "$startup_env_dir"
+  [ -z "$startup_signal_supervisor" ] || terminate_owned_process_group "$startup_signal_supervisor" sleep 2>/dev/null || true
+  [ -z "$startup_signal_dir" ] || rm -rf -- "$startup_signal_dir"
+  [ -z "$post_leaf_race_child" ] || kill -KILL -- "$post_leaf_race_child" 2>/dev/null || true
+  [ -z "$post_leaf_race_supervisor" ] || kill -KILL -- "$post_leaf_race_supervisor" 2>/dev/null || true
+  [ -z "$post_leaf_race_dir" ] || rm -rf -- "$post_leaf_race_dir"
+  [ -z "$kill_boundary_race_child" ] || kill -KILL -- "$kill_boundary_race_child" 2>/dev/null || true
+  [ -z "$kill_boundary_race_supervisor" ] || kill -KILL -- "$kill_boundary_race_supervisor" 2>/dev/null || true
+  [ -z "$kill_boundary_race_dir" ] || rm -rf -- "$kill_boundary_race_dir"
+  if [ -n "$non_utf8_leader" ] && [ -n "${owned_pid_starttime[$non_utf8_leader]:-}" ]; then
+    terminate_owned_process_group "$non_utf8_leader" t071-non-utf8-descendant 2>/dev/null || true
+  fi
+  [ -z "$non_utf8_file" ] || rm -f -- "$non_utf8_file"
   rm -f -- "$stage"
 }
 trap offline_cleanup EXIT
@@ -39,6 +149,8 @@ grep -qF 'register_owned_process "$api_pid"' "$stage" || fail "API process ident
 grep -qF 'register_owned_process "$frontend_pid"' "$stage" || fail "frontend process identity is not registered"
 grep -qF 'register_owned_process "$proxy_pid"' "$stage" || fail "proxy process identity is not registered"
 grep -qF 'source "$repo_dir/scripts/fixtures/t071_process_lifecycle.sh"' "$stage" || fail "generated lifecycle does not load the tested process helper"
+[ "$(grep -cF 't071_owned_session_exec.py' "$stage")" -eq 4 ] || fail "every owned host service must use the owned session supervisor"
+grep -qF 'exec setsid ' "$stage" && fail "generated lifecycle retained a racy direct setsid launch"
 grep -qF 'session_survivors' "$repo_dir/scripts/fixtures/t071_process_lifecycle.sh" || fail "process helper does not prove session extinction"
 grep -qF '. "$repo_dir/scripts/lib_docker_test_cleanup.sh"' "$stage" \
   || fail "generated lifecycle does not load the shared exact-owned Docker cleanup helper"
@@ -98,11 +210,61 @@ grep -qF 'wait "$staged_pid"' "$runner" || fail "wrapper does not retain ownersh
 grep -qF 'forward_stage_signal' "$runner" || fail "wrapper does not forward termination to its staged child"
 grep -qE '^exec "\$stage"$' "$runner" && fail "wrapper exec bypasses its private-directory cleanup trap"
 
+# Every production-owned supervisor must start Python in isolated mode so inherited
+# PYTHON* variables cannot execute startup hooks before the supervisor allowlist runs.
+python3 - "$repo_dir" <<'PY_ISOLATED_SUPERVISORS'
+import pathlib
+import re
+import sys
+
+scripts = pathlib.Path(sys.argv[1], "scripts")
+callers = [
+    scripts / "test_t071_live.sh",
+    scripts / "test_t072_live.sh",
+    scripts / "test_t074_live_browser.sh",
+    scripts / "test_t109_odoo_exposure.sh",
+    scripts / "test_t112_owned_fixture.sh",
+]
+unsafe = []
+for path in callers:
+    for line_number, line in enumerate(path.read_text().splitlines(), 1):
+        if "t071_owned_session_exec.py" in line and not re.search(
+            r"python3\s+-I\s+[^\n]*t071_owned_session_exec\.py", line
+        ):
+            unsafe.append(f"{path.name}:{line_number}")
+if unsafe:
+    raise SystemExit(
+        "FAIL: production supervisor launch does not isolate Python startup: "
+        + ", ".join(unsafe)
+    )
+print("PASS: production supervisors isolate Python startup")
+PY_ISOLATED_SUPERVISORS
+
+startup_env_dir="$(mktemp -d)"
+startup_env_marker="$startup_env_dir/executed"
+cat >"$startup_env_dir/sitecustomize.py" <<'PY_STARTUP_ENV'
+import os
+import pathlib
+pathlib.Path(os.environ["KEMFAI_STARTUP_ENV_MARKER"]).write_text("executed\n")
+PY_STARTUP_ENV
+PYTHONPATH="$startup_env_dir" KEMFAI_STARTUP_ENV_MARKER="$startup_env_marker" \
+  python3 -I "$repo_dir/scripts/fixtures/t071_owned_session_exec.py" \
+    python3 -c 'import os; assert "PYTHONPATH" not in os.environ; assert "KEMFAI_STARTUP_ENV_MARKER" not in os.environ'
+[ ! -e "$startup_env_marker" ] \
+  || fail "isolated supervisor executed inherited sitecustomize before sanitization"
+rm -rf -- "$startup_env_dir"; startup_env_dir=""; startup_env_marker=""
+echo "PASS: isolated supervisor rejects inherited Python startup injection"
+
 # Exercise the same lifecycle helper used by the generated launcher with a disposable
 # local process session (no sockets, Docker, or network).
 declare -A owned_pid_starttime=() owned_pid_session=()
 source "$repo_dir/scripts/fixtures/t071_process_lifecycle.sh"
-setsid sleep 30 &
+set +e
+python3 "$repo_dir/scripts/fixtures/t071_owned_session_exec.py" sh -c 'exit 7'
+supervisor_exit=$?
+set -e
+[ "$supervisor_exit" -eq 7 ] || fail "owned session supervisor did not preserve service exit status"
+python3 "$repo_dir/scripts/fixtures/t071_owned_session_exec.py" --hold-for-cleanup sleep 30 &
 probe_pid=$!
 register_owned_process "$probe_pid" sleep
 pid_owned_by_this_run "$probe_pid" sleep || fail "registered process identity was not recognized"
@@ -112,6 +274,721 @@ if pid_owned_by_this_run "$probe_pid" sleep; then fail "changed start time was a
 owned_pid_starttime["$probe_pid"]="$saved_start"
 terminate_owned_process_group "$probe_pid" sleep || fail "owned process session did not terminate"
 [ -z "$(session_survivors "${owned_pid_session[$probe_pid]}")" ] || fail "owned process-session survivor remained"
+probe_pid=""
+
+# Once the authenticated supervisor is absent, an empty original session cannot prove
+# that no descendant escaped into another session. Post-hoc cleanup must fail closed.
+python3 "$repo_dir/scripts/fixtures/t071_owned_session_exec.py" sleep 1 &
+naturally_exited_leader=$!
+register_owned_process "$naturally_exited_leader" sleep
+naturally_exited_session="${owned_pid_session[$naturally_exited_leader]}"
+wait "$naturally_exited_leader"
+[ -z "$(session_survivors "$naturally_exited_session")" ] \
+  || fail "naturally exited owned session retained a survivor"
+if terminate_owned_process_group "$naturally_exited_leader" sleep; then
+  fail "cleanup accepted an extinct session after losing ancestry proof"
+fi
+
+# Kernel process names are byte strings. A non-UTF-8 comm must not disappear from
+# session membership or cleanup scans.
+non_utf8_file="$(mktemp)"
+PROBE_FILE="$non_utf8_file" python3 "$repo_dir/scripts/fixtures/t071_owned_session_exec.py" \
+  --hold-for-cleanup --keep-env PROBE_FILE python3 -c 'exec("import ctypes,os,time\npid=os.fork()\nif pid:\n open(os.environ[\"PROBE_FILE\"],\"w\").write(str(pid)+\"\\n\")\n time.sleep(.2)\n os._exit(0)\nctypes.CDLL(None).prctl(15, ctypes.c_char_p(b\"bad\\xffname\"), 0, 0, 0)\ntime.sleep(30) # t071-non-utf8-descendant")' &
+non_utf8_leader=$!
+register_owned_process "$non_utf8_leader" t071-non-utf8-descendant
+for _ in $(seq 1 100); do [ -s "$non_utf8_file" ] && break; sleep .02; done
+[ -s "$non_utf8_file" ] || fail "non-UTF-8 session fixture did not report its child"
+read -r non_utf8_child <"$non_utf8_file"
+sleep .3
+kill -0 "$non_utf8_leader" 2>/dev/null \
+  || fail "owned supervisor lost a live descendant with a non-UTF-8 process name"
+terminate_owned_process_group "$non_utf8_leader" t071-non-utf8-descendant \
+  || fail "cleanup rejected a non-UTF-8 owned-session member"
+[ -z "$(session_survivors "${owned_pid_session[$non_utf8_leader]}")" ] \
+  || fail "non-UTF-8 owned-session member survived cleanup"
+wait "$non_utf8_leader" 2>/dev/null || true
+non_utf8_leader=""; non_utf8_child=""
+rm -f -- "$non_utf8_file"; non_utf8_file=""
+echo "PASS: non-UTF-8 process names remain supervised and cleanable"
+
+# Termination during the fork-to-handler startup window must remain pending until
+# the supervisor can forward it. sitecustomize deterministically pauses pidfd_open
+# after the service fork but before signal handlers are installed.
+startup_signal_dir="$(mktemp -d)"
+cat >"$startup_signal_dir/sitecustomize.py" <<'PY_STARTUP_SIGNAL'
+import os
+import pathlib
+import time
+
+_original_pidfd_open = os.pidfd_open
+
+def paused_pidfd_open(pid):
+    marker = pathlib.Path(os.environ["KEMFAI_STARTUP_SIGNAL_MARKER"])
+    marker.write_text(str(pid) + "\n")
+    release = marker.with_suffix(".release")
+    for _ in range(3000):
+        if release.exists():
+            break
+        time.sleep(0.01)
+    else:
+        raise TimeoutError("startup signal test was not released")
+    return _original_pidfd_open(pid)
+
+os.pidfd_open = paused_pidfd_open
+PY_STARTUP_SIGNAL
+startup_signal_marker="$startup_signal_dir/paused"
+PYTHONPATH="$startup_signal_dir" KEMFAI_STARTUP_SIGNAL_MARKER="$startup_signal_marker" \
+  python3 "$repo_dir/scripts/fixtures/t071_owned_session_exec.py" \
+    --keep-env KEMFAI_STARTUP_SIGNAL_MARKER sleep 30 &
+startup_signal_supervisor=$!
+register_owned_process "$startup_signal_supervisor" sleep
+for _ in $(seq 1 500); do [ -s "$startup_signal_marker" ] && break; sleep .01; done
+[ -s "$startup_signal_marker" ] || fail "startup-signal fixture did not reach the pre-handler window"
+read -r startup_signal_child <"$startup_signal_marker"
+kill -TERM "$startup_signal_supervisor"
+: >"$startup_signal_marker.release"
+for _ in $(seq 1 500); do
+  if ! kill -0 "$startup_signal_child" 2>/dev/null; then break; fi
+  sleep .01
+done
+if kill -0 "$startup_signal_child" 2>/dev/null; then
+  fail "termination during supervisor startup orphaned the service child"
+fi
+set +e
+wait "$startup_signal_supervisor"
+startup_signal_status=$?
+set -e
+[ "$startup_signal_status" -eq 143 ] \
+  || fail "startup-signal supervisor returned unexpected status: $startup_signal_status"
+startup_signal_supervisor=""
+rm -rf -- "$startup_signal_dir"; startup_signal_dir=""
+
+# Cleanup must terminate every member of the owned session, including descendants
+# that create a separate process group while remaining in that session.
+cross_group_file="$(mktemp)"
+python3 "$repo_dir/scripts/fixtures/t071_owned_session_exec.py" python3 -c '
+import os, pathlib, sys, time
+child = os.fork()
+if child == 0:
+    os.setpgid(0, 0)
+    time.sleep(30)
+else:
+    pathlib.Path(sys.argv[1]).write_text(str(child) + "\n")
+    os.waitpid(child, 0)
+' "$cross_group_file" &
+cross_group_parent=$!
+register_owned_process "$cross_group_parent" python3
+for _ in $(seq 1 50); do [ -s "$cross_group_file" ] && break; sleep .02; done
+[ -s "$cross_group_file" ] || fail "cross-process-group fixture did not start"
+read -r cross_group_child <"$cross_group_file"
+cross_group_child_identity="$(process_identity "$cross_group_child")"
+read -r cross_group_child_start _ <<<"$cross_group_child_identity"
+[ "$(ps -o sid= -p "$cross_group_child" | tr -d ' ')" = "${owned_pid_session[$cross_group_parent]}" ] \
+  || fail "cross-process-group child left the owned session"
+[ "$(ps -o pgid= -p "$cross_group_child" | tr -d ' ')" != "$cross_group_parent" ] \
+  || fail "cross-process-group child did not establish a distinct process group"
+terminate_owned_process_group "$cross_group_parent" python3 \
+  || fail "owned session with multiple process groups did not terminate"
+[ -z "$(session_survivors "${owned_pid_session[$cross_group_parent]}")" ] \
+  || fail "cross-process-group owned session survivor remained"
+wait "$cross_group_parent" 2>/dev/null || true
+cross_group_parent=""; cross_group_child=""; cross_group_child_start=""
+rm -f -- "$cross_group_file"; cross_group_file=""
+
+# A service descendant may call setsid and leave the launch session. The supervisor
+# must retain kernel-backed descendant ownership, and authenticated cleanup must
+# terminate that descendant rather than reporting the original session extinct.
+cross_session_file="$(mktemp)"
+PROBE_FILE="$cross_session_file" \
+  python3 "$repo_dir/scripts/fixtures/t071_owned_session_exec.py" \
+    --hold-for-cleanup --keep-env PROBE_FILE python3 -c '
+import os, pathlib, time
+child = os.fork()
+if child == 0:
+    os.setsid()
+    pathlib.Path(os.environ["PROBE_FILE"]).write_text(str(os.getpid()) + "\n")
+    time.sleep(30)
+os._exit(0)
+' &
+cross_session_leader=$!
+register_owned_process "$cross_session_leader" python3
+for _ in $(seq 1 100); do [ -s "$cross_session_file" ] && break; sleep .02; done
+[ -s "$cross_session_file" ] || fail "cross-session fixture did not report its child"
+read -r cross_session_child <"$cross_session_file"
+cross_session_child_identity="$(process_identity "$cross_session_child")"
+read -r cross_session_child_start cross_session_child_session <<<"$cross_session_child_identity"
+[ "$cross_session_child_session" = "$cross_session_child" ] \
+  || fail "cross-session child did not establish a distinct session"
+sleep .1
+kill -0 "$cross_session_leader" 2>/dev/null \
+  || fail "owned supervisor lost a live descendant that created another session"
+terminate_owned_process_group "$cross_session_leader" python3 \
+  || fail "cleanup rejected an owned descendant in another session"
+for _ in $(seq 1 100); do
+  kill -0 "$cross_session_child" 2>/dev/null || break
+  sleep .01
+done
+if kill -0 "$cross_session_child" 2>/dev/null; then
+  fail "cross-session owned descendant survived cleanup"
+fi
+wait "$cross_session_leader" 2>/dev/null || true
+cross_session_leader=""; cross_session_child=""; cross_session_child_start=""
+rm -f -- "$cross_session_file"; cross_session_file=""
+echo "PASS: cross-session descendants remain supervised and cleanable"
+
+# Once the authenticated subreaper is lost, cross-session ancestry can no longer be
+# proven. Cleanup must fail closed rather than claim extinction while such a child lives.
+lost_session_file="$(mktemp)"
+LOST_SESSION_FILE="$lost_session_file" \
+  python3 "$repo_dir/scripts/fixtures/t071_owned_session_exec.py" \
+    --keep-env LOST_SESSION_FILE python3 -c '
+import os, pathlib, time
+child = os.fork()
+if child == 0:
+    os.setsid()
+    pathlib.Path(os.environ["LOST_SESSION_FILE"]).write_text(str(os.getpid())+"\n")
+    time.sleep(30)
+os._exit(0)
+' &
+lost_session_leader=$!
+register_owned_process "$lost_session_leader" python3
+lost_session_leader_start="${owned_pid_starttime[$lost_session_leader]}"
+for _ in $(seq 1 100); do [ -s "$lost_session_file" ] && break; sleep .02; done
+[ -s "$lost_session_file" ] || fail "lost-supervisor fixture did not report its child"
+read -r lost_session_child <"$lost_session_file"
+read -r lost_session_child_start _ < <(process_identity "$lost_session_child")
+signal_owned_pid "$lost_session_leader" "$lost_session_leader_start" KILL
+wait "$lost_session_leader" 2>/dev/null || true
+if terminate_owned_process_group "$lost_session_leader" python3; then
+  fail "cleanup accepted an unprovable tree after authenticated supervisor loss"
+fi
+kill -0 "$lost_session_child" 2>/dev/null \
+  || fail "lost-supervisor probe did not retain its cross-session child"
+signal_owned_pid "$lost_session_child" "$lost_session_child_start" KILL
+lost_session_child=""; lost_session_leader=""; lost_session_leader_start=""
+rm -f -- "$lost_session_file"; lost_session_file=""
+echo "PASS: missing supervisors fail closed for unprovable cross-session trees"
+
+# Children created by a non-leader thread appear only in that thread's procfs
+# children file. Graceful cleanup must discover and signal them before their service
+# parent exits; adoption after killing the parent is too late and forces SIGKILL.
+thread_child_file="$(mktemp)"
+THREAD_CHILD_FILE="$thread_child_file" \
+  python3 "$repo_dir/scripts/fixtures/t071_owned_session_exec.py" \
+    --keep-env THREAD_CHILD_FILE python3 -c '
+import os, pathlib, signal, subprocess, threading, time
+path = pathlib.Path(os.environ["THREAD_CHILD_FILE"])
+
+def worker():
+    child = subprocess.Popen([
+        "python3", "-c",
+        "import os,pathlib,signal,time; "
+        "p=pathlib.Path(os.environ[\"THREAD_CHILD_FILE\"]); "
+        "signal.signal(signal.SIGTERM, lambda *_: (p.write_text(p.read_text()+\"child-term\\n\"), exit(0))); "
+        "p.write_text(str(os.getpid())+\"\\n\"); time.sleep(30)",
+    ], env=os.environ)
+    child.wait()
+
+threading.Thread(target=worker, daemon=True).start()
+
+def stop_after_child(*_):
+    deadline = time.monotonic() + 2
+    while time.monotonic() < deadline:
+        if "child-term" in path.read_text():
+            raise SystemExit(0)
+        time.sleep(.02)
+    time.sleep(30)
+
+signal.signal(signal.SIGTERM, stop_after_child)
+time.sleep(30)
+' &
+thread_child_leader=$!
+register_owned_process "$thread_child_leader" python3
+for _ in $(seq 1 100); do [ -s "$thread_child_file" ] && break; sleep .02; done
+[ -s "$thread_child_file" ] || fail "thread-child fixture did not report its child"
+read -r thread_child_pid <"$thread_child_file"
+read -r thread_child_start _ < <(process_identity "$thread_child_pid")
+thread_child_forced=0
+terminate_owned_process_group "$thread_child_leader" python3 thread_child_forced \
+  || fail "cleanup rejected a child created by a non-leader thread"
+[ "$thread_child_forced" -eq 0 ] \
+  || fail "thread-created child was omitted from graceful process-tree cleanup"
+python3 - "$thread_child_file" <<'PY_THREAD_CHILD_ASSERT'
+import pathlib, sys
+if "child-term" not in pathlib.Path(sys.argv[1]).read_text():
+    raise SystemExit("thread-created child did not receive SIGTERM")
+PY_THREAD_CHILD_ASSERT
+wait "$thread_child_leader" 2>/dev/null || true
+thread_child_leader=""; thread_child_pid=""; thread_child_start=""
+rm -f -- "$thread_child_file"; thread_child_file=""
+echo "PASS: non-leader-thread children receive graceful owned cleanup"
+
+# The subreaper must collect adopted descendants while the direct service is still
+# alive. Otherwise a service that orphans short-lived workers accumulates zombies.
+adopted_zombie_file="$(mktemp)"
+ADOPTED_ZOMBIE_FILE="$adopted_zombie_file" \
+  python3 "$repo_dir/scripts/fixtures/t071_owned_session_exec.py" \
+    --hold-for-cleanup --keep-env ADOPTED_ZOMBIE_FILE python3 -c '
+import os, pathlib, time
+identity_file = pathlib.Path(os.environ["ADOPTED_ZOMBIE_FILE"])
+identity_file.write_text(str(os.getpid())+"\n")
+middle = os.fork()
+if middle == 0:
+    child = os.fork()
+    if child == 0:
+        with identity_file.open("a") as stream:
+            stream.write(str(os.getpid())+"\n")
+        os._exit(0)
+    os._exit(0)
+time.sleep(30)' &
+adopted_zombie_leader=$!
+register_owned_process "$adopted_zombie_leader" python3
+for _ in $(seq 1 100); do
+  [ "$(wc -l <"$adopted_zombie_file" 2>/dev/null || true)" -ge 2 ] && break
+  sleep .02
+done
+[ "$(wc -l <"$adopted_zombie_file" 2>/dev/null || true)" -ge 2 ] \
+  || fail "adopted-zombie fixture did not report service and child identities"
+{
+  read -r adopted_zombie_service
+  read -r adopted_zombie_pid
+} <"$adopted_zombie_file"
+read -r adopted_zombie_service_start _ < <(process_identity "$adopted_zombie_service")
+adopted_zombie_identity="$(process_identity "$adopted_zombie_pid" 2>/dev/null || true)"
+if [ -n "$adopted_zombie_identity" ]; then
+  read -r adopted_zombie_start _ <<<"$adopted_zombie_identity"
+fi
+for _ in $(seq 1 100); do
+  [ ! -e "/proc/$adopted_zombie_pid/stat" ] && break
+  sleep .02
+done
+[ ! -e "/proc/$adopted_zombie_pid/stat" ] \
+  || fail "subreaper left an adopted zombie while the service remained alive"
+terminate_owned_process_group "$adopted_zombie_leader" python3 \
+  || fail "adopted-zombie fixture cleanup failed"
+wait "$adopted_zombie_leader" 2>/dev/null || true
+adopted_zombie_leader=""; adopted_zombie_pid=""; adopted_zombie_start=""
+adopted_zombie_service=""; adopted_zombie_service_start=""
+rm -f -- "$adopted_zombie_file"; adopted_zombie_file=""
+echo "PASS: adopted descendants are reaped while the service remains alive"
+
+# A stale PID read from a task children file must never establish ownership. Inject
+# an unrelated live PID into the authenticated service's children snapshot; cleanup
+# must revalidate its actual PPID and leave the unrelated process untouched.
+python3 "$repo_dir/scripts/fixtures/t071_owned_session_exec.py" sleep 30 &
+reused_parent_leader=$!
+register_owned_process "$reused_parent_leader" sleep
+for _ in $(seq 1 100); do
+  reused_parent_service="$(python3 - "$reused_parent_leader" <<'PY_REUSED_PARENT_CHILD'
+import pathlib, sys
+try:
+    print(pathlib.Path('/proc', sys.argv[1], 'task', sys.argv[1], 'children').read_text().strip())
+except (FileNotFoundError, ProcessLookupError):
+    pass
+PY_REUSED_PARENT_CHILD
+)"
+  [ -n "$reused_parent_service" ] && break
+  sleep .01
+done
+[ -n "$reused_parent_service" ] || fail "PID-reuse guard fixture has no service child"
+read -r reused_parent_service_start _ < <(process_identity "$reused_parent_service")
+sleep 30 &
+reused_parent_guard_pid=$!
+read -r reused_parent_guard_start _ < <(process_identity "$reused_parent_guard_pid")
+reused_parent_guard_dir="$(mktemp -d)"
+cat >"$reused_parent_guard_dir/sitecustomize.py" <<'PY_REUSED_PARENT'
+import os
+import pathlib
+
+_original_read_text = pathlib.Path.read_text
+_target = os.environ["KEMFAI_REUSED_PARENT_TARGET"]
+_forged_child = os.environ["KEMFAI_REUSED_PARENT_PID"]
+
+def stale_child(path, *args, **kwargs):
+    text = _original_read_text(path, *args, **kwargs)
+    if str(path) == _target:
+        return text + " " + _forged_child
+    return text
+
+pathlib.Path.read_text = stale_child
+PY_REUSED_PARENT
+PYTHONPATH="$reused_parent_guard_dir" \
+KEMFAI_REUSED_PARENT_TARGET="/proc/$reused_parent_service/task/$reused_parent_service/children" \
+KEMFAI_REUSED_PARENT_PID="$reused_parent_guard_pid" \
+  terminate_owned_process_group "$reused_parent_leader" sleep \
+  || fail "PID-reuse guard cleanup failed"
+kill -0 "$reused_parent_guard_pid" 2>/dev/null \
+  || fail "cleanup signaled an unrelated process through a stale PPID edge"
+signal_owned_pid "$reused_parent_guard_pid" "$reused_parent_guard_start" KILL
+wait "$reused_parent_guard_pid" 2>/dev/null || true
+reused_parent_guard_pid=""; reused_parent_guard_start=""
+wait "$reused_parent_leader" 2>/dev/null || true
+reused_parent_leader=""; reused_parent_service=""; reused_parent_service_start=""
+rm -rf -- "$reused_parent_guard_dir"; reused_parent_guard_dir=""
+echo "PASS: stale or reused parent PIDs cannot confer process ownership"
+
+# The authenticated session leader must remain alive while any service descendant
+# survives, even when the directly executed service process exits first. Otherwise
+# cleanup cannot safely distinguish that owned orphan session from a reused SID.
+exited_service_file="$(mktemp)"
+python3 "$repo_dir/scripts/fixtures/t071_owned_session_exec.py" python3 -c '
+import os, pathlib, sys, time
+child = os.fork()
+if child == 0:
+    os.setpgid(0, 0)
+    time.sleep(30)
+else:
+    pathlib.Path(sys.argv[1]).write_text(str(child) + "\n")
+' "$exited_service_file" &
+exited_service_leader=$!
+register_owned_process "$exited_service_leader" python3
+for _ in $(seq 1 50); do [ -s "$exited_service_file" ] && break; sleep .02; done
+[ -s "$exited_service_file" ] || fail "exited-service fixture did not start"
+read -r exited_service_child <"$exited_service_file"
+exited_service_child_identity="$(process_identity "$exited_service_child")"
+read -r exited_service_child_start _ <<<"$exited_service_child_identity"
+sleep .1
+kill -0 "$exited_service_leader" 2>/dev/null \
+  || fail "owned session leader exited while a service descendant survived"
+terminate_owned_process_group "$exited_service_leader" python3 \
+  || fail "owned session with an exited service process did not terminate"
+[ -z "$(session_survivors "${owned_pid_session[$exited_service_leader]}")" ] \
+  || fail "exited-service owned session survivor remained"
+wait "$exited_service_leader" 2>/dev/null || true
+exited_service_leader=""; exited_service_child=""; exited_service_child_start=""
+rm -f -- "$exited_service_file"; exited_service_file=""
+
+# Authenticated hold-for-cleanup mode must hold the subreaper beyond its natural empty-tree
+# window until cleanup explicitly releases it. This makes scheduler delay harmless.
+hold_cleanup_file="$(mktemp)"
+PROBE_FILE="$hold_cleanup_file" python3 "$repo_dir/scripts/fixtures/t071_owned_session_exec.py" \
+  --hold-for-cleanup --keep-env PROBE_FILE python3 -c 'import os,pathlib,time; pathlib.Path(os.environ["PROBE_FILE"]).write_text(str(os.getpid())+"\n"); time.sleep(30)' &
+hold_cleanup_leader=$!
+register_owned_process "$hold_cleanup_leader" python3
+for _ in $(seq 1 100); do [ -s "$hold_cleanup_file" ] && break; sleep .01; done
+[ -s "$hold_cleanup_file" ] || fail "hold-for-cleanup fixture did not report its service"
+read -r hold_cleanup_child <"$hold_cleanup_file"
+hold_cleanup_child_identity="$(process_identity "$hold_cleanup_child")"
+read -r hold_cleanup_child_start _ <<<"$hold_cleanup_child_identity"
+signal_owned_pid "$hold_cleanup_child" "$hold_cleanup_child_start" TERM
+sleep 1
+kill -0 "$hold_cleanup_leader" 2>/dev/null \
+  || fail "hold-for-cleanup mode did not preserve authenticated ancestry proof"
+terminate_owned_process_group "$hold_cleanup_leader" python3 \
+  || fail "hold-for-cleanup owned session did not terminate"
+wait "$hold_cleanup_leader" 2>/dev/null || true
+hold_cleanup_leader=""; hold_cleanup_child=""; hold_cleanup_child_start=""
+rm -f -- "$hold_cleanup_file"; hold_cleanup_file=""
+echo "PASS: hold-for-cleanup mode preserves ancestry proof across scheduler delay"
+
+# The real relay readiness contract must expose the registered supervisor identity,
+# not the forked service PID, so the generated launcher can authenticate it.
+relay_dir="$(mktemp -d)"; chmod 700 "$relay_dir"
+relay_config="$relay_dir/config.json"; relay_ready="$relay_dir/ready.json"
+printf '{"targetIp":"10.0.0.2","subnet":"10.0.0.0/24","targetPort":5432,"readyFile":"%s"}\n'   "$relay_ready" >"$relay_config"; chmod 600 "$relay_config"
+(
+  export T071_RELAY_CONFIG="$relay_config"
+  exec python3 "$repo_dir/scripts/fixtures/t071_owned_session_exec.py"     --hold-for-cleanup --keep-env T071_RELAY_CONFIG python3 "$repo_dir/scripts/fixtures/t071_loopback_relay.py"
+) &
+relay_supervisor=$!
+register_owned_process "$relay_supervisor" t071_loopback_relay.py
+for _ in $(seq 1 50); do [ -s "$relay_ready" ] && break; sleep .02; done
+[ -s "$relay_ready" ] || fail "supervised relay did not publish readiness"
+relay_ready_pid="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["pid"])' "$relay_ready")"
+[ "$relay_ready_pid" = "$relay_supervisor" ]   || fail "supervised relay readiness did not identify its registered leader"
+terminate_owned_process_group "$relay_supervisor" t071_loopback_relay.py   || fail "supervised relay session did not terminate"
+[ -z "$(session_survivors "${owned_pid_session[$relay_supervisor]}")" ]   || fail "supervised relay session survivor remained"
+wait "$relay_supervisor" 2>/dev/null || true
+relay_supervisor=""; rm -rf -- "$relay_dir"; relay_dir=""
+
+# Pre-session cleanup must use a stable kernel process reference. A mismatched pinned
+# start time must not signal the process; the matching identity must terminate it.
+sleep 30 &
+pidfd_probe_pid=$!
+pidfd_probe_start="$(process_identity "$pidfd_probe_pid")"
+read -r pidfd_probe_start _ <<<"$pidfd_probe_start"
+if signal_owned_pid "$pidfd_probe_pid" invalid TERM; then
+  fail "pidfd signaling accepted a mismatched process identity"
+fi
+kill -0 "$pidfd_probe_pid" 2>/dev/null || fail "mismatched pidfd identity signaled the process"
+owned_pid_starttime["$pidfd_probe_pid"]="$pidfd_probe_start"
+owned_pid_session["$pidfd_probe_pid"]=""
+terminate_owned_process_group "$pidfd_probe_pid" sleep \
+  || fail "matching pre-session pidfd identity was not terminated"
+wait "$pidfd_probe_pid" 2>/dev/null || true
+pidfd_probe_pid=""
+
+# If authenticated inspection fails after SIGSTOP, cleanup must return failure only
+# after restoring SIGCONT so the caller never inherits a stranded stopped process.
+freeze_failure_dir="$(mktemp -d)"
+cat >"$freeze_failure_dir/sitecustomize.py" <<'PY_FREEZE_FAILURE'
+import os
+import pathlib
+
+_original_read_text = pathlib.Path.read_text
+_target = os.environ["KEMFAI_FREEZE_FAILURE_STAT"]
+_reads = 0
+
+def fail_second_stat_read(path, *args, **kwargs):
+    global _reads
+    if str(path) == _target:
+        _reads += 1
+        if _reads == 2:
+            raise OSError("injected post-stop stat failure")
+    return _original_read_text(path, *args, **kwargs)
+
+pathlib.Path.read_text = fail_second_stat_read
+PY_FREEZE_FAILURE
+sleep 30 &
+freeze_failure_pid=$!
+freeze_failure_identity="$(process_identity "$freeze_failure_pid")"
+read -r freeze_failure_start _ <<<"$freeze_failure_identity"
+if PYTHONPATH="$freeze_failure_dir" KEMFAI_FREEZE_FAILURE_STAT="/proc/$freeze_failure_pid/stat" \
+  kill_frozen_owned_pre_session "$freeze_failure_pid" "$freeze_failure_start"; then
+  fail "freeze failure injection unexpectedly succeeded"
+fi
+for _ in $(seq 1 100); do
+  freeze_failure_state="$(python3 - "$freeze_failure_pid" <<'PY_FREEZE_STATE'
+import pathlib, sys
+try:
+    raw = pathlib.Path('/proc', sys.argv[1], 'stat').read_text()
+    print(raw[raw.rfind(')') + 2:].split()[0])
+except (FileNotFoundError, ProcessLookupError):
+    pass
+PY_FREEZE_STATE
+)"
+  [ "$freeze_failure_state" != T ] && [ "$freeze_failure_state" != t ] && break
+  sleep .01
+done
+[ "$freeze_failure_state" != T ] && [ "$freeze_failure_state" != t ] \
+  || fail "failed frozen cleanup left its authenticated process stopped"
+kill -KILL -- "$freeze_failure_pid" 2>/dev/null || true
+wait "$freeze_failure_pid" 2>/dev/null || true
+freeze_failure_pid=""; rm -rf -- "$freeze_failure_dir"; freeze_failure_dir=""
+
+# Cleanup can begin after the pinned launcher has completed setsid/fork but before
+# registration records the session. It must authenticate that transition and clean
+# the whole newly owned session rather than treating its child as a leaf violation.
+python3 "$repo_dir/scripts/fixtures/t071_owned_session_exec.py" sleep 30 &
+transition_supervisor=$!
+transition_identity="$(process_identity "$transition_supervisor")"
+read -r transition_start _ <<<"$transition_identity"
+for _ in $(seq 1 50); do
+  transition_identity="$(process_identity "$transition_supervisor" 2>/dev/null || true)"
+  transition_child="$(python3 - "$transition_supervisor" <<'PY_CHILD'
+import pathlib, sys
+try:
+    print(pathlib.Path('/proc', sys.argv[1], 'task', sys.argv[1], 'children').read_text().strip())
+except (FileNotFoundError, ProcessLookupError):
+    pass
+PY_CHILD
+)"
+  read -r _ transition_session <<<"$transition_identity"
+  [ "$transition_session" = "$transition_supervisor" ] && [ -n "$transition_child" ] && break
+  sleep .02
+done
+[ "$transition_session" = "$transition_supervisor" ] && [ -n "$transition_child" ]   || fail "owned-session transition fixture did not start"
+owned_pid_starttime["$transition_supervisor"]="$transition_start"
+owned_pid_session["$transition_supervisor"]=""
+terminate_owned_process_group "$transition_supervisor" sleep   || fail "cleanup did not adopt the pinned pre-session to owned-session transition"
+[ -z "$(session_survivors "$transition_supervisor")" ]   || fail "transitioned owned session survivor remained"
+wait "$transition_supervisor" 2>/dev/null || true
+transition_supervisor=""; transition_child=""
+
+# A launcher can complete setsid/fork after the pre-session leaf check but before the
+# first signal. Cleanup must adopt that late session transition instead of killing only
+# its authenticated leader and leaving a TERM-resistant service child behind.
+post_leaf_race_dir="$(mktemp -d)"
+cat >"$post_leaf_race_dir/sitecustomize.py" <<'PY_POST_LEAF_RACE'
+import os
+import pathlib
+import time
+
+_original_setsid = os.setsid
+_marker = pathlib.Path(os.environ["KEMFAI_POST_LEAF_RACE_MARKER"])
+
+def paused_setsid():
+    _marker.write_text(str(os.getpid()) + "\n")
+    release = _marker.with_suffix(".release")
+    for _ in range(3000):
+        if release.exists():
+            return _original_setsid()
+        time.sleep(0.01)
+    raise TimeoutError("post-leaf transition test was not released")
+
+os.setsid = paused_setsid
+PY_POST_LEAF_RACE
+post_leaf_race_marker="$post_leaf_race_dir/paused"
+PYTHONPATH="$post_leaf_race_dir" KEMFAI_POST_LEAF_RACE_MARKER="$post_leaf_race_marker" \
+  python3 "$repo_dir/scripts/fixtures/t071_owned_session_exec.py" python3 -c \
+    'import signal,time; signal.signal(signal.SIGTERM, signal.SIG_IGN); time.sleep(30)' &
+post_leaf_race_supervisor=$!
+for _ in $(seq 1 500); do [ -s "$post_leaf_race_marker" ] && break; sleep .01; done
+[ -s "$post_leaf_race_marker" ] || fail "post-leaf transition fixture did not pause before setsid"
+post_leaf_race_identity="$(process_identity "$post_leaf_race_supervisor")"
+read -r post_leaf_race_start _ <<<"$post_leaf_race_identity"
+owned_pid_starttime["$post_leaf_race_supervisor"]="$post_leaf_race_start"
+owned_pid_session["$post_leaf_race_supervisor"]=""
+original_signal_owned_pid_definition="$(declare -f signal_owned_pid)"
+eval "${original_signal_owned_pid_definition/signal_owned_pid ()/post_leaf_race_signal_owned_pid ()}"
+post_leaf_race_released=0
+signal_owned_pid() {
+  if [ "$post_leaf_race_released" -eq 0 ]; then
+    post_leaf_race_released=1
+    : >"$post_leaf_race_marker.release"
+    for _ in $(seq 1 500); do
+      post_leaf_race_identity="$(process_identity "$post_leaf_race_supervisor" 2>/dev/null || true)"
+      post_leaf_race_child="$(python3 - "$post_leaf_race_supervisor" <<'PY_POST_LEAF_CHILD'
+import pathlib, sys
+try:
+    print(pathlib.Path('/proc', sys.argv[1], 'task', sys.argv[1], 'children').read_text().strip())
+except (FileNotFoundError, ProcessLookupError):
+    pass
+PY_POST_LEAF_CHILD
+)"
+      read -r _ post_leaf_race_session <<<"$post_leaf_race_identity"
+      [ "$post_leaf_race_session" = "$post_leaf_race_supervisor" ] && [ -n "$post_leaf_race_child" ] && break
+      sleep .01
+    done
+    [ "$post_leaf_race_session" = "$post_leaf_race_supervisor" ] && [ -n "$post_leaf_race_child" ] \
+      || fail "post-leaf transition fixture did not establish its owned child"
+  fi
+  post_leaf_race_signal_owned_pid "$@"
+}
+terminate_owned_process_group "$post_leaf_race_supervisor" python3 \
+  || fail "cleanup rejected the post-leaf owned-session transition"
+[ -z "$(session_survivors "$post_leaf_race_supervisor")" ] \
+  || fail "post-leaf owned-session transition left a service survivor"
+eval "$original_signal_owned_pid_definition"
+wait "$post_leaf_race_supervisor" 2>/dev/null || true
+post_leaf_race_supervisor=""; post_leaf_race_child=""
+rm -rf -- "$post_leaf_race_dir"; post_leaf_race_dir=""
+
+# The same transition at the final frozen-KILL boundary must be adopted safely.
+kill_boundary_race_dir="$(mktemp -d)"
+cat >"$kill_boundary_race_dir/sitecustomize.py" <<'PY_KILL_BOUNDARY_RACE'
+import os
+import pathlib
+import time
+
+_original_setsid = os.setsid
+_marker = pathlib.Path(os.environ["KEMFAI_KILL_BOUNDARY_RACE_MARKER"])
+
+def paused_setsid():
+    _marker.write_text(str(os.getpid()) + "\n")
+    release = _marker.with_suffix(".release")
+    for _ in range(3000):
+        if release.exists():
+            return _original_setsid()
+        time.sleep(0.01)
+    raise TimeoutError("kill-boundary transition test was not released")
+
+os.setsid = paused_setsid
+PY_KILL_BOUNDARY_RACE
+kill_boundary_race_marker="$kill_boundary_race_dir/paused"
+PYTHONPATH="$kill_boundary_race_dir" KEMFAI_KILL_BOUNDARY_RACE_MARKER="$kill_boundary_race_marker" \
+  python3 "$repo_dir/scripts/fixtures/t071_owned_session_exec.py" python3 -c \
+    'import signal,time; signal.signal(signal.SIGTERM, signal.SIG_IGN); time.sleep(30)' &
+kill_boundary_race_supervisor=$!
+for _ in $(seq 1 500); do [ -s "$kill_boundary_race_marker" ] && break; sleep .01; done
+[ -s "$kill_boundary_race_marker" ] || fail "kill-boundary transition fixture did not pause before setsid"
+kill_boundary_race_identity="$(process_identity "$kill_boundary_race_supervisor")"
+read -r kill_boundary_race_start _ <<<"$kill_boundary_race_identity"
+owned_pid_starttime["$kill_boundary_race_supervisor"]="$kill_boundary_race_start"
+owned_pid_session["$kill_boundary_race_supervisor"]=""
+original_kill_boundary_signal_definition="$(declare -f signal_owned_pid)"
+eval "${original_kill_boundary_signal_definition/signal_owned_pid ()/kill_boundary_race_signal_owned_pid ()}"
+signal_owned_pid() {
+  [ "$3" = TERM ] && return 0
+  kill_boundary_race_signal_owned_pid "$@"
+}
+original_kill_frozen_definition="$(declare -f kill_frozen_owned_pre_session)"
+eval "${original_kill_frozen_definition/kill_frozen_owned_pre_session ()/kill_boundary_race_frozen_kill ()}"
+kill_frozen_owned_pre_session() {
+  : >"$kill_boundary_race_marker.release"
+  for _ in $(seq 1 500); do
+    kill_boundary_race_identity="$(process_identity "$kill_boundary_race_supervisor" 2>/dev/null || true)"
+    kill_boundary_race_child="$(python3 - "$kill_boundary_race_supervisor" <<'PY_KILL_BOUNDARY_CHILD'
+import pathlib, sys
+try:
+    print(pathlib.Path('/proc', sys.argv[1], 'task', sys.argv[1], 'children').read_text().strip())
+except (FileNotFoundError, ProcessLookupError):
+    pass
+PY_KILL_BOUNDARY_CHILD
+)"
+    read -r _ kill_boundary_race_session <<<"$kill_boundary_race_identity"
+    [ "$kill_boundary_race_session" = "$kill_boundary_race_supervisor" ] && [ -n "$kill_boundary_race_child" ] && break
+    sleep .01
+  done
+  [ "$kill_boundary_race_session" = "$kill_boundary_race_supervisor" ] && [ -n "$kill_boundary_race_child" ] \
+    || fail "kill-boundary transition fixture did not establish its owned child: identity=${kill_boundary_race_identity:-missing} child=${kill_boundary_race_child:-missing}"
+  kill_boundary_race_frozen_kill "$@"
+}
+terminate_owned_process_group "$kill_boundary_race_supervisor" python3 \
+  || fail "cleanup rejected the KILL-boundary owned-session transition"
+[ -z "$(session_survivors "$kill_boundary_race_supervisor")" ] \
+  || fail "KILL-boundary owned-session transition left a service survivor"
+eval "$original_kill_frozen_definition"
+eval "$original_kill_boundary_signal_definition"
+wait "$kill_boundary_race_supervisor" 2>/dev/null || true
+kill_boundary_race_supervisor=""; kill_boundary_race_child=""
+rm -rf -- "$kill_boundary_race_dir"; kill_boundary_race_dir=""
+
+# Pre-session cleanup is only safe for the no-fork launcher invariant. If a caller
+# violates it, cleanup must fail closed without signaling either the parent or child.
+leaf_violation_file="$(mktemp)"
+bash -c 'sleep 30 & printf "%s\n" "$!" >"$1"; wait' _ "$leaf_violation_file" &
+leaf_violation_parent=$!
+for _ in $(seq 1 50); do [ -s "$leaf_violation_file" ] && break; sleep .02; done
+[ -s "$leaf_violation_file" ] || fail "leaf-invariant fixture did not start"
+read -r leaf_violation_child <"$leaf_violation_file"
+leaf_violation_start="$(process_identity "$leaf_violation_parent")"
+read -r leaf_violation_start _ <<<"$leaf_violation_start"
+owned_pid_starttime["$leaf_violation_parent"]="$leaf_violation_start"
+owned_pid_session["$leaf_violation_parent"]=""
+if terminate_owned_process_group "$leaf_violation_parent" sleep; then
+  fail "pre-session cleanup accepted a process with descendants"
+fi
+kill -0 "$leaf_violation_parent" 2>/dev/null || fail "leaf-invariant failure signaled its parent"
+kill -0 "$leaf_violation_child" 2>/dev/null || fail "leaf-invariant failure signaled its child"
+kill -KILL -- "$leaf_violation_child" "$leaf_violation_parent" 2>/dev/null || true
+wait "$leaf_violation_parent" 2>/dev/null || true
+leaf_violation_parent=""; leaf_violation_child=""
+rm -f -- "$leaf_violation_file"; leaf_violation_file=""
+
+# Registration must tolerate the bounded fork-to-exec race: the background PID exists
+# before it becomes the leader of the new setsid session.
+bash -c 'sleep .2; exec python3 "$1" sleep 30' _ "$repo_dir/scripts/fixtures/t071_owned_session_exec.py" &
+delayed_probe_pid=$!
+register_owned_process "$delayed_probe_pid" sleep
+pid_owned_by_this_run "$delayed_probe_pid" sleep || fail "delayed exec process identity was not recognized"
+terminate_owned_process_group "$delayed_probe_pid" sleep || fail "delayed exec process session did not terminate"
+[ -z "$(session_survivors "${owned_pid_session[$delayed_probe_pid]}")" ] || fail "delayed exec process-session survivor remained"
+delayed_probe_pid=""
+
+# A marker-validation failure after setsid must still clean the registered session.
+registration_failure_pid_file="$(mktemp)"
+if (
+  declare -A owned_pid_starttime=() owned_pid_session=()
+  failed_pid=""
+  failed_cleanup() {
+    local status=$?
+    trap - EXIT
+    [ -z "$failed_pid" ] || terminate_owned_process_group "$failed_pid" wrong-marker
+    exit "$status"
+  }
+  trap failed_cleanup EXIT
+  setsid sleep 30 &
+  failed_pid=$!
+  printf '%s\n' "$failed_pid" >"$registration_failure_pid_file"
+  register_owned_process "$failed_pid" wrong-marker
+); then
+  fail "wrong process marker registration unexpectedly succeeded"
+fi
+read -r failed_pid <"$registration_failure_pid_file"
+for _ in $(seq 1 25); do kill -0 "$failed_pid" 2>/dev/null || break; sleep .02; done
+if kill -0 "$failed_pid" 2>/dev/null; then fail "failed registration leaked its owned session"; fi
+rm -f -- "$registration_failure_pid_file"; registration_failure_pid_file=""
 
 # Resolve under the caller's installed cache, then prove that only the validated cache
 # root is sufficient with an otherwise empty environment and private HOME.
@@ -206,4 +1083,95 @@ if (!(expired >= 0 && fresh > expired && conflict > fresh)) {
   process.exit(1);
 }
 NODE
+t074_runner="$repo_dir/scripts/test_t074_live_browser.sh"
+grep -qF 't071_owned_session_exec.py" --hold-for-cleanup --keep-env T071_RELAY_CONFIG python3 "$repo_dir/scripts/fixtures/t071_loopback_relay.py"' "$t074_runner" \
+  || fail "T074 relay does not use the owned session supervisor"
+grep -qF 'exec setsid python3 "$repo_dir/scripts/fixtures/t071_loopback_relay.py"' "$t074_runner" \
+  && fail "T074 relay reverted to the direct setsid launcher"
+echo "PASS: T074 relay uses the owned session supervisor"
+
+# Every production runner that imports the authenticated session cleanup helper
+# must launch each process immediately preceding its registration through the
+# supervisor. Discover callers so a future lifecycle user cannot escape this gate.
+python3 - "$repo_dir" <<'PY_SUPERVISED_CALLERS'
+import pathlib
+import sys
+
+scripts = pathlib.Path(sys.argv[1], "scripts")
+expected = {
+    "test_t071_live.sh",
+    "test_t072_live.sh",
+    "test_t074_live_browser.sh",
+    "test_t109_odoo_exposure.sh",
+    "test_t112_owned_fixture.sh",
+}
+callers = {
+    path.name: path.read_text()
+    for path in scripts.glob("*.sh")
+    if "t071_process_lifecycle.sh" in path.read_text()
+}
+if set(callers) != expected:
+    raise SystemExit(
+        "FAIL: shared lifecycle caller inventory mismatch: "
+        f"expected={sorted(expected)} discovered={sorted(callers)}"
+    )
+for name, source in callers.items():
+    registrations = source.count("register_owned_process ")
+    supervisors = source.count("t071_owned_session_exec.py")
+    if registrations == 0:
+        raise SystemExit(f"FAIL: shared lifecycle caller has no registration: {name}")
+    if supervisors != registrations:
+        raise SystemExit(
+            f"FAIL: every registered process requires one owned supervisor in {name}: "
+            f"supervisors={supervisors} registrations={registrations}"
+        )
+print("PASS: all discovered shared lifecycle callers supervise every registered process")
+PY_SUPERVISED_CALLERS
+
+# The fallback before setsid is observed must report escalation too. Pin the exact
+# leaf identity as registration does, while intentionally keeping it pre-session.
+pre_session_forced_kill=0
+bash -c 'trap "" TERM; exec sleep 60' &
+pre_session_forced_pid=$!
+read -r pre_session_start _ < <(process_identity "$pre_session_forced_pid")
+owned_pid_starttime["$pre_session_forced_pid"]="$pre_session_start"
+owned_pid_session["$pre_session_forced_pid"]=""
+terminate_owned_process_group "$pre_session_forced_pid" sleep pre_session_forced_kill \
+  || fail "pre-session forced-kill reporting probe did not terminate"
+[ "$pre_session_forced_kill" -eq 1 ] \
+  || fail "pre-session cleanup did not report SIGKILL escalation"
+echo "PASS: pre-session cleanup reports SIGKILL escalation"
+
+# Callers that require graceful-only cleanup must be told when the shared helper
+# escalates to SIGKILL, while callers without an output variable retain compatibility.
+forced_kill_probe=0
+python3 "$repo_dir/scripts/fixtures/t071_owned_session_exec.py" python3 -c \
+  'import signal,time; signal.signal(signal.SIGTERM, signal.SIG_IGN); time.sleep(60) # t071-ignore-term' &
+forced_kill_probe_pid=$!
+register_owned_process "$forced_kill_probe_pid" t071-ignore-term
+sleep 0.2
+terminate_owned_process_group "$forced_kill_probe_pid" t071-ignore-term forced_kill_probe \
+  || fail "forced-kill reporting probe did not terminate"
+[ "$forced_kill_probe" -eq 1 ] \
+  || fail "shared lifecycle helper did not report SIGKILL escalation"
+echo "PASS: shared lifecycle helper reports SIGKILL escalation"
+
+# The T109 API supervisor deliberately starts from a minimal environment, so every
+# inherited disposable-service setting required by the child must be explicitly kept.
+t109_runner="$repo_dir/scripts/test_t109_odoo_exposure.sh"
+grep -qF -- '--keep-env CONTROL_DB_HOST,CONTROL_DB_PORT,CONTROL_DB_USER,CONTROL_DB_PASSWORD,CONTROL_DB_NAME,REDIS_URL' "$t109_runner" \
+  || fail "T109 API supervisor drops its owned database/Redis environment"
+echo "PASS: T109 API supervisor preserves owned database/Redis environment"
+
+# T112 must use the authenticated session-wide cleanup implementation. Its former
+# process-group-only wrapper leaked descendants that moved to another process group.
+t112_runner="$repo_dir/scripts/test_t112_owned_fixture.sh"
+grep -qF 'terminate_owned_process_group "$frontend_pid"' "$t112_runner" \
+  || fail "T112 frontend cleanup does not terminate the complete owned session"
+grep -qF 'terminate_owned_process_group "$api_pid"' "$t112_runner" \
+  || fail "T112 API cleanup does not terminate the complete owned session"
+grep -qF 'stop_owned_process()' "$t112_runner" \
+  && fail "T112 retains unsafe process-group-only cleanup"
+echo "PASS: T112 uses authenticated session-wide cleanup"
+
 echo "PASS: T071 harness stages safely, validates URLs exactly, and declares real-stack proof points."

@@ -82,29 +82,6 @@ record_secret() {
   [ -z "$1" ] || printf '%s\0' "$1" >>"$secrets"
 }
 
-stop_owned_process() {
-  local pid="$1" marker="$2" session survivors
-  [ -n "$pid" ] || return 0
-  session="${owned_pid_session[$pid]:-}"
-  [ -n "$session" ] || return 1
-  if pid_owned_by_this_run "$pid" "$marker" || [ -n "$(session_survivors "$session")" ]; then
-    kill -TERM -- "-$pid" 2>/dev/null || true
-  fi
-  for _ in $(seq 1 50); do
-    survivors="$(session_survivors "$session")"
-    [ -z "$survivors" ] && return 0
-    sleep .1
-  done
-  forced_kill=1
-  kill -KILL -- "-$pid" 2>/dev/null || true
-  for _ in $(seq 1 50); do
-    survivors="$(session_survivors "$session")"
-    [ -z "$survivors" ] && return 1
-    sleep .1
-  done
-  return 1
-}
-
 exact_container_id() {
   local name="$1" id ownership
   id="$(docker ps -aq --no-trunc --filter "name=^/${name}$")" || return 3
@@ -205,10 +182,10 @@ cleanup() {
   trap - EXIT INT TERM
   set +e
 
-  stop_owned_process "$frontend_pid" 'next' || cleanup_failed=1
-  stop_owned_process "$api_pid" 'dist/main.js' || cleanup_failed=1
-  stop_owned_process "$fixture_pid" 't112-live-fixture.ts' || cleanup_failed=1
-  stop_owned_process "$port_keeper_pid" 'reserve_loopback_ports.py' || cleanup_failed=1
+  terminate_owned_process_group "$frontend_pid" 'next' forced_kill || cleanup_failed=1
+  terminate_owned_process_group "$api_pid" 'dist/main.js' forced_kill || cleanup_failed=1
+  terminate_owned_process_group "$fixture_pid" 't112-live-fixture.ts' forced_kill || cleanup_failed=1
+  terminate_owned_process_group "$port_keeper_pid" 'reserve_loopback_ports.py' forced_kill || cleanup_failed=1
   [ "$forced_kill" -eq 0 ] || cleanup_failed=1
 
   restore_flags || cleanup_failed=1
@@ -329,7 +306,7 @@ done
 [ -z "$(docker network ls -q --no-trunc --filter "label=$label")" ] || fail 'labeled network already exists'
 [ -z "$(docker volume ls -q --filter "label=$label")" ] || fail 'labeled volume already exists'
 
-coproc T112_PORT_KEEPER { exec setsid python3 "$repo_dir/scripts/reserve_loopback_ports.py"; }
+coproc T112_PORT_KEEPER { exec python3 -I "$repo_dir/scripts/fixtures/t071_owned_session_exec.py" --hold-for-cleanup python3 "$repo_dir/scripts/reserve_loopback_ports.py"; }
 port_keeper_pid="$T112_PORT_KEEPER_PID"
 port_read_fd="${T112_PORT_KEEPER[0]}"
 port_write_fd="${T112_PORT_KEEPER[1]}"
@@ -481,7 +458,7 @@ if [ "$mode" = backend ]; then
     test/integration/support-access-denial.integration-spec.ts \
     test/integration/entitlements-service.integration-spec.ts \
     --json --outputFile="$integration_json") >"$private_dir/backend-integration.raw.log" 2>&1
-  validate_jest_json "$integration_json" 3 77 \
+  validate_jest_json "$integration_json" 3 149 \
     test/integration/feature-flag-gating.integration-spec.ts \
     test/integration/support-access-denial.integration-spec.ts \
     test/integration/entitlements-service.integration-spec.ts \
@@ -507,7 +484,7 @@ else
   (
     cd "$api_dir"
     export T112_FIXTURE_OUTPUT="$fixture_json" T112_TENANT_ID="$tenant_id" T112_TENANT_DATABASE="$tenant_database"
-    exec setsid ./node_modules/.bin/ts-node test/support/t112-live-fixture.ts
+    exec python3 -I "$repo_dir/scripts/fixtures/t071_owned_session_exec.py" --hold-for-cleanup --keep-env T112_FIXTURE_OUTPUT,T112_TENANT_ID,T112_TENANT_DATABASE ./node_modules/.bin/ts-node test/support/t112-live-fixture.ts
   ) >"$private_dir/live-fixture.raw.log" 2>&1 &
   fixture_pid=$!
   register_owned_process "$fixture_pid" t112-live-fixture.ts
@@ -557,7 +534,7 @@ else
     export KEMFAI_TENANT_ADMIN_LOGIN=t112-owned KEMFAI_TENANT_ADMIN_PASSWORD="$odoo_password"
     export KEMFAI_DISABLE_MODULE_SELECTION_RECOVERY_WORKER=1 KEMFAI_DISABLE_MUTATION_RECOVERY_WORKER=1
     export KEMFAI_DISABLE_BILLING_NOTIFICATION_RECOVERY_WORKER=1
-    exec setsid node dist/main.js
+    exec python3 -I "$repo_dir/scripts/fixtures/t071_owned_session_exec.py" --hold-for-cleanup --keep-env PORT,HOST,NODE_ENV,KEYCLOAK_ISSUER,KEYCLOAK_API_AUDIENCE,KEYCLOAK_JWKS_URI,KEMFAI_ODOO_URL,KEMFAI_ODOO_MASTER_PASSWORD,KEMFAI_TENANT_ADMIN_LOGIN,KEMFAI_TENANT_ADMIN_PASSWORD,KEMFAI_DISABLE_MODULE_SELECTION_RECOVERY_WORKER,KEMFAI_DISABLE_MUTATION_RECOVERY_WORKER,KEMFAI_DISABLE_BILLING_NOTIFICATION_RECOVERY_WORKER,CONTROL_DB_HOST,CONTROL_DB_PORT,CONTROL_DB_USER,CONTROL_DB_PASSWORD,CONTROL_DB_NAME,REDIS_URL node dist/main.js
   ) >"$private_dir/api.raw.log" 2>&1 &
   api_pid=$!
   register_owned_process "$api_pid" dist/main.js
@@ -577,7 +554,7 @@ else
     export KEYCLOAK_ISSUER="$customer_issuer" KEYCLOAK_BACKCHANNEL_URL="$customer_issuer"
     export KEYCLOAK_JWKS_URI="$jwks_uri" KEYCLOAK_CLIENT_ID=kemfai-api
     export KEYCLOAK_REDIRECT_URI="http://127.0.0.1:$frontend_port/auth/callback"
-    exec setsid ./node_modules/.bin/next start -H 127.0.0.1 -p "$frontend_port"
+    exec python3 -I "$repo_dir/scripts/fixtures/t071_owned_session_exec.py" --hold-for-cleanup --keep-env NODE_ENV,PORT,KEMFAI_API_URL,REDIS_URL,NEXT_PUBLIC_DEFAULT_LOCALE,NEXT_PUBLIC_APP_URL,KEYCLOAK_ISSUER,KEYCLOAK_BACKCHANNEL_URL,KEYCLOAK_JWKS_URI,KEYCLOAK_CLIENT_ID,KEYCLOAK_REDIRECT_URI ./node_modules/.bin/next start -H 127.0.0.1 -p "$frontend_port"
   ) >"$private_dir/frontend.raw.log" 2>&1 &
   frontend_pid=$!
   register_owned_process "$frontend_pid" next
