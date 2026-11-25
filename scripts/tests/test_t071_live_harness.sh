@@ -264,7 +264,7 @@ python3 "$repo_dir/scripts/fixtures/t071_owned_session_exec.py" sh -c 'exit 7'
 supervisor_exit=$?
 set -e
 [ "$supervisor_exit" -eq 7 ] || fail "owned session supervisor did not preserve service exit status"
-python3 "$repo_dir/scripts/fixtures/t071_owned_session_exec.py" sleep 30 &
+python3 "$repo_dir/scripts/fixtures/t071_owned_session_exec.py" --hold-for-cleanup sleep 30 &
 probe_pid=$!
 register_owned_process "$probe_pid" sleep
 pid_owned_by_this_run "$probe_pid" sleep || fail "registered process identity was not recognized"

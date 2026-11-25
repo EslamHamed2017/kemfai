@@ -465,6 +465,11 @@ class TestT108CiWiring(unittest.TestCase):
         self.assertIn('bash "$HERE/test_t071_live_harness.sh"', aggregate)
         lifecycle_harness = (ROOT / "scripts/tests/test_t071_live_harness.sh").read_text()
         self.assertIn(
+            't071_owned_session_exec.py" --hold-for-cleanup sleep 30 &',
+            lifecycle_harness,
+            "registered external-cleanup probe must retain ancestry until cleanup",
+        )
+        self.assertIn(
             'PROBE_FILE="$non_utf8_file" python3 "$repo_dir/scripts/fixtures/t071_owned_session_exec.py" \\\n'
             '  --hold-for-cleanup --keep-env PROBE_FILE',
             lifecycle_harness,
